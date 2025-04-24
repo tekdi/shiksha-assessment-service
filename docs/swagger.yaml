@@ -1,0 +1,3358 @@
+openapi: 3.0.0
+info:
+  title: Assessment Service API
+  description: API for managing assessments, questions, and test-taking workflows
+  version: 1.0.0
+  contact:
+    name: TMT Support
+    email: support@tmt.example.com
+
+servers:
+  - url: /api/v1
+    description: Base API path
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: Bad Request
+        error:
+          type: string
+          example: Validation Error
+
+    # Test Schemas
+    Test:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        parent_id:
+          type: integer
+          format: int64
+          nullable: true
+          example: null
+        type:
+          type: string
+          example: "plain"
+        ordering:
+          type: integer
+          example: 1
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        created_by:
+          type: integer
+          format: int64
+          example: 123
+        title:
+          type: string
+          example: "JavaScript Fundamentals Assessment"
+        alias:
+          type: string
+          example: "javascript-fundamentals"
+        description:
+          type: string
+          example: "Test your knowledge of JavaScript fundamentals"
+        reviewers:
+          type: array
+          items:
+            type: integer
+          example: [101, 102]
+        show_time:
+          type: boolean
+          example: true
+        time_duration:
+          type: integer
+          example: 60
+        show_time_finished:
+          type: boolean
+          example: true
+        time_finished_duration:
+          type: integer
+          example: 5
+        total_marks:
+          type: integer
+          example: 100
+        passing_marks:
+          type: integer
+          example: 60
+        isObjective:
+          type: boolean
+          example: true
+        created_on:
+          type: string
+          format: date-time
+        modified_on:
+          type: string
+          format: date-time
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        termscondi:
+          type: boolean
+          example: true
+        answer_sheet:
+          type: boolean
+          example: true
+        show_correct_answer:
+          type: boolean
+          example: false
+        print_answersheet:
+          type: boolean
+          example: false
+        questions_shuffle:
+          type: boolean
+          example: true
+        answers_shuffle:
+          type: boolean
+          example: true
+        gradingtype:
+          type: string
+          example: "standard"
+        show_thankyou_page:
+          type: boolean
+          example: true
+        show_all_questions:
+          type: boolean
+          example: false
+        show_quiz_marks:
+          type: boolean
+          example: true
+        pagination_limit:
+          type: integer
+          example: 10
+        show_questions_overview:
+          type: boolean
+          example: true
+        image:
+          type: string
+          nullable: true
+          example: "test-cover.jpg"
+
+    TestCreate:
+      type: object
+      required:
+        - title
+        - time_duration
+        - total_marks
+        - passing_marks
+      properties:
+        title:
+          type: string
+          example: "JavaScript Fundamentals Assessment"
+        alias:
+          type: string
+          example: "javascript-fundamentals"
+        description:
+          type: string
+          example: "Test your knowledge of JavaScript fundamentals"
+        type:
+          type: string
+          example: "plain"
+        show_time:
+          type: boolean
+          example: true
+        time_duration:
+          type: integer
+          example: 60
+        show_time_finished:
+          type: boolean
+          example: true
+        time_finished_duration:
+          type: integer
+          example: 5
+        total_marks:
+          type: integer
+          example: 100
+        passing_marks:
+          type: integer
+          example: 60
+        isObjective:
+          type: boolean
+          example: true
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        termscondi:
+          type: boolean
+          example: true
+        answer_sheet:
+          type: boolean
+          example: true
+        show_correct_answer:
+          type: boolean
+          example: false
+        print_answersheet:
+          type: boolean
+          example: false
+        questions_shuffle:
+          type: boolean
+          example: true
+        answers_shuffle:
+          type: boolean
+          example: true
+        gradingtype:
+          type: string
+          example: "standard"
+        show_thankyou_page:
+          type: boolean
+          example: true
+        show_all_questions:
+          type: boolean
+          example: false
+        show_quiz_marks:
+          type: boolean
+          example: true
+        pagination_limit:
+          type: integer
+          example: 10
+        show_questions_overview:
+          type: boolean
+          example: true
+        image:
+          type: string
+          nullable: true
+          example: "test-cover.jpg"
+
+    TestUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "JavaScript Fundamentals Assessment"
+        alias:
+          type: string
+          example: "javascript-fundamentals"
+        description:
+          type: string
+          example: "Test your knowledge of JavaScript fundamentals"
+        type:
+          type: string
+          example: "plain"
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        show_time:
+          type: boolean
+          example: true
+        time_duration:
+          type: integer
+          example: 60
+        show_time_finished:
+          type: boolean
+          example: true
+        time_finished_duration:
+          type: integer
+          example: 5
+        total_marks:
+          type: integer
+          example: 100
+        passing_marks:
+          type: integer
+          example: 60
+        isObjective:
+          type: boolean
+          example: true
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        termscondi:
+          type: boolean
+          example: true
+        answer_sheet:
+          type: boolean
+          example: true
+        show_correct_answer:
+          type: boolean
+          example: false
+        print_answersheet:
+          type: boolean
+          example: false
+        questions_shuffle:
+          type: boolean
+          example: true
+        answers_shuffle:
+          type: boolean
+          example: true
+        gradingtype:
+          type: string
+          example: "standard"
+        show_thankyou_page:
+          type: boolean
+          example: true
+        show_all_questions:
+          type: boolean
+          example: false
+        show_quiz_marks:
+          type: boolean
+          example: true
+        pagination_limit:
+          type: integer
+          example: 10
+        show_questions_overview:
+          type: boolean
+          example: true
+        image:
+          type: string
+          nullable: true
+          example: "test-cover.jpg"
+
+    # Question Schemas
+    Question:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        ordering:
+          type: integer
+          example: 1
+        created_on:
+          type: string
+          format: date-time
+        title:
+          type: string
+          example: "What is JavaScript?"
+        alias:
+          type: string
+          example: "what-is-javascript"
+        description:
+          type: string
+          example: "Explain what JavaScript is and its primary use cases."
+        type:
+          type: string
+          example: "MCQ"
+        level:
+          type: string
+          example: "EASY"
+        marks:
+          type: integer
+          example: 5
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        ideal_time:
+          type: integer
+          example: 2
+        gradingtype:
+          type: string
+          example: "standard"
+        category_id:
+          type: integer
+          format: int64
+          example: 3
+        created_by:
+          type: integer
+          format: int64
+          example: 123
+        params:
+          type: object
+          example: { "shuffle": true }
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionImage'
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Answer'
+
+    QuestionCreate:
+      type: object
+      required:
+        - title
+        - description
+        - type
+        - level
+        - marks
+        - category_id
+      properties:
+        title:
+          type: string
+          example: "What is JavaScript?"
+        alias:
+          type: string
+          example: "what-is-javascript"
+        description:
+          type: string
+          example: "Explain what JavaScript is and its primary use cases."
+        type:
+          type: string
+          example: "MCQ"
+        level:
+          type: string
+          example: "EASY"
+        marks:
+          type: integer
+          example: 5
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        ideal_time:
+          type: integer
+          example: 2
+        gradingtype:
+          type: string
+          example: "standard"
+        category_id:
+          type: integer
+          format: int64
+          example: 3
+        params:
+          type: object
+          example: { "shuffle": true }
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionImageCreate'
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerCreate'
+
+    QuestionUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "What is JavaScript?"
+        alias:
+          type: string
+          example: "what-is-javascript"
+        description:
+          type: string
+          example: "Explain what JavaScript is and its primary use cases."
+        type:
+          type: string
+          example: "MCQ"
+        level:
+          type: string
+          example: "EASY"
+        marks:
+          type: integer
+          example: 5
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        ideal_time:
+          type: integer
+          example: 2
+        gradingtype:
+          type: string
+          example: "standard"
+        category_id:
+          type: integer
+          format: int64
+          example: 3
+        params:
+          type: object
+          example: { "shuffle": true }
+
+    # Answer Schemas
+    Answer:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        question_id:
+          type: integer
+          format: int64
+          example: 1
+        answer:
+          type: string
+          example: "JavaScript is a programming language used for web development."
+        marks:
+          type: integer
+          example: 5
+        is_correct:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        order:
+          type: integer
+          example: 1
+        comments:
+          type: string
+          example: "This is the correct definition."
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerImage'
+
+    AnswerCreate:
+      type: object
+      required:
+        - answer
+        - marks
+        - is_correct
+      properties:
+        answer:
+          type: string
+          example: "JavaScript is a programming language used for web development."
+        marks:
+          type: integer
+          example: 5
+        is_correct:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        order:
+          type: integer
+          example: 1
+        comments:
+          type: string
+          example: "This is the correct definition."
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerImageCreate'
+
+    AnswerUpdate:
+      type: object
+      properties:
+        answer:
+          type: string
+          example: "JavaScript is a programming language used for web development."
+        marks:
+          type: integer
+          example: 5
+        is_correct:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        order:
+          type: integer
+          example: 1
+        comments:
+          type: string
+          example: "This is the correct definition."
+
+    # Image Schemas
+    QuestionImage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        q_id:
+          type: integer
+          format: int64
+          example: 1
+        img_title:
+          type: string
+          example: "JavaScript Logo"
+        img_path:
+          type: string
+          example: "/uploads/questions/js-logo.png"
+
+    QuestionImageCreate:
+      type: object
+      required:
+        - img_title
+        - img_path
+      properties:
+        img_title:
+          type: string
+          example: "JavaScript Logo"
+        img_path:
+          type: string
+          example: "/uploads/questions/js-logo.png"
+
+    AnswerImage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        a_id:
+          type: integer
+          format: int64
+          example: 1
+        q_id:
+          type: integer
+          format: int64
+          example: 1
+        img_title:
+          type: string
+          example: "Code Snippet"
+        img_path:
+          type: string
+          example: "/uploads/answers/code-snippet.png"
+
+    AnswerImageCreate:
+      type: object
+      required:
+        - img_title
+        - img_path
+      properties:
+        img_title:
+          type: string
+          example: "Code Snippet"
+        img_path:
+          type: string
+          example: "/uploads/answers/code-snippet.png"
+
+    # Section Schemas
+    Section:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        title:
+          type: string
+          example: "JavaScript Basics"
+        description:
+          type: string
+          example: "Fundamental concepts of JavaScript"
+        test_id:
+          type: integer
+          format: int64
+          example: 1
+        ordering:
+          type: integer
+          example: 1
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        min_questions:
+          type: integer
+          example: 5
+        max_questions:
+          type: integer
+          example: 10
+
+    SectionCreate:
+      type: object
+      required:
+        - title
+        - test_id
+      properties:
+        title:
+          type: string
+          example: "JavaScript Basics"
+        description:
+          type: string
+          example: "Fundamental concepts of JavaScript"
+        ordering:
+          type: integer
+          example: 1
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        min_questions:
+          type: integer
+          example: 5
+        max_questions:
+          type: integer
+          example: 10
+
+    SectionUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "JavaScript Basics"
+        description:
+          type: string
+          example: "Fundamental concepts of JavaScript"
+        ordering:
+          type: integer
+          example: 1
+        state:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        min_questions:
+          type: integer
+          example: 5
+        max_questions:
+          type: integer
+          example: 10
+
+    # Rule Schemas
+    Rule:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        quiz_id:
+          type: integer
+          format: int64
+          example: 1
+        section_id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Easy JavaScript Questions"
+        order:
+          type: integer
+          example: 1
+        questions_count:
+          type: integer
+          example: 20
+        pull_questions_count:
+          type: integer
+          example: 10
+        marks:
+          type: integer
+          example: 2
+        category:
+          type: integer
+          format: int64
+          example: 3
+        difficulty_level:
+          type: string
+          example: "EASY"
+        question_type:
+          type: string
+          example: "MCQ"
+
+    RuleCreate:
+      type: object
+      required:
+        - quiz_id
+        - name
+        - pull_questions_count
+        - marks
+      properties:
+        section_id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Easy JavaScript Questions"
+        order:
+          type: integer
+          example: 1
+        questions_count:
+          type: integer
+          example: 20
+        pull_questions_count:
+          type: integer
+          example: 10
+        marks:
+          type: integer
+          example: 2
+        category:
+          type: integer
+          format: int64
+          example: 3
+        difficulty_level:
+          type: string
+          example: "EASY"
+        question_type:
+          type: string
+          example: "MCQ"
+
+    RuleUpdate:
+      type: object
+      properties:
+        section_id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Easy JavaScript Questions"
+        order:
+          type: integer
+          example: 1
+        questions_count:
+          type: integer
+          example: 20
+        pull_questions_count:
+          type: integer
+          example: 10
+        marks:
+          type: integer
+          example: 2
+        category:
+          type: integer
+          format: int64
+          example: 3
+        difficulty_level:
+          type: string
+          example: "EASY"
+        question_type:
+          type: string
+          example: "MCQ"
+
+    # Test Question Mapping
+    TestQuestion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        test_id:
+          type: integer
+          format: int64
+          example: 1
+        question_id:
+          type: integer
+          format: int64
+          example: 1
+        order:
+          type: integer
+          example: 1
+        section_id:
+          type: integer
+          format: int64
+          example: 1
+        is_compulsory:
+          type: integer
+          enum: [0, 1]
+          example: 1
+
+    TestQuestionCreate:
+      type: object
+      required:
+        - test_id
+        - question_id
+      properties:
+        order:
+          type: integer
+          example: 1
+        section_id:
+          type: integer
+          format: int64
+          example: 1
+        is_compulsory:
+          type: integer
+          enum: [0, 1]
+          example: 1
+
+    TestQuestionUpdate:
+      type: object
+      properties:
+        order:
+          type: integer
+          example: 1
+        section_id:
+          type: integer
+          format: int64
+          example: 1
+        is_compulsory:
+          type: integer
+          enum: [0, 1]
+          example: 1
+
+    # Test Participation
+    TestAttempt:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        invite_id:
+          type: integer
+          format: int64
+          example: 1
+        test_id:
+          type: integer
+          format: int64
+          example: 1
+        user_id:
+          type: integer
+          format: int64
+          example: 123
+        company_id:
+          type: integer
+          format: int64
+          example: 456
+        result_status:
+          type: string
+          example: "PASSED"
+        score:
+          type: integer
+          example: 85
+        attempt_status:
+          type: integer
+          enum: [0, 1, 2]
+          example: 1
+        review_status:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        time_taken:
+          type: integer
+          example: 3600
+
+    TestAttemptCreate:
+      type: object
+      required:
+        - invite_id
+        - test_id
+      properties:
+        attempt_status:
+          type: integer
+          enum: [0, 1, 2]
+          example: 0
+        time_taken:
+          type: integer
+          example: 0
+
+    TestAttemptUpdate:
+      type: object
+      properties:
+        result_status:
+          type: string
+          example: "PASSED"
+        score:
+          type: integer
+          example: 85
+        attempt_status:
+          type: integer
+          enum: [0, 1, 2]
+          example: 1
+        review_status:
+          type: integer
+          enum: [0, 1]
+          example: 1
+        time_taken:
+          type: integer
+          example: 3600
+
+    # Answer Submission
+    AnswerSubmission:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        question_id:
+          type: integer
+          format: int64
+          example: 1
+        user_id:
+          type: integer
+          format: int64
+          example: 123
+        test_id:
+          type: integer
+          format: int64
+          example: 1
+        invite_id:
+          type: integer
+          format: int64
+          example: 1
+        answer:
+          type: string
+          example: "JavaScript is a programming language used for web development."
+        anss_order:
+          type: string
+          example: "1,3,4"
+        marks:
+          type: integer
+          example: 5
+        flagged:
+          type: integer
+          enum: [0, 1]
+          example: 0
+
+    AnswerSubmissionCreate:
+      type: object
+      required:
+        - question_id
+        - test_id
+        - invite_id
+        - answer
+      properties:
+        anss_order:
+          type: string
+          example: "1,3,4"
+        flagged:
+          type: integer
+          enum: [0, 1]
+          example: 0
+
+    AnswerSubmissionUpdate:
+      type: object
+      properties:
+        answer:
+          type: string
+          example: "JavaScript is a programming language used for web development."
+        anss_order:
+          type: string
+          example: "1,3,4"
+        marks:
+          type: integer
+          example: 5
+        flagged:
+          type: integer
+          enum: [0, 1]
+          example: 0
+
+    # Photo Capture
+    PhotoCapture:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        test_id:
+          type: integer
+          format: int64
+          example: 1
+        user_id:
+          type: integer
+          format: int64
+          example: 123
+        invite_id:
+          type: integer
+          format: int64
+          example: 1
+        image:
+          type: string
+          example: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD..."
+        time:
+          type: string
+          format: date-time
+
+    PhotoCaptureCreate:
+      type: object
+      required:
+        - test_id
+        - invite_id
+        - image
+      properties:
+        image:
+          type: string
+          example: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD..."
+
+    # Reviewer
+    Reviewer:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        test_id:
+          type: integer
+          format: int64
+          example: 1
+        user_id:
+          type: integer
+          format: int64
+          example: 123
+        company_id:
+          type: integer
+          format: int64
+          example: 456
+
+    ReviewerCreate:
+      type: object
+      required:
+        - test_id
+        - user_id
+      properties:
+        company_id:
+          type: integer
+          format: int64
+          example: 456
+
+    # Pagination
+    PaginatedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        meta:
+          type: object
+          properties:
+            totalItems:
+              type: integer
+              example: 100
+            itemCount:
+              type: integer
+              example: 10
+            itemsPerPage:
+              type: integer
+              example: 10
+            totalPages:
+              type: integer
+              example: 10
+            currentPage:
+              type: integer
+              example: 1
+
+security:
+  - bearerAuth: []
+
+paths:
+  #
+  # Test Management Endpoints
+  #
+  /tests:
+    get:
+      summary: Get all tests
+      description: Retrieve a list of all tests with pagination
+      operationId: getAllTests
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search term for test title
+        - in: query
+          name: state
+          schema:
+            type: integer
+            enum: [0, 1]
+          description: Filter by state (0=inactive, 1=active)
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Test'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a new test
+      description: Create a new test with all its settings
+      operationId: createTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestCreate'
+      responses:
+        '201':
+          description: Test created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Test'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{id}:
+    get:
+      summary: Get test by ID
+      description: Retrieve a specific test by its ID
+      operationId: getTestById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Test'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update test
+      description: Update an existing test
+      operationId: updateTest
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestUpdate'
+      responses:
+        '200':
+          description: Test updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Test'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete test
+      description: Delete an existing test
+      operationId: deleteTest
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      responses:
+        '204':
+          description: Test deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{id}/clone:
+    post:
+      summary: Clone test
+      description: Create a copy of an existing test
+      operationId: cloneTest
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID to clone
+      responses:
+        '201':
+          description: Test cloned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Test'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Question Management Endpoints
+  #
+  /questions:
+    get:
+      summary: Get all questions
+      description: Retrieve a list of all questions with pagination
+      operationId: getAllQuestions
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search term for question title
+        - in: query
+          name: type
+          schema:
+            type: string
+          description: Filter by question type
+        - in: query
+          name: level
+          schema:
+            type: string
+          description: Filter by difficulty level
+        - in: query
+          name: category_id
+          schema:
+            type: integer
+          description: Filter by category ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Question'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a new question
+      description: Create a new question with answers and images
+      operationId: createQuestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionCreate'
+      responses:
+        '201':
+          description: Question created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /questions/{id}:
+    get:
+      summary: Get question by ID
+      description: Retrieve a specific question by its ID
+      operationId: getQuestionById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update question
+      description: Update an existing question
+      operationId: updateQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionUpdate'
+      responses:
+        '200':
+          description: Question updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete question
+      description: Delete an existing question
+      operationId: deleteQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      responses:
+        '204':
+          description: Question deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Answer Management Endpoints
+  #
+  /questions/{questionId}/answers:
+    get:
+      summary: Get answers for a question
+      description: Retrieve all answers for a specific question
+      operationId: getAnswersByQuestionId
+      parameters:
+        - in: path
+          name: questionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Answer'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a new answer
+      description: Create a new answer for a specific question
+      operationId: createAnswer
+      parameters:
+        - in: path
+          name: questionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerCreate'
+      responses:
+        '201':
+          description: Answer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Answer'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /answers/{id}:
+    get:
+      summary: Get answer by ID
+      description: Retrieve a specific answer by its ID
+      operationId: getAnswerById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Answer ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Answer'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update answer
+      description: Update an existing answer
+      operationId: updateAnswer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Answer ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerUpdate'
+      responses:
+        '200':
+          description: Answer updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Answer'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete answer
+      description: Delete an existing answer
+      operationId: deleteAnswer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Answer ID
+      responses:
+        '204':
+          description: Answer deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Section Management Endpoints
+  #
+  /tests/{testId}/sections:
+    get:
+      summary: Get sections for a test
+      description: Retrieve all sections for a specific test
+      operationId: getSectionsByTestId
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Section'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a new section
+      description: Create a new section for a specific test
+      operationId: createSection
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectionCreate'
+      responses:
+        '201':
+          description: Section created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sections/{id}:
+    get:
+      summary: Get section by ID
+      description: Retrieve a specific section by its ID
+      operationId: getSectionById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Section ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Section not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update section
+      description: Update an existing section
+      operationId: updateSection
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Section ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SectionUpdate'
+      responses:
+        '200':
+          description: Section updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Section not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete section
+      description: Delete an existing section
+      operationId: deleteSection
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Section ID
+      responses:
+        '204':
+          description: Section deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Section not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Test Composition Endpoints
+  #
+  /tests/{testId}/questions:
+    get:
+      summary: Get questions for a test
+      description: Retrieve all questions assigned to a specific test
+      operationId: getQuestionsByTestId
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestQuestion'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Assign question to test
+      description: Assign a question to a specific test
+      operationId: assignQuestionToTest
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestQuestionCreate'
+      responses:
+        '201':
+          description: Question assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestQuestion'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test or question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/questions/{questionId}:
+    put:
+      summary: Update test question mapping
+      description: Update the mapping between a test and a question
+      operationId: updateTestQuestionMapping
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+        - in: path
+          name: questionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestQuestionUpdate'
+      responses:
+        '200':
+          description: Mapping updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestQuestion'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test, question, or mapping not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Remove question from test
+      description: Remove a question from a specific test
+      operationId: removeQuestionFromTest
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+        - in: path
+          name: questionId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Question ID
+      responses:
+        '204':
+          description: Question removed successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test, question, or mapping not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Test Rules Endpoints
+  #
+  /tests/{testId}/rules:
+    get:
+      summary: Get rules for a test
+      description: Retrieve all rules for a specific test
+      operationId: getRulesByTestId
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rule'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a new rule
+      description: Create a new rule for a specific test
+      operationId: createRule
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleCreate'
+      responses:
+        '201':
+          description: Rule created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /rules/{id}:
+    get:
+      summary: Get rule by ID
+      description: Retrieve a specific rule by its ID
+      operationId: getRuleById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Rule ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update rule
+      description: Update an existing rule
+      operationId: updateRule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Rule ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleUpdate'
+      responses:
+        '200':
+          description: Rule updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete rule
+      description: Delete an existing rule
+      operationId: deleteRule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Rule ID
+      responses:
+        '204':
+          description: Rule deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Test Participation Endpoints
+  #
+  /tests/{testId}/attempts:
+    get:
+      summary: Get all attempts for a test
+      description: Retrieve all attempts for a specific test
+      operationId: getAttemptsByTestId
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TestAttempt'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Start a test attempt
+      description: Create a new test attempt for the current user
+      operationId: startTestAttempt
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestAttemptCreate'
+      responses:
+        '201':
+          description: Test attempt started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /attempts/{id}:
+    get:
+      summary: Get attempt by ID
+      description: Retrieve a specific test attempt by its ID
+      operationId: getAttemptById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update attempt
+      description: Update an existing test attempt
+      operationId: updateAttempt
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestAttemptUpdate'
+      responses:
+        '200':
+          description: Attempt updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /attempts/{attemptId}/submit:
+    post:
+      summary: Submit test attempt
+      description: Submit a test attempt and calculate the score
+      operationId: submitTestAttempt
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      responses:
+        '200':
+          description: Test attempt submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Answer Submission Endpoints
+  #
+  /attempts/{attemptId}/answers:
+    get:
+      summary: Get submitted answers for an attempt
+      description: Retrieve all answers submitted for a specific test attempt
+      operationId: getAnswersByAttemptId
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AnswerSubmission'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Submit an answer
+      description: Submit an answer for a specific test attempt
+      operationId: submitAnswer
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerSubmissionCreate'
+      responses:
+        '201':
+          description: Answer submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerSubmission'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt or question not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /answers/submissions/{id}:
+    get:
+      summary: Get submitted answer by ID
+      description: Retrieve a specific submitted answer by its ID
+      operationId: getSubmittedAnswerById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Submitted answer ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerSubmission'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Submitted answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update submitted answer
+      description: Update a previously submitted answer
+      operationId: updateSubmittedAnswer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Submitted answer ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerSubmissionUpdate'
+      responses:
+        '200':
+          description: Submitted answer updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerSubmission'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Submitted answer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Proctoring Endpoints
+  #
+  /attempts/{attemptId}/photos:
+    get:
+      summary: Get photo captures for an attempt
+      description: Retrieve all photo captures for a specific test attempt
+      operationId: getPhotosByAttemptId
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PhotoCapture'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Capture a photo
+      description: Capture and store a photo for a specific test attempt
+      operationId: capturePhoto
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoCaptureCreate'
+      responses:
+        '201':
+          description: Photo captured successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoCapture'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Reviewer Management Endpoints
+  #
+  /tests/{testId}/reviewers:
+    get:
+      summary: Get reviewers for a test
+      description: Retrieve all reviewers assigned to a specific test
+      operationId: getReviewersByTestId
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reviewer'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Assign a reviewer
+      description: Assign a reviewer to a specific test
+      operationId: assignReviewer
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewerCreate'
+      responses:
+        '201':
+          description: Reviewer assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reviewer'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /reviewers/{id}:
+    delete:
+      summary: Remove reviewer
+      description: Remove a reviewer from a test
+      operationId: removeReviewer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Reviewer ID
+      responses:
+        '204':
+          description: Reviewer removed successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Reviewer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Scoring & Evaluation Endpoints
+  #
+  /attempts/{attemptId}/score:
+    post:
+      summary: Score an attempt
+      description: Calculate the score for a test attempt
+      operationId: scoreAttempt
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      responses:
+        '200':
+          description: Attempt scored successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /attempts/{attemptId}/review:
+    post:
+      summary: Submit review
+      description: Submit a review for a test attempt
+      operationId: submitReview
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                review_status:
+                  type: integer
+                  enum: [0, 1]
+                  example: 1
+                  description: 0 = draft, 1 = complete
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        format: int64
+                        example: 1
+                      marks:
+                        type: integer
+                        example: 5
+                      comments:
+                        type: string
+                        example: "Good answer"
+      responses:
+        '200':
+          description: Review submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  #
+  # Result & Reporting Endpoints
+  #
+  /tests/{testId}/results:
+    get:
+      summary: Get results for a test
+      description: Retrieve all results for a specific test
+      operationId: getResultsByTestId
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Number of items per page
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TestAttempt'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/results/export:
+    get:
+      summary: Export results
+      description: Export results for a specific test in various formats
+      operationId: exportResults
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Test ID
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [csv, json]
+            default: csv
+          description: Export format
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestAttempt'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /attempts/{attemptId}/result:
+    get:
+      summary: Get result for an attempt
+      description: Retrieve the result for a specific test attempt
+      operationId: getResultByAttemptId
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Attempt ID
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestAttempt'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Attempt not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
