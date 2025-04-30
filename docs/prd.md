@@ -1,4 +1,4 @@
-# Assessment Management Module – Product Requirements Document (PRD)
+# Product Requirements Document (PRD)
 
 This document outlines the requirements for an Assessment Management Module to be integrated into a Learning Management System (LMS). It will be a robust, configurable, and scalable service for creating and managing quizzes/tests within an LMS. It includes quiz creation, question pools, answer handling (with media), scoring, progress tracking, and flexible test behavior settings.
 
