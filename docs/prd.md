@@ -62,9 +62,9 @@ This document outlines the requirements for an Assessment Management Module to b
 - View available quizzes/tests.
 - Start, pause, resume, and submit quiz attempts.
 - See time left, navigate between questions, and mark questions for review.
-- Review their answer sheet after submission (if allowed).
-- See correct answers and scoring (if permitted).
-- Print answer sheet (if allowed).
+- Review their answer sheet after submission (if allowed in quiz config).
+- See correct answers and scoring (if allowed in quiz config).
+- Print answer sheet (if allowed in quiz config).
 
 ### 2. Instructor / Facilitator
 **Role**: Content creator and test administrator.  
