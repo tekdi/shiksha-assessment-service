@@ -3,19 +3,6 @@
 
 This document outlines the complete technical specification for generating a fully functional **NestJS microservice** named `assessment-service`.
 
-## 📁 Input Resources
-
-- `db-design.md`
-- `service-prd.md`
-- `swagger.yaml`
-
----
-
-## 🎯 Objective
-
-Generate a production-ready **NestJS microservice** that is downloadable as a `.zip`, fully documented, containerized, and compliant with modern architectural standards.
-
----
 
 ## 📦 Project Structure
 
