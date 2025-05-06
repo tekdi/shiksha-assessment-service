@@ -162,7 +162,7 @@
 
 ---
 
-## 🧾 `testMedia`
+## 🧾 `media`
 
 | Column             | Type                     | Description                                |
 |--------------------|--------------------------|--------------------------------------------|
@@ -180,7 +180,7 @@
 
 ---
 
-## 🧾 `testMediaMap`
+## 🧾 `mediaMap`
 
 | Column      | Type           | Description                                                        |
 |-------------|----------------|--------------------------------------------------------------------|
@@ -188,20 +188,19 @@
 | mediaId     | UUID           | FK to `testMedia(mediaId)` ON DELETE CASCADE                      |
 | client      | VARCHAR(255)   | Client type (e.g., assessment.question, assessment.answer)         |
 | clientId    | UUID           | Target entity ID                                                   |
-| usageType   | VARCHAR(100)   | Usage (main, hint, explanation, response_upload, etc.)             |
 | isGallery   | BOOLEAN        | If this is part of a gallery                                       |
 
 ---
 
-## 🧾 `testRule`
+## 🧾 `testRules`
 
 | Column             | Type    | Description                     |
 |--------------------|---------|---------------------------------|
-| id                 | UUID    | Primary key                     |
+| ruleId             | UUID    | Primary key                     |
 | testId             | UUID    | Associated test                 |
 | sectionId          | UUID    | Related section                 |
 | name               | TEXT    | Rule name                       |
-| ruleOrder          | INTEGER | Priority/order of rule          |
+| ordering           | INTEGER | Priority/order of rule          |
 | questionsCount     | INTEGER | Number of questions to include  |
 | pullQuestionsCount | INTEGER | Pool question count             |
 | marks              | INTEGER | Total marks                     |
