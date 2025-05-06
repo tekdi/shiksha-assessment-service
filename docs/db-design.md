@@ -1,4 +1,4 @@
-# 📘 Assessment Microservice – PostgreSQL Compatible Schema (camelCase)
+# 📘 Assessment Microservice - Database Schema Documentation
 
 ---
 
