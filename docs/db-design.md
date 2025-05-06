@@ -11,6 +11,8 @@
 | type                 | TEXT                     | Quiz, assignment, etc.                     |
 | tenantId             | UUID                     | Tenant reference                           |
 | ordering             | INTEGER                  | Display order                              |
+| attempts             | INTEGER                  | no of attempts allowed                     |
+| attemptsGrading      | TEXT                     | if attempts > 1, logic to calclulate marks |
 | status               | TEXT                     | draft, published, unpublished, archived    |
 | title                | TEXT                     | Test title                                 |
 | alias                | TEXT                     | Optional URL-safe name                     |
@@ -25,7 +27,7 @@
 | image                | TEXT                     | Thumbnail                                  |
 | startDate            | TIMESTAMP WITH TIME ZONE | Start availability                         |
 | endDate              | TIMESTAMP WITH TIME ZONE | End availability                           |
-| answerSheet          | BOOLEAN                  | Show full answer sheet after               |
+| answerSheet          | BOOLEAN                  | Show full answer sheet after submission    |
 | showCorrectAnswer    | BOOLEAN                  | Show correct answers                       |
 | printAnswersheet     | BOOLEAN                  | Allow PDF print                            |
 | questionsShuffle     | BOOLEAN                  | Shuffle question order                     |
@@ -116,7 +118,6 @@
 | Column         | Type   | Description              |
 |----------------|--------|--------------------------|
 | id             | UUID   | Primary key              |
-| tenantId       | UUID   | Foreign key              |
 | testId         | UUID   | Associated test          |
 | questionId     | UUID   | Related question         |
 | questionOrder  | INTEGER| Order of question        |
@@ -127,38 +128,44 @@
 
 ## 🧾 `testTrack`
 
-| Column          | Type                     | Description                        |
-|------------------|--------------------------|------------------------------------|
-| id               | UUID                     | Primary key                        |
-| tenantId         | UUID                     | Tenant                             |
-| testId           | UUID                     | Test taken                         |
-| userId           | UUID                     | User who attempted                 |
-| attempt          | INTEGER                  | Attempt number                     |
-| timeStart        | TIMESTAMP WITH TIME ZONE | Start time                         |
-| timeEnd          | TIMESTAMP WITH TIME ZONE | End time                           |
-| score            | INTEGER                  | Final score                        |
-| status           | TEXT                     | Submitted, in-progress, etc.       |
-| totalContent     | INTEGER                  | Number of questions shown          |
-| currentPosition  | INTEGER                  | Current question index             |
-| timeSpent        | INTEGER                  | Total time spent (in seconds)      |
-| updatedBy        | UUID                     | Last update by user                |
-| updatedAt        | TIMESTAMP WITH TIME ZONE | Update timestamp                   |
+| Column            | Type                     | Description                                                     |
+| ----------------- | ------------------------ | --------------------------------------------------------------- |
+| id              | UUID                     | Primary key                                                     |
+| tenantId        | UUID                     | Tenant context                                                  |
+| testId          | UUID                     | Reference to test                                               |
+| userId          | UUID                     | Attempted by                                                    |
+| attempt         | INTEGER                  | Attempt number                                                  |
+| timeStart       | TIMESTAMP WITH TIME ZONE | When test started                                               |
+| timeEnd         | TIMESTAMP WITH TIME ZONE | When test ended                                                 |
+| status          | TEXT                     | `S=started`, `I=incomplete`, `C=completed-submitted`            |
+| reviewStatus    | TEXT                     | `P=pending`, `U=under-review`, `R=reviewed`, `N=not-applicable` |
+| score           | DECIMAL(5,2)             | Final score (can be null if review pending)                     |
+| maxScore        | DECIMAL(5,2)             | Max achievable score                                            |
+| resultStatus    | TEXT                     | `P=pass`, `F=fail`, `W=waiting-for-review`, `N=not-evaluated`   |
+| passPercentage  | DECIMAL(5,2)             | Pass criteria percent                                           |
+| totalQuestions  | INTEGER                  | Questions shown in test                                         |
+| currentPosition | INTEGER                  | Where the user left off (if resume allowed)                     |
+| timeSpent       | INTEGER                  | Time spent in seconds                                           |
+| updatedBy       | UUID                     | Last updated by                                                 |
+| updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
+
 
 ---
 
-## 🧾 `testAnswers`
+## 🧾 `testTrackAnswers`
 
-| Column      | Type   | Description               |
-|-------------|--------|---------------------------|
-| id          | UUID   | Primary key               |
-| tenantId    | UUID   | Tenant scope              |
-| questionId  | UUID   | Question ID               |
-| userId      | UUID   | Respondent                |
-| testId      | UUID   | Test ID                   |
-| attempt     | UUID   | Session or attempt ID     |
-| answer      | TEXT   | User's answer             |
-| anssOrder   | TEXT   | Order of selected answers |
-| marks       | INTEGER| Score awarded             |
+| Column         | Type      | Description               |
+|-------------   |--------   |---------------------------|
+| trackAnsaweId  | UUID      | FK to testTrack           |
+| testTrackId    | UUID      | FK to testTrack           |
+| questionId     | UUID      | FK to question            |
+| answer         | TEXT      | User's response           |
+| score          | DECIMAL   | Score given (if reviewed) |
+| reviewedBy     | UUID      | Reviewer                  |
+| reviewStatus   | TEXT      | `P=pending`, `R=reviewed` |
+| reviewedAt     | TIMESTAMP | When it was reviewed      |
+| anssOrder      | TEXT      | Order of selected answers |
+
 
 ---
 
