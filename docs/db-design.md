@@ -192,8 +192,8 @@
 | mediaMapId  | UUID           | Primary key                                                        |
 | mediaId     | UUID           | FK to `testMedia(mediaId)` ON DELETE CASCADE                       |
 | client      | VARCHAR(255)   | Client type (e.g., assessment.question, assessment.answer)         |
-| usageType   |                |"lhs" or "rhs", "main", "hint", "solution", "response"
 | clientId    | UUID           | Target entity ID                                                   |
+| usageType   |                |"lhs" or "rhs", "main", "hint", "solution", "response"              |
 | isGallery   | BOOLEAN        | If this is part of a gallery                                       |
 
 ---
