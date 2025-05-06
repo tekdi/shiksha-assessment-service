@@ -85,8 +85,6 @@
 | gradingType        | TEXT                     | quiz, exercise                                |
 | allowPartialScoring| BOOLEAN                  | Allow partial marking                         |
 | params             | JSONB                    | Extra config as JSON                          |
-| mediaType          | TEXT                     | Type of associated media                      |
-| mediaId            | UUID                     | Linked media ID                               |
 | checkedOut         | UUID                     | User who is editing                           |
 | checkedOutTime     | TIMESTAMP WITH TIME ZONE | When checked out                              |
 | createdBy          | UUID                     | User who created it                           |
@@ -128,8 +126,8 @@
 
 ## 🧾 `testTrack`
 
-| Column            | Type                     | Description                                                     |
-| ----------------- | ------------------------ | --------------------------------------------------------------- |
+| Column          | Type                     | Description                                                     |
+| ----------------| ------------------------ | --------------------------------------------------------------- |
 | id              | UUID                     | Primary key                                                     |
 | tenantId        | UUID                     | Tenant context                                                  |
 | testId          | UUID                     | Reference to test                                               |
@@ -192,8 +190,9 @@
 | Column      | Type           | Description                                                        |
 |-------------|----------------|--------------------------------------------------------------------|
 | mediaMapId  | UUID           | Primary key                                                        |
-| mediaId     | UUID           | FK to `testMedia(mediaId)` ON DELETE CASCADE                      |
+| mediaId     | UUID           | FK to `testMedia(mediaId)` ON DELETE CASCADE                       |
 | client      | VARCHAR(255)   | Client type (e.g., assessment.question, assessment.answer)         |
+| usageType   |                |"lhs" or "rhs", "main", "hint", "solution", "response"
 | clientId    | UUID           | Target entity ID                                                   |
 | isGallery   | BOOLEAN        | If this is part of a gallery                                       |
 
