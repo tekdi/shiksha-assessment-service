@@ -124,35 +124,53 @@
 
 ---
 
-## 🧾 `testTrack`
+## 🧾 `testAttempts`
 
 | Column          | Type                     | Description                                                     |
 | ----------------| ------------------------ | --------------------------------------------------------------- |
-| id              | UUID                     | Primary key                                                     |
+| attemptId       | UUID                     | Primary key                                                     |
 | tenantId        | UUID                     | Tenant context                                                  |
 | testId          | UUID                     | Reference to test                                               |
 | userId          | UUID                     | Attempted by                                                    |
 | attempt         | INTEGER                  | Attempt number                                                  |
 | timeStart       | TIMESTAMP WITH TIME ZONE | When test started                                               |
 | timeEnd         | TIMESTAMP WITH TIME ZONE | When test ended                                                 |
-| status          | TEXT                     | `S=started`, `I=incomplete`, `C=completed-submitted`            |
+| status          | TEXT                     | `I=in-progress`, `s=Submitted`                                  |
 | reviewStatus    | TEXT                     | `P=pending`, `U=under-review`, `R=reviewed`, `N=not-applicable` |
 | score           | DECIMAL(5,2)             | Final score (can be null if review pending)                     |
 | submissionType  | VARCHAR                  | 'self'=> self-submitted,'auto'=> auto-submitted on timeout      |
-| resultStatus    | TEXT                     | `P=pass`, `F=fail`, `W=waiting-for-review`, `N=not-evaluated`   |
+| result          | TEXT                     | `P=pass`, `F=fail`                                              |
+| revalResult     | VARCHAR                  |`P=pass`, `F=fail`                                               |
+| revalScore      | DECIMAL(5,2)             |                                                                 |
+| revalRemark     | TEXT                     |                                                                 |
 | currentPosition | INTEGER                  | Where the user left off (if resume allowed)                     |
 | timeSpent       | INTEGER                  | Time spent in seconds                                           |
 | updatedBy       | UUID                     | Last updated by                                                 |
 | updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
 
+
+## 🧾 `testAttemptsReval`
+
+| Column          | Type                     | Description                                                     |
+| ----------------| ------------------------ | --------------------------------------------------------------- |
+| attemptRevalId  | UUID                     | Primary key                                                     |
+| attemptId       | INTEGER                  | Attempt number                                                  |
+| oldScore        | DECIMAL(5,2)             | score                                                           |
+| newScore        | DECIMAL(5,2)             | score                                                           |
+| oldResult       | VARCHAR                  | `P=pass`, `F=fail`                                              |
+| newResult       | VARCHAR                  |`P=pass`, `F=fail`                                               |
+| remarks         | TEXT                     |                                                                 |
+| updatedBy       | UUID                     | Last updated by                                                 |
+| updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
+
 ---
 
-## 🧾 `testTrackAnswers`
+## 🧾 `testAnswers`
 
 | Column         | Type      | Description               |
 |-------------   |--------   |---------------------------|
-| trackAnsaweId  | UUID      | FK to testTrack           |
-| testTrackId    | UUID      | FK to testTrack           |
+| attemptAnsId   | UUID      | Primary key               |
+| attemptId      | UUID      | FK to testTrack           |
 | questionId     | UUID      | FK to question            |
 | answer         | TEXT      | User's response           |
 | score          | DECIMAL   | Score given (if reviewed) |
