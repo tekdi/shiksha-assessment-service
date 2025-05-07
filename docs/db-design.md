@@ -1,4 +1,4 @@
-## 📘 Test Management Tool (TMT) - Database Schema Documentation
+## 📘 Assessment - Database Schema Documentation
 
 ---
 
