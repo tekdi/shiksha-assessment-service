@@ -8,7 +8,7 @@
 |----------------------|--------------------------|--------------------------------------------|
 | id                   | UUID                     | Primary key                                |
 | parentId             | UUID                     | For grouping or inheritance                |
-| type                 | TEXT                     | Quiz, assignment, etc.                     |
+| type                 | TEXT                     | plain                     |
 | tenantId             | UUID                     | Tenant reference                           |
 | ordering             | INTEGER                  | Display order                              |
 | attempts             | INTEGER                  | no of attempts allowed                     |
@@ -32,7 +32,7 @@
 | printAnswersheet     | BOOLEAN                  | Allow PDF print                            |
 | questionsShuffle     | BOOLEAN                  | Shuffle question order                     |
 | answersShuffle       | BOOLEAN                  | Shuffle answer options                     |
-| gradingType          | TEXT                     | quiz, assignment                           |
+| gradingType          | TEXT                     | quiz, assignment, feedback                 |
 | isObjective          | BOOLEAN                  | if all questions can auto mark             |
 | showThankyouPage     | BOOLEAN                  | Show thank you page on submit              |
 | showAllQuestions     | BOOLEAN                  | Show all questions at once                 |
@@ -138,15 +138,12 @@
 | status          | TEXT                     | `S=started`, `I=incomplete`, `C=completed-submitted`            |
 | reviewStatus    | TEXT                     | `P=pending`, `U=under-review`, `R=reviewed`, `N=not-applicable` |
 | score           | DECIMAL(5,2)             | Final score (can be null if review pending)                     |
-| maxScore        | DECIMAL(5,2)             | Max achievable score                                            |
+| submissionType  | VARCHAR                  | 'self'=> self-submitted,'auto'=> auto-submitted on timeout      |
 | resultStatus    | TEXT                     | `P=pass`, `F=fail`, `W=waiting-for-review`, `N=not-evaluated`   |
-| passPercentage  | DECIMAL(5,2)             | Pass criteria percent                                           |
-| totalQuestions  | INTEGER                  | Questions shown in test                                         |
 | currentPosition | INTEGER                  | Where the user left off (if resume allowed)                     |
 | timeSpent       | INTEGER                  | Time spent in seconds                                           |
 | updatedBy       | UUID                     | Last updated by                                                 |
 | updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
-
 
 ---
 
