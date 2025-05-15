@@ -8,7 +8,7 @@
 |----------------------|--------------------------|--------------------------------------------|
 | id                   | UUID                     | Primary key                                |
 | parentId             | UUID                     | For grouping or inheritance                |
-| type                 | TEXT                     | plain                     |
+| type                 | TEXT                     | plain or rule-bases                        |
 | tenantId             | UUID                     | Tenant reference                           |
 | ordering             | INTEGER                  | Display order                              |
 | attempts             | INTEGER                  | no of attempts allowed                     |
@@ -44,25 +44,6 @@
 | createdAt            | TIMESTAMP WITH TIME ZONE | Created on                                 |
 | updatedBy            | UUID                     | Last modified by                           |
 | updatedAt            | TIMESTAMP WITH TIME ZONE | Last modified on                           |
-
----
-
-## 🧾 `testSections`
-
-| Column       | Type                     | Description                  |
-|--------------|--------------------------|------------------------------|
-| id           | UUID                     | Primary key                  |
-| title        | TEXT                     | Section title                |
-| description  | TEXT                     | Optional description         |
-| testId       | UUID                     | Linked test ID               |
-| ordering     | INTEGER                  | Display order                |
-| status       | TEXT                     | Active/inactive              |
-| minQuestions | INTEGER                  | Minimum questions to include |
-| maxQuestions | INTEGER                  | Maximum questions to include |
-| createdBy    | UUID                     | Author                       |
-| createdAt    | TIMESTAMP WITH TIME ZONE | Created on                   |
-| updatedBy    | UUID                     | Last modified by             |
-| updatedAt    | TIMESTAMP WITH TIME ZONE | Last modified on             |
 
 ---
 
@@ -111,6 +92,26 @@
 
 ---
 
+## 🧾 `testSections`
+
+| Column       | Type                     | Description                  |
+|--------------|--------------------------|------------------------------|
+| id           | UUID                     | Primary key                  |
+| title        | TEXT                     | Section title                |
+| description  | TEXT                     | Optional description         |
+| testId       | UUID                     | Linked test ID               |
+| ordering     | INTEGER                  | Display order                |
+| status       | TEXT                     | Active/inactive              |
+| minQuestions | INTEGER                  | Minimum questions to include |
+| maxQuestions | INTEGER                  | Maximum questions to include |
+| createdBy    | UUID                     | Author                       |
+| createdAt    | TIMESTAMP WITH TIME ZONE | Created on                   |
+| updatedBy    | UUID                     | Last modified by             |
+| updatedAt    | TIMESTAMP WITH TIME ZONE | Last modified on             |
+
+
+---
+
 ## 🧾 `testQuestions`
 
 | Column         | Type   | Description              |
@@ -130,19 +131,17 @@
 | ----------------| ------------------------ | --------------------------------------------------------------- |
 | attemptId       | UUID                     | Primary key                                                     |
 | tenantId        | UUID                     | Tenant context                                                  |
-| testId          | UUID                     | Reference to test                                               |
+| testId          | UUID                     | The original test ID user is attempting                                               |
+| resolvedTestId  | UUID                     | The actual sub-test ID user is served (optional)                |
 | userId          | UUID                     | Attempted by                                                    |
 | attempt         | INTEGER                  | Attempt number                                                  |
-| timeStart       | TIMESTAMP WITH TIME ZONE | When test started                                               |
-| timeEnd         | TIMESTAMP WITH TIME ZONE | When test ended                                                 |
+| startedAt       | TIMESTAMP WITH TIME ZONE | When test started                                               |
+| submittedAt     | TIMESTAMP WITH TIME ZONE | When test ended                                                 |
 | status          | TEXT                     | `I=in-progress`, `s=Submitted`                                  |
 | reviewStatus    | TEXT                     | `P=pending`, `U=under-review`, `R=reviewed`, `N=not-applicable` |
 | score           | DECIMAL(5,2)             | Final score (can be null if review pending)                     |
 | submissionType  | VARCHAR                  | 'self'=> self-submitted,'auto'=> auto-submitted on timeout      |
 | result          | TEXT                     | `P=pass`, `F=fail`                                              |
-| revalResult     | VARCHAR                  |`P=pass`, `F=fail`                                               |
-| revalScore      | DECIMAL(5,2)             |                                                                 |
-| revalRemark     | TEXT                     |                                                                 |
 | currentPosition | INTEGER                  | Where the user left off (if resume allowed)                     |
 | timeSpent       | INTEGER                  | Time spent in seconds                                           |
 | updatedBy       | UUID                     | Last updated by                                                 |
@@ -165,7 +164,7 @@
 
 ---
 
-## 🧾 `testAnswers`
+## 🧾 `testUserAnswers`
 
 | Column         | Type      | Description               |
 |-------------   |--------   |---------------------------|
@@ -181,6 +180,24 @@
 
 
 ---
+
+## 🧾 `testUserStatus`
+
+| Column             | Type                     | Description                                   |
+|--------------------|--------------------------|-----------------------------------------------|
+| stausId            | UUID                     | Primary key                                   |
+| userId             | UUID                     | FK to user                                    |
+| testId             | UUID                     | FK to test                                    |
+| allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
+| completedAttempts  | INTEGER                  | No. of completed attempts by user             |
+| lastAttemptId      | UUID                     | FK to last attempt made                       |
+| lastAttemptStatus  | TEXT                     | Status of last attempt (in-progress, submitted, passed, failed)|
+| attemptsGrading    | TEXT                     | Grading logic (first, last, avg, best)        |
+| score              | DECIMAL(5,2)             | Latest score (based on grading logic)         |
+| result             | TEXT                     | Result of last or computed attempt (P/F)      |
+| updatedAt          | TIMESTAMP WITH TIME ZONE | Last update                                   |
+
+
 
 ## 🧾 `media`
 
