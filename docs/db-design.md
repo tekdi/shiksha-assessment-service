@@ -53,7 +53,8 @@
 | Column             | Type                     | Description                                   |
 |--------------------|--------------------------|-----------------------------------------------|
 | id                 | UUID                     | Primary key                                   |
-| tenantId           | UUID                     | Foreign key to tenant                         |
+| tenantId             | UUID                   | Tenant reference                           |
+| organisationId       | UUID                   | org reference                              |
 | ordering           | INTEGER                  | Display order                                 |
 | title              | TEXT                     | Question title                                |
 | alias              | TEXT                     | Unique alias                                  |
@@ -81,6 +82,8 @@
 | Column         | Type           | Description                                                            |
 |----------------|----------------|------------------------------------------------------------------------|
 | id             | UUID           | Primary key                                                            |
+| tenantId       | UUID                     | Tenant reference                           |
+| organisationId | UUID                     | org reference                              |
 | questionId     | UUID           | Foreign key referencing `question(id)`                                |
 | text           | TEXT           | Option text or left side of match                                     |
 | matchWith      | TEXT           | Right side of match (only for match-type)                             |
@@ -98,6 +101,8 @@
 | Column       | Type                     | Description                  |
 |--------------|--------------------------|------------------------------|
 | id           | UUID                     | Primary key                  |
+| tenantId     | UUID                     | Tenant reference                           |
+| organisationId| UUID                     | org reference                              |
 | title        | TEXT                     | Section title                |
 | description  | TEXT                     | Optional description         |
 | testId       | UUID                     | Linked test ID               |
@@ -118,10 +123,13 @@
 | Column         | Type   | Description              |
 |----------------|--------|--------------------------|
 | id             | UUID   | Primary key              |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | testId         | UUID   | Associated test          |
 | questionId     | UUID   | Related question         |
 | questionOrder  | INTEGER| Order of question        |
 | sectionId      | UUID   | Related test section     |
+| ruleId      | UUID   | optional(for rule-based)     |
 | isCompulsory   | BOOLEAN| Mandatory question flag  |
 
 ---
@@ -131,7 +139,8 @@
 | Column          | Type                     | Description                                                     |
 | ----------------| ------------------------ | --------------------------------------------------------------- |
 | attemptId       | UUID                     | Primary key                                                     |
-| tenantId        | UUID                     | Tenant context                                                  |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | testId          | UUID                     | The original test ID user is attempting                                               |
 | resolvedTestId  | UUID                     | The actual sub-test ID user is served (optional)                |
 | userId          | UUID                     | Attempted by                                                    |
@@ -154,6 +163,8 @@
 | Column          | Type                     | Description                                                     |
 | ----------------| ------------------------ | --------------------------------------------------------------- |
 | attemptRevalId  | UUID                     | Primary key                                                     |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | attemptId       | INTEGER                  | Attempt number                                                  |
 | oldScore        | DECIMAL(5,2)             | score                                                           |
 | newScore        | DECIMAL(5,2)             | score                                                           |
@@ -170,6 +181,8 @@
 | Column         | Type      | Description               |
 |-------------   |--------   |---------------------------|
 | attemptAnsId   | UUID      | Primary key               |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | attemptId      | UUID      | FK to testTrack           |
 | questionId     | UUID      | FK to question            |
 | answer         | TEXT      | User's response           |
@@ -187,6 +200,8 @@
 | Column             | Type                     | Description                                   |
 |--------------------|--------------------------|-----------------------------------------------|
 | stausId            | UUID                     | Primary key                                   |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | userId             | UUID                     | FK to user                                    |
 | testId             | UUID                     | FK to test                                    |
 | allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
@@ -205,7 +220,8 @@
 | Column             | Type                     | Description                                |
 |--------------------|--------------------------|--------------------------------------------|
 | mediaId            | UUID                     | Primary key                                |
-| tenantId           | UUID                     | Required tenant identifier                 |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | type               | VARCHAR(255)             | Media type (text, image, video, etc.)      |
 | path               | VARCHAR(255)             | Storage path or public URL                 |
 | source             | VARCHAR(255)             | Origin (uploaded, generated, etc.)         |
@@ -224,6 +240,8 @@
 |-------------|----------------|--------------------------------------------------------------------|
 | mediaMapId  | UUID           | Primary key                                                        |
 | mediaId     | UUID           | FK to `testMedia(mediaId)` ON DELETE CASCADE                       |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | client      | VARCHAR(255)   | Client type (e.g., assessment.question, assessment.answer)         |
 | clientId    | UUID           | Target entity ID                                                   |
 | usageType   |                |"lhs" or "rhs", "main", "hint", "solution", "response"              |
@@ -237,6 +255,8 @@
 |--------------------|---------|---------------------------------|
 | ruleId             | UUID    | Primary key                     |
 | testId             | UUID    | Associated test                 |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | sectionId          | UUID    | Related section                 |
 | name               | TEXT    | Rule name                       |
 | ordering           | INTEGER | Priority/order of rule          |
