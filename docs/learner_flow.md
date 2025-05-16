@@ -55,7 +55,10 @@
 
 **📥 Output:**
 ```json
-{ "result": { "attemptId": "attempt_xyz123" } }
+{ "result": { "attemptId": "attempt_xyz123","testId": "test_123",
+    "resolvedTestId": "test_123",
+    "currentPosition": 5,
+    "timeSpent": 300 } }
 ```
 
 ---
@@ -111,23 +114,9 @@
 
 ---
 
-## 🧭 Learner Decision Flow
 
-```mermaid
-graph TD
-  A[Start Assessment] --> B[Call /tests/{testId}/users/{userId}/status]
-  B --> |canResume=true| C[Call /attempts/{attemptId}]
-  B --> |canReattempt=true| D[POST /attempts]
-  B --> |Else| E[Show "No attempts left"]
-  C --> F[GET /tests/{testId}/hierarchy]
-  D --> F
-  F --> G[Render Questions & Save Answers]
-  G --> H[POST /answers]
-  H --> I[Submit Test]
-  I --> J[View Result (optional)]
-```
+![Assessment](https://github.com/user-attachments/assets/cbded5ba-3352-4362-b5fa-6c3b2b0d54d1)
 
----
 
 ## 💡 Additional Notes
 
@@ -139,3 +128,4 @@ graph TD
 | Auto-submit               | Trigger `POST /submit` on timeout (client/server side)|
 | Attempt restriction       | Controlled by `testUserStatus` table                  |
 | Result visibility         | Based on test config (`showCorrectAnswers`, etc.)     |
+docs/db-design.md
