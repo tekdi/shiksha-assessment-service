@@ -1748,11 +1748,82 @@ paths:
       responses:
         '200':
           description: ''
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  ver:
+                    type: string
+                  ts:
+                    type: string
+                  params:
+                    type: object
+                    properties:
+                      resmsgid:
+                        type: string
+                      status:
+                        type: string
+                      err:
+                        type: string
+                      errmsg:
+                        type: string
+                  responseCode:
+                    type: integer
+                  result:
+                    type: object
+                    properties:
+                      attemptId:
+                        type: string
+                      testId:
+                        type: string
+                      resolvedTestId:
+                        type: string
+                      currentPosition:
+                        type: integer
+                      timeSpent:
+                        type: integer
+                x-examples:
+                  Example 1:
+                    id: api.attempt.start
+                    ver: '1.0'
+                    ts: '2024-03-21T10:00:00Z'
+                    params:
+                      resmsgid: uuid
+                      status: successful
+                      err: ''
+                      errmsg: ''
+                    responseCode: 200
+                    result:
+                      attemptId: attempt_abc123
+                      testId: test_123
+                      resolvedTestId: test_123
+                      currentPosition: 5
+                      timeSpent: 300
       tags:
         - Attempts
-      description: start attempt
+      description: |-
+        ```json
+        IF learner has testAttempts where:
+           testId = test_123
+           userId = user_456
+           status = 'in-progress'
+        THEN
+           return attemptId with status = 'resumed'
+        ELSE
+           CREATE new testAttempts:
+             - If test is plain:
+                 resolvedTestId = testId
+             - If test is rule_based:
+                 - generate sub-test (type = generated)
+                 - link sub-testId as resolvedTestId
+                 - populate testQuestions for sub-test
+           return new attemptId with status = 'new'
+        ```
       operationId: startAttempt
-      summary: start attempt
+      summary: Start or Resume an Attempt
   '/assessment/v1/users/{userId}/tests':
     parameters:
       - in: path
