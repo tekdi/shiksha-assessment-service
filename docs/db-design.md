@@ -7,9 +7,10 @@
 | Column               | Type                     | Description                                |
 |----------------------|--------------------------|--------------------------------------------|
 | id                   | UUID                     | Primary key                                |
-| parentId             | UUID                     | For grouping or inheritance                |
-| type                 | TEXT                     | plain or rule-bases                        |
+| parentId             | UUID                     | FK to original test (for generated sub-tests)|
+| type                 | VARCHAR(255)             | plain, rule_based, generated               |
 | tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
 | ordering             | INTEGER                  | Display order                              |
 | attempts             | INTEGER                  | no of attempts allowed                     |
 | attemptsGrading      | TEXT                     | if attempts > 1, logic to calclulate marks |
