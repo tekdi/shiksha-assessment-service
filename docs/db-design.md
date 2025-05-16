@@ -190,7 +190,7 @@
 | reviewedBy     | UUID      | Reviewer                  |
 | reviewStatus   | TEXT      | `P=pending`, `R=reviewed` |
 | reviewedAt     | TIMESTAMP | When it was reviewed      |
-| anssOrder      | TEXT      | Order of selected answers |
+| anssOrder      | TEXT      | Order of answers |
 
 
 ---
