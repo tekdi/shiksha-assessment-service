@@ -1,268 +1,256 @@
-# 📘 Assessment Microservice - Database Schema Documentation
+# 📘 Assessment Microservice - Database Design
+
+## 🏗️ **Database Schema Overview**
+
+The assessment service uses PostgreSQL with TypeORM for data persistence. All tables support multi-tenancy with `tenantId` and `organisationId` columns.
 
 ---
 
-## 🧾 `tests`
+## 📋 **Core Tables**
 
-| Column               | Type                     | Description                                |
-|----------------------|--------------------------|--------------------------------------------|
-| id                   | UUID                     | Primary key                                |
-| parentId             | UUID                     | FK to original test (for generated sub-tests)|
-| type                 | VARCHAR(255)             | plain, rule_based, generated               |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| ordering             | INTEGER                  | Display order                              |
-| attempts             | INTEGER                  | no of attempts allowed                     |
-| attemptsGrading      | TEXT                     | if attempts > 1, logic to calclulate marks |
-| status               | TEXT                     | draft, published, unpublished, archived    |
-| title                | TEXT                     | Test title                                 |
-| alias                | TEXT                     | Optional URL-safe name                     |
-| description          | TEXT                     | Optional description                       |
-| reviewers            | TEXT                     | User IDs or names                          |
-| showTime             | BOOLEAN                  | Show timer                                 |
-| timeDuration         | INTEGER                  | Duration in minutes                        |
-| showTimeFinished     | BOOLEAN                  | Show when time is up                       |
-| timeFinishedDuration | INTEGER                  | Time allowed after end                     |
-| totalMarks           | INTEGER                  | Test marks                                 |
-| passingMarks         | INTEGER                  | Required to pass                           |
-| image                | TEXT                     | Thumbnail                                  |
-| startDate            | TIMESTAMP WITH TIME ZONE | Start availability                         |
-| endDate              | TIMESTAMP WITH TIME ZONE | End availability                           |
-| answerSheet          | BOOLEAN                  | Show full answer sheet after submission    |
-| showCorrectAnswer    | BOOLEAN                  | Show correct answers                       |
-| printAnswersheet     | BOOLEAN                  | Allow PDF print                            |
-| questionsShuffle     | BOOLEAN                  | Shuffle question order                     |
-| answersShuffle       | BOOLEAN                  | Shuffle answer options                     |
-| gradingType          | TEXT                     | quiz, assignment, feedback                 |
-| isObjective          | BOOLEAN                  | if all questions can auto mark             |
-| showThankyouPage     | BOOLEAN                  | Show thank you page on submit              |
-| showAllQuestions     | BOOLEAN                  | Show all questions at once                 |
-| paginationLimit      | INTEGER                  | How many per page if paginated             |
-| showQuestionsOverview| BOOLEAN                  | Show index/navigation                      |
-| checkedOut           | UUID                     | Locked by user ID                          |
-| checkedOutTime       | TIMESTAMP WITH TIME ZONE | Lock time                                  |
-| createdBy            | UUID                     | Author                                     |
-| createdAt            | TIMESTAMP WITH TIME ZONE | Created on                                 |
-| updatedBy            | UUID                     | Last modified by                           |
-| updatedAt            | TIMESTAMP WITH TIME ZONE | Last modified on                           |
+### 🧾 `tests`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| parentId          | UUID                     | Parent test ID (for generated tests)             |
+| type              | VARCHAR(255)             | Test type: plain, rule_based, generated          |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| ordering          | INTEGER                  | Display order                                    |
+| attempts          | INTEGER                  | Maximum attempts allowed                         |
+| attemptsGrading   | TEXT                     | Grading strategy for multiple attempts           |
+| status            | TEXT                     | draft, published, unpublished, archived          |
+| title             | TEXT                     | Test title                                       |
+| alias             | TEXT                     | Test alias                                       |
+| description       | TEXT                     | Test description                                 |
+| reviewers         | TEXT                     | Assigned reviewers                               |
+| showTime          | BOOLEAN                  | Show time limit                                  |
+| timeDuration      | INTEGER                  | Time limit in minutes                            |
+| showTimeFinished  | BOOLEAN                  | Show time when finished                          |
+| timeFinishedDuration | INTEGER              | Time to show after completion                     |
+| totalMarks        | INTEGER                  | Total marks                                      |
+| passingMarks      | INTEGER                  | Passing marks threshold                          |
+| image             | TEXT                     | Test image URL                                   |
+| startDate         | TIMESTAMP WITH TIME ZONE | Test start date                                  |
+| endDate           | TIMESTAMP WITH TIME ZONE | Test end date                                    |
+| answerSheet       | BOOLEAN                  | Show answer sheet                                |
+| showCorrectAnswer | BOOLEAN                  | Show correct answers                              |
+| printAnswersheet  | BOOLEAN                  | Allow answer sheet printing                       |
+| questionsShuffle  | BOOLEAN                  | Shuffle questions                                |
+| answersShuffle    | BOOLEAN                  | Shuffle answer options                            |
+| gradingType       | TEXT                     | quiz, assignment, feedback                       |
+| isObjective       | BOOLEAN                  | Is objective test                                |
+| showThankyouPage  | BOOLEAN                  | Show thank you page                              |
+| showAllQuestions  | BOOLEAN                  | Show all questions at once                       |
+| paginationLimit   | INTEGER                  | Questions per page                               |
+| showQuestionsOverview | BOOLEAN              | Show questions overview                          |
+| checkedOut        | UUID                     | Checked out by user                              |
+| checkedOutTime    | TIMESTAMP WITH TIME ZONE | Checkout time                                    |
+| createdBy         | UUID                     | Author                                           |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
----
+### 🧾 `testSections`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| testId            | UUID                     | Linked test ID                                   |
+| name              | TEXT                     | Section name                                     |
+| description       | TEXT                     | Section description                              |
+| ordering          | INTEGER                  | Section order                                    |
+| isActive          | BOOLEAN                  | Is section active                                |
+| createdBy         | UUID                     | Author                                           |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
-## 🧾 `questions`
+### 🧾 `testQuestions`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| testId            | UUID                     | Linked test ID                                   |
+| questionId        | UUID                     | Linked question ID                               |
+| questionOrder     | INTEGER                  | Question order                                   |
+| sectionId         | UUID                     | Linked section ID (nullable)                     |
+| ruleId            | UUID                     | **NEW** - Linked rule ID for rule-based tests   |
+| isCompulsory      | BOOLEAN                  | Is question compulsory                           |
 
-| Column             | Type                     | Description                                   |
-|--------------------|--------------------------|-----------------------------------------------|
-| id                 | UUID                     | Primary key                                   |
-| tenantId             | UUID                   | Tenant reference                           |
-| organisationId       | UUID                   | org reference                              |
-| ordering           | INTEGER                  | Display order                                 |
-| title              | TEXT                     | Question title                                |
-| alias              | TEXT                     | Unique alias                                  |
-| description        | TEXT                     | Optional explanation                          |
-| categoryId         | UUID                     | Category reference                            |
-| type               | TEXT                     | Question type                                 |
-| level              | TEXT                     | Difficulty level                              |
-| marks              | INTEGER                  | Marks allocated                               |
-| status             | TEXT                     | Draft, published, etc.                        |
-| idealTime          | INTEGER                  | Time expected to solve (sec)                  |
-| gradingType        | TEXT                     | quiz, exercise                                |
-| allowPartialScoring| BOOLEAN                  | Allow partial marking                         |
-| params             | JSONB                    | Extra config as JSON                          |
-| checkedOut         | UUID                     | User who is editing                           |
-| checkedOutTime     | TIMESTAMP WITH TIME ZONE | When checked out                              |
-| createdBy          | UUID                     | User who created it                           |
-| createdAt          | TIMESTAMP WITH TIME ZONE | Creation timestamp                            |
-| updatedBy          | UUID                     | Last user who updated                         |
-| updatedAt          | TIMESTAMP WITH TIME ZONE | Last update time                              |
+### 🧾 `testRules`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| name              | TEXT                     | Rule name                                        |
+| description       | TEXT                     | Optional description                             |
+| ruleType          | TEXT                     | Rule type (category_based, difficulty_based, etc.)|
+| testId            | UUID                     | Linked test ID (nullable)                        |
+| sectionId         | UUID                     | Linked section ID (nullable)                     |
+| numberOfQuestions | INTEGER                  | Number of questions to select                    |
+| minMarks          | INTEGER                  | Minimum marks (optional)                         |
+| maxMarks          | INTEGER                  | Maximum marks (optional)                         |
+| selectionStrategy | TEXT                     | random, sequential, weighted                     |
+| criteria          | JSONB                    | Rule criteria (categories, levels, types, etc.)  |
+| isActive          | BOOLEAN                  | Is rule active                                   |
+| priority          | INTEGER                  | Rule priority                                    |
+| createdBy         | UUID                     | Author                                           |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
----
+### 🧾 `testAttempts`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| attemptId         | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| testId            | UUID                     | Original test ID                                 |
+| resolvedTestId    | UUID                     | **NEW** - Generated test ID for rule-based tests |
+| userId            | UUID                     | User taking the test                             |
+| attempt           | INTEGER                  | Attempt number                                   |
+| startedAt         | TIMESTAMP WITH TIME ZONE | When attempt started                             |
+| submittedAt       | TIMESTAMP WITH TIME ZONE | When attempt submitted                           |
+| status            | TEXT                     | I=in_progress, S=submitted                       |
+| reviewStatus      | TEXT                     | P=pending, U=under_review, R=reviewed, N=not_applicable |
+| score             | DECIMAL(5,2)             | Final score                                      |
+| submissionType    | VARCHAR                  | self, auto                                       |
+| result            | TEXT                     | P=pass, F=fail                                   |
+| currentPosition   | INTEGER                  | Current question position                        |
+| timeSpent         | INTEGER                  | Time spent in seconds                            |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
-## 🧾 `questionOptions`
+### 🧾 `testUserAnswers`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| attemptAnsId      | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| attemptId         | UUID                     | Linked attempt ID                                |
+| questionId        | UUID                     | Linked question ID                               |
+| answer            | TEXT                     | JSON string containing answer structure          |
+| score             | DECIMAL(5,2)             | Score given (if reviewed)                        |
+| reviewedBy        | UUID                     | Reviewer                                         |
+| reviewStatus      | TEXT                     | P=pending, R=reviewed                            |
+| reviewedAt        | TIMESTAMP WITH TIME ZONE | When it was reviewed                             |
+| remarks           | TEXT                     | Reviewer comments                                |
+| anssOrder         | TEXT                     | Order of answers                                 |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
-| Column         | Type           | Description                                                            |
-|----------------|----------------|------------------------------------------------------------------------|
-| id             | UUID           | Primary key                                                            |
-| tenantId       | UUID                     | Tenant reference                           |
-| organisationId | UUID                     | org reference                              |
-| questionId     | UUID           | Foreign key referencing `question(id)`                                |
-| text           | TEXT           | Option text or left side of match                                     |
-| matchWith      | TEXT           | Right side of match (only for match-type)                             |
-| position       | INTEGER        | Used for ordering options                                             |
-| isCorrect      | BOOLEAN        | Indicates if the option is correct                                    |
-| marks          | DECIMAL(5,2)   | Marks for the option                                                  |
-| blankIndex     | INTEGER        | Index of the blank (for fill-in-the-blanks only)                      |
-| caseSensitive  | BOOLEAN        | Case sensitivity for fill-in-the-blank answers                        |
-| createdAt      | TIMESTAMP      | Timestamp, default to CURRENT_TIMESTAMP                               |
+### 🧾 `questions`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| ordering          | INTEGER                  | Display order                                    |
+| title             | TEXT                     | Question title                                   |
+| alias             | TEXT                     | Question alias                                   |
+| description       | TEXT                     | Question description                             |
+| categoryId        | UUID                     | Category ID                                      |
+| type              | TEXT                     | mcq, multiple_answer, true_false, fill_blank, match, subjective, essay |
+| level             | TEXT                     | easy, medium, hard                               |
+| marks             | INTEGER                  | Marks for this question                          |
+| status            | TEXT                     | draft, published, archived                       |
+| idealTime         | INTEGER                  | Ideal time in seconds                            |
+| gradingType       | TEXT                     | quiz, exercise                                   |
+| allowPartialScoring | BOOLEAN                | Allow partial scoring                            |
+| params            | JSONB                    | **NEW** - Question parameters (maxLength, rubric, etc.) |
+| checkedOut        | UUID                     | Checked out by user                              |
+| checkedOutTime    | TIMESTAMP WITH TIME ZONE | Checkout time                                    |
+| createdBy         | UUID                     | Author                                           |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
----
-
-## 🧾 `testSections`
-
-| Column       | Type                     | Description                  |
-|--------------|--------------------------|------------------------------|
-| id           | UUID                     | Primary key                  |
-| tenantId     | UUID                     | Tenant reference                           |
-| organisationId| UUID                     | org reference                              |
-| title        | TEXT                     | Section title                |
-| description  | TEXT                     | Optional description         |
-| testId       | UUID                     | Linked test ID               |
-| ordering     | INTEGER                  | Display order                |
-| status       | TEXT                     | Active/inactive              |
-| minQuestions | INTEGER                  | Minimum questions to include |
-| maxQuestions | INTEGER                  | Maximum questions to include |
-| createdBy    | UUID                     | Author                       |
-| createdAt    | TIMESTAMP WITH TIME ZONE | Created on                   |
-| updatedBy    | UUID                     | Last modified by             |
-| updatedAt    | TIMESTAMP WITH TIME ZONE | Last modified on             |
-
-
----
-
-## 🧾 `testQuestions`
-
-| Column         | Type   | Description              |
-|----------------|--------|--------------------------|
-| id             | UUID   | Primary key              |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| testId         | UUID   | Associated test          |
-| questionId     | UUID   | Related question         |
-| questionOrder  | INTEGER| Order of question        |
-| sectionId      | UUID   | Related test section     |
-| ruleId      | UUID   | optional(for rule-based)     |
-| isCompulsory   | BOOLEAN| Mandatory question flag  |
-
----
-
-## 🧾 `testAttempts`
-
-| Column          | Type                     | Description                                                     |
-| ----------------| ------------------------ | --------------------------------------------------------------- |
-| attemptId       | UUID                     | Primary key                                                     |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| testId          | UUID                     | The original test ID user is attempting                                               |
-| resolvedTestId  | UUID                     | The actual sub-test ID user is served (optional)                |
-| userId          | UUID                     | Attempted by                                                    |
-| attempt         | INTEGER                  | Attempt number                                                  |
-| startedAt       | TIMESTAMP WITH TIME ZONE | When test started                                               |
-| submittedAt     | TIMESTAMP WITH TIME ZONE | When test ended                                                 |
-| status          | TEXT                     | `I=in-progress`, `s=Submitted`                                  |
-| reviewStatus    | TEXT                     | `P=pending`, `U=under-review`, `R=reviewed`, `N=not-applicable` |
-| score           | DECIMAL(5,2)             | Final score (can be null if review pending)                     |
-| submissionType  | VARCHAR                  | 'self'=> self-submitted,'auto'=> auto-submitted on timeout      |
-| result          | TEXT                     | `P=pass`, `F=fail`                                              |
-| currentPosition | INTEGER                  | Where the user left off (if resume allowed)                     |
-| timeSpent       | INTEGER                  | Time spent in seconds                                           |
-| updatedBy       | UUID                     | Last updated by                                                 |
-| updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
-
-
-## 🧾 `testAttemptsReval`
-
-| Column          | Type                     | Description                                                     |
-| ----------------| ------------------------ | --------------------------------------------------------------- |
-| attemptRevalId  | UUID                     | Primary key                                                     |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| attemptId       | INTEGER                  | Attempt number                                                  |
-| oldScore        | DECIMAL(5,2)             | score                                                           |
-| newScore        | DECIMAL(5,2)             | score                                                           |
-| oldResult       | VARCHAR                  | `P=pass`, `F=fail`                                              |
-| newResult       | VARCHAR                  |`P=pass`, `F=fail`                                               |
-| remarks         | TEXT                     |                                                                 |
-| updatedBy       | UUID                     | Last updated by                                                 |
-| updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
-
----
-
-## 🧾 `testUserAnswers`
-
-| Column         | Type      | Description               |
-|-------------   |--------   |---------------------------|
-| attemptAnsId   | UUID      | Primary key               |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| attemptId      | UUID      | FK to testTrack           |
-| questionId     | UUID      | FK to question            |
-| answer         | TEXT      | User's response           |
-| score          | DECIMAL   | Score given (if reviewed) |
-| reviewedBy     | UUID      | Reviewer                  |
-| reviewStatus   | TEXT      | `P=pending`, `R=reviewed` |
-| reviewedAt     | TIMESTAMP | When it was reviewed      |
-| anssOrder      | TEXT      | Order of answers |
-
+### 🧾 `questionOptions`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| questionId        | UUID                     | Linked question ID                               |
+| text              | TEXT                     | Option text                                      |
+| matchWith         | TEXT                     | Match text (for matching questions)              |
+| position          | INTEGER                  | Option position                                  |
+| isCorrect         | BOOLEAN                  | Is correct answer                                |
+| marks             | DECIMAL(5,2)             | Marks for this option                            |
+| blankIndex        | INTEGER                  | Blank index (for fill-in-blank)                  |
+| caseSensitive     | BOOLEAN                  | Case sensitive matching                          |
+| createdAt         | TIMESTAMP                | Created on                                       |
 
 ---
 
-## 🧾 `testUserStatus`
+## 🔄 **Rule-Based Test Workflow**
 
-| Column             | Type                     | Description                                   |
-|--------------------|--------------------------|-----------------------------------------------|
-| stausId            | UUID                     | Primary key                                   |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| userId             | UUID                     | FK to user                                    |
-| testId             | UUID                     | FK to test                                    |
-| allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
-| completedAttempts  | INTEGER                  | No. of completed attempts by user             |
-| lastAttemptId      | UUID                     | FK to last attempt made                       |
-| lastAttemptStatus  | TEXT                     | Status of last attempt (in-progress, submitted, passed, failed)|
-| attemptsGrading    | TEXT                     | Grading logic (first, last, avg, best)        |
-| score              | DECIMAL(5,2)             | Latest score (based on grading logic)         |
-| result             | TEXT                     | Result of last or computed attempt (P/F)      |
-| updatedAt          | TIMESTAMP WITH TIME ZONE | Last update                                   |
+### **Test Creation:**
+1. Create test with type 'rule_based'
+2. Create rules with criteria and selection strategies
+3. Add questions to `testQuestions` table with appropriate `ruleId`
 
+### **User Attempt:**
+1. User starts attempt on rule-based test
+2. System creates new test with type 'generated'
+3. System selects questions from `testQuestions` based on rules
+4. Selected questions are added to generated test
+5. Attempt is linked to generated test via `resolvedTestId`
 
-
-## 🧾 `media`
-
-| Column             | Type                     | Description                                |
-|--------------------|--------------------------|--------------------------------------------|
-| mediaId            | UUID                     | Primary key                                |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| type               | VARCHAR(255)             | Media type (text, image, video, etc.)      |
-| path               | VARCHAR(255)             | Storage path or public URL                 |
-| source             | VARCHAR(255)             | Origin (uploaded, generated, etc.)         |
-| originalFilename   | VARCHAR(255)             | Original uploaded file name                |
-| size               | INTEGER                  | File size in bytes                         |
-| storage            | VARCHAR(255)             | Storage backend (local, s3, gcs, etc.)     |
-| params             | JSONB                    | Additional metadata                        |
-| createdBy          | UUID                     | Creator ID                                 |
-| createdAt          | TIMESTAMP WITH TIME ZONE | Created timestamp                          |
+### **Question Selection Strategies:**
+- **Random**: Random selection from available questions
+- **Sequential**: First N questions in order
+- **Weighted**: Selection based on question weights/difficulty
 
 ---
 
-## 🧾 `mediaMap`
+## 🎯 **Question Types & Answer Formats**
 
-| Column      | Type           | Description                                                        |
-|-------------|----------------|--------------------------------------------------------------------|
-| mediaMapId  | UUID           | Primary key                                                        |
-| mediaId     | UUID           | FK to `testMedia(mediaId)` ON DELETE CASCADE                       |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| client      | VARCHAR(255)   | Client type (e.g., assessment.question, assessment.answer)         |
-| clientId    | UUID           | Target entity ID                                                   |
-| usageType   |                |"lhs" or "rhs", "main", "hint", "solution", "response"              |
-| isGallery   | BOOLEAN        | If this is part of a gallery                                       |
+### **Supported Question Types:**
+- **MCQ**: Single choice with auto-scoring
+- **Multiple Answer**: Multiple choice with partial scoring
+- **True/False**: Auto-scored
+- **Fill-in-Blank**: Auto-scored with case sensitivity
+- **Matching**: Auto-scored
+- **Subjective**: Manual review with rubric-based scoring
+- **Essay**: Manual review with comprehensive rubric
+
+### **Answer Format (JSON):**
+```json
+{
+  "selectedOptionIds": ["opt-1"],           // MCQ/True-False
+  "selectedOptionIds": ["opt-1", "opt-3"],  // Multiple Answer
+  "text": "Answer text...",                 // Subjective/Essay
+  "blanks": ["answer1", "answer2"],         // Fill-in-Blank
+  "matches": ["A-1", "B-3"]                 // Matching
+}
+```
 
 ---
 
-## 🧾 `testRules`
+## 🔧 **Multi-tenancy & Security**
 
-| Column             | Type    | Description                     |
-|--------------------|---------|---------------------------------|
-| ruleId             | UUID    | Primary key                     |
-| testId             | UUID    | Associated test                 |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| sectionId          | UUID    | Related section                 |
-| name               | TEXT    | Rule name                       |
-| ordering           | INTEGER | Priority/order of rule          |
-| questionsCount     | INTEGER | Number of questions to include  |
-| pullQuestionsCount | INTEGER | Pool question count             |
-| marks              | INTEGER | Total marks                     |
-| category           | TEXT    | Filter category                 |
-| difficultyLevel    | TEXT    | Filter difficulty level         |
-| questionType       | TEXT    | Filter question type            |
+All tables include:
+- `tenantId`: Tenant isolation
+- `organisationId`: Organization isolation
+- `createdBy`/`updatedBy`: Audit trail
+- `createdAt`/`updatedAt`: Timestamp tracking
+
+---
+
+## 📊 **Key Relationships**
+
+```
+tests (1) ←→ (N) testSections
+tests (1) ←→ (N) testQuestions
+testSections (1) ←→ (N) testQuestions
+testRules (1) ←→ (N) testQuestions (via ruleId)
+testAttempts (1) ←→ (1) tests (generated) (via resolvedTestId)
+testUserAnswers (N) ←→ (1) testAttempts
+questions (1) ←→ (N) questionOptions
+```

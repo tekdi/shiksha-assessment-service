@@ -1,0 +1,524 @@
+openapi: 3.0.0
+info:
+  title: Assessment Service (Extended)
+  version: 1.1.0
+  description: |
+    API for managing assessments, questions, test-taking workflows, and dynamic rule-based test generation.
+    Supports subjective/essay questions with manual review workflow.
+
+paths:
+  /rules:
+    post:
+      summary: Create a new test rule
+      tags: [Rules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRuleDto'
+      responses:
+        '201':
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ruleId:
+                    type: string
+    get:
+      summary: List all rules
+      tags: [Rules]
+      parameters:
+        - in: query
+          name: testId
+          schema:
+            type: string
+        - in: query
+          name: sectionId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestRule'
+  /rules/{id}:
+    get:
+      summary: Get a rule by ID
+      tags: [Rules]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rule found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestRule'
+    patch:
+      summary: Update a rule
+      tags: [Rules]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRuleDto'
+      responses:
+        '200':
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ruleId:
+                    type: string
+    delete:
+      summary: Delete a rule
+      tags: [Rules]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rule deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+  /attempts/start/{testId}:
+    post:
+      summary: Start a new test attempt (dynamic question assignment)
+      tags: [Attempts]
+      parameters:
+        - in: path
+          name: testId
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Attempt started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attemptId:
+                    type: string
+  /attempts/{attemptId}/questions:
+    get:
+      summary: Get questions for an attempt
+      tags: [Attempts]
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of questions for the attempt
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Question'
+  /attempts/{attemptId}/answers:
+    post:
+      summary: Submit an answer for a question
+      tags: [Attempts]
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitAnswerDto'
+      responses:
+        '200':
+          description: Answer submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+  /attempts/{attemptId}/submit:
+    post:
+      summary: Submit a test attempt
+      tags: [Attempts]
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Attempt submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attemptId:
+                    type: string
+                  score:
+                    type: number
+                    nullable: true
+                  reviewStatus:
+                    type: string
+                    enum: [P, U, R, N]
+                  result:
+                    type: string
+                    enum: [P, F]
+                    nullable: true
+  /attempts/{attemptId}/review:
+    post:
+      summary: Review a test attempt (for subjective questions)
+      tags: [Attempts]
+      parameters:
+        - in: path
+          name: attemptId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewAttemptDto'
+      responses:
+        '200':
+          description: Attempt reviewed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attemptId:
+                    type: string
+                  score:
+                    type: number
+                  result:
+                    type: string
+                    enum: [P, F]
+  /attempts/reviews/pending:
+    get:
+      summary: Get pending reviews for subjective questions
+      tags: [Attempts]
+      responses:
+        '200':
+          description: Pending reviews retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PendingReview'
+
+components:
+  schemas:
+    CreateRuleDto:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        ruleType:
+          type: string
+          enum: [category_based, difficulty_based, type_based, mixed]
+        testId:
+          type: string
+        sectionId:
+          type: string
+        numberOfQuestions:
+          type: integer
+        minMarks:
+          type: integer
+        maxMarks:
+          type: integer
+        selectionStrategy:
+          type: string
+          enum: [random, sequential, weighted]
+        criteria:
+          type: object
+          properties:
+            categories:
+              type: array
+              items:
+                type: string
+            difficultyLevels:
+              type: array
+              items:
+                type: string
+                enum: [easy, medium, hard]
+            questionTypes:
+              type: array
+              items:
+                type: string
+                enum: [mcq, multiple_answer, true_false, fill_blank, match, subjective, essay]
+        isActive:
+          type: boolean
+        priority:
+          type: integer
+    UpdateRuleDto:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        ruleType:
+          type: string
+          enum: [category_based, difficulty_based, type_based, mixed]
+        numberOfQuestions:
+          type: integer
+        minMarks:
+          type: integer
+        maxMarks:
+          type: integer
+        selectionStrategy:
+          type: string
+          enum: [random, sequential, weighted]
+        criteria:
+          type: object
+          properties:
+            categories:
+              type: array
+              items:
+                type: string
+            difficultyLevels:
+              type: array
+              items:
+                type: string
+                enum: [easy, medium, hard]
+            questionTypes:
+              type: array
+              items:
+                type: string
+                enum: [mcq, multiple_answer, true_false, fill_blank, match, subjective, essay]
+        isActive:
+          type: boolean
+        priority:
+          type: integer
+    TestRule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        ruleType:
+          type: string
+        testId:
+          type: string
+        sectionId:
+          type: string
+        numberOfQuestions:
+          type: integer
+        minMarks:
+          type: integer
+        maxMarks:
+          type: integer
+        selectionStrategy:
+          type: string
+        criteria:
+          type: object
+        isActive:
+          type: boolean
+        priority:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Question:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [mcq, multiple_answer, true_false, fill_blank, match, subjective, essay]
+        level:
+          type: string
+          enum: [easy, medium, hard]
+        marks:
+          type: integer
+        gradingType:
+          type: string
+          enum: [quiz, exercise]
+        params:
+          type: object
+          properties:
+            maxLength:
+              type: integer
+            minLength:
+              type: integer
+            allowAttachments:
+              type: boolean
+            wordLimit:
+              type: integer
+            caseSensitive:
+              type: boolean
+            allowPartialScoring:
+              type: boolean
+            rubric:
+              type: object
+              properties:
+                criteria:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      maxScore:
+                        type: number
+                      description:
+                        type: string
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              text:
+                type: string
+              isCorrect:
+                type: boolean
+              position:
+                type: integer
+    SubmitAnswerDto:
+      type: object
+      required:
+        - questionId
+        - answer
+      properties:
+        questionId:
+          type: string
+          format: uuid
+          description: Question ID
+        answer:
+          type: object
+          properties:
+            selectedOptionIds:
+              type: array
+              items:
+                type: string
+              description: Selected option IDs for MCQ/multiple choice
+            text:
+              type: string
+              description: Text answer for subjective/essay questions
+            matches:
+              type: array
+              items:
+                type: string
+              description: Match answers for matching questions
+            blanks:
+              type: array
+              items:
+                type: string
+              description: Blank answers for fill-in-the-blank
+        timeSpent:
+          type: integer
+          description: Time spent on this question in seconds
+    ReviewAttemptDto:
+      type: object
+      required:
+        - answers
+      properties:
+        answers:
+          type: array
+          items:
+            type: object
+            required:
+              - questionId
+              - score
+            properties:
+              questionId:
+                type: string
+                format: uuid
+                description: Question ID
+              score:
+                type: number
+                format: float
+                description: Score given for this answer
+              remarks:
+                type: string
+                description: Reviewer comments
+        overallRemarks:
+          type: string
+          description: Overall remarks for the attempt
+    PendingReview:
+      type: object
+      properties:
+        attemptId:
+          type: string
+          format: uuid
+        testId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        submittedAt:
+          type: string
+          format: date-time
+        answers:
+          type: array
+          items:
+            type: object
+            properties:
+              questionId:
+                type: string
+                format: uuid
+              title:
+                type: string
+              type:
+                type: string
+              answer:
+                type: string
+
+# Reference unchanged endpoints in original swagger.yaml 
