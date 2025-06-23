@@ -38,7 +38,7 @@ export class SectionsService {
   async findOne(id: string, authContext: AuthContext): Promise<TestSection> {
     const section = await this.sectionRepository.findOne({
       where: {
-        id,
+        sectionId: id,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },

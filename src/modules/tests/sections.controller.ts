@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Req,
+  UseInterceptors
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { SectionsService } from './sections.service';
@@ -14,13 +15,14 @@ import { CreateSectionDto } from './dto/create-section.dto';
 import { UpdateSectionDto } from './dto/update-section.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Sections')
 @ApiBearerAuth()
 @Controller('tests/:testId/sections')
+@UseInterceptors(AuthContextInterceptor)
 export class SectionsController {
   constructor(private readonly sectionsService: SectionsService) {}
-
   @Post()
   @ApiOperation({ summary: 'Create a new section in a test' })
   @ApiResponse({ status: 201, description: 'Section created', type: ApiSuccessResponseDto })
@@ -31,7 +33,7 @@ export class SectionsController {
   ) {
     const authContext: AuthContext = req.user;
     const section = await this.sectionsService.create({ ...createSectionDto, testId }, authContext);
-    return { sectionId: section.id };
+    return { sectionId: section.sectionId };
   }
 
   @Get()
@@ -61,7 +63,7 @@ export class SectionsController {
   ) {
     const authContext: AuthContext = req.user;
     const section = await this.sectionsService.update(id, updateSectionDto, authContext);
-    return { sectionId: section.id };
+    return { sectionId: section.sectionId };
   }
 
   @Delete(':id')
