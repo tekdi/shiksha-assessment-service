@@ -5,6 +5,7 @@ import { TestSection } from './entities/test-section.entity';
 import { CreateSectionDto } from './dto/create-section.dto';
 import { UpdateSectionDto } from './dto/update-section.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { TestStatus } from './entities/test.entity';
 
 @Injectable()
 export class SectionsService {
@@ -23,7 +24,18 @@ export class SectionsService {
     return this.sectionRepository.save(section);
   }
 
-  async findAll(testId: string, authContext: AuthContext): Promise<TestSection[]> {
+  async findAll(authContext: AuthContext): Promise<TestSection[]> {
+    return this.sectionRepository.find({
+      where: {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+      relations: ['questions'],
+    });
+  }
+
+  async findByTestId(testId: string, authContext: AuthContext): Promise<TestSection[]> {
     return this.sectionRepository.find({
       where: {
         testId,
@@ -56,8 +68,12 @@ export class SectionsService {
     return this.sectionRepository.save(section);
   }
 
-  async remove(id: string, authContext: AuthContext): Promise<void> {
+  async remove(id: string, authContext: AuthContext, isHardDelete: boolean = false): Promise<void> {
     const section = await this.findOne(id, authContext);
-    await this.sectionRepository.remove(section);
+    if (isHardDelete) {
+      await this.sectionRepository.remove(section);
+    } else {
+      await this.sectionRepository.update(id, { status: TestStatus.ARCHIVED });
+    }
   }
 } 
