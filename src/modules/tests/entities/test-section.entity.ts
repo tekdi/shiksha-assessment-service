@@ -77,4 +77,9 @@ export class TestSection {
 
   @OneToMany(() => TestQuestion, question => question.section)
   questions: TestQuestion[];
+
+  // Alias for compatibility with existing code
+  get id(): string {
+    return this.sectionId;
+  }
 } 

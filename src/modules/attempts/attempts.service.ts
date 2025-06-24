@@ -115,19 +115,17 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { questionOrder: 'ASC' },
+      order: { ordering: 'ASC' },
     });
 
     const questionIds = testQuestions.map(tq => tq.questionId);
     
     return this.questionRepository.find({
       where: {
-        id: { $in: questionIds } as any,
+        questionId: { $in: questionIds } as any,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      relations: ['options'],
-      order: { ordering: 'ASC' },
     });
   }
 
@@ -153,7 +151,7 @@ export class AttemptsService {
     // Get question to validate answer format
     const question = await this.questionRepository.findOne({
       where: {
-        id: submitAnswerDto.questionId,
+        questionId: submitAnswerDto.questionId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -395,12 +393,12 @@ export class AttemptsService {
       // Get all questions from testQuestions that match this rule
       const availableQuestions = await this.testQuestionRepository.find({
         where: {
-          testId: originalTest.id,
+          testId: originalTest.testId,
           ruleId: rule.id,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         },
-        order: { questionOrder: 'ASC' },
+        order: { ordering: 'ASC' },
       });
 
       // Select questions based on rule strategy
@@ -414,10 +412,10 @@ export class AttemptsService {
       for (const selectedQuestion of selectedQuestions) {
         await this.testQuestionRepository.save(
           this.testQuestionRepository.create({
-            testId: savedGeneratedTest.id,
+            testId: savedGeneratedTest.testId,
             sectionId: selectedQuestion.sectionId,
             questionId: selectedQuestion.questionId,
-            questionOrder: questionOrder++,
+            ordering: questionOrder++,
             ruleId: rule.id,
             isCompulsory: selectedQuestion.isCompulsory,
             tenantId: authContext.tenantId,
@@ -510,7 +508,7 @@ export class AttemptsService {
 
     for (const answer of answers) {
       const question = await this.questionRepository.findOne({
-        where: { id: answer.questionId },
+        where: { questionId: answer.questionId },
       });
       
       if (question) {
@@ -555,7 +553,7 @@ export class AttemptsService {
 
     for (const answer of answers) {
       const question = await this.questionRepository.findOne({
-        where: { id: answer.questionId },
+        where: { questionId: answer.questionId },
       });
 
       if (question) {

@@ -144,4 +144,9 @@ export class Question {
   // Relations
   @OneToMany('QuestionOption', 'question')
   options: any[];
+
+  // Alias for compatibility with existing code
+  get id(): string {
+    return this.questionId;
+  }
 } 

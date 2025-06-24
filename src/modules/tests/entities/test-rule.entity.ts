@@ -114,11 +114,11 @@ export class TestRule {
   updatedAt: Date;
 
   // Relations
-  @ManyToOne(() => Test, test => test.id)
+  @ManyToOne(() => Test, test => test.testId)
   @JoinColumn({ name: 'testId' })
   test: Test;
 
-  @ManyToOne(() => TestSection, section => section.id)
+  @ManyToOne(() => TestSection, section => section.sectionId)
   @JoinColumn({ name: 'sectionId' })
   section: TestSection;
 } 
