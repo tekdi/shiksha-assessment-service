@@ -39,7 +39,7 @@ export class QuestionsService {
       const questionOptions = options.map(optionData => 
         this.questionOptionRepository.create({
           ...optionData,
-          questionId: savedQuestion.id,
+          questionId: savedQuestion.questionId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         })
@@ -51,7 +51,7 @@ export class QuestionsService {
     // Invalidate cache
     await this.invalidateQuestionCache(authContext.tenantId);
     
-    return this.findOne(savedQuestion.id, authContext);
+    return this.findOne(savedQuestion.questionId, authContext);
   }
 
   async findAll(queryDto: QueryQuestionDto, authContext: AuthContext) {
@@ -129,7 +129,7 @@ export class QuestionsService {
   async findOne(id: string, authContext: AuthContext): Promise<Question> {
     const question = await this.questionRepository.findOne({
       where: {
-        id,
+        questionId: id,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },

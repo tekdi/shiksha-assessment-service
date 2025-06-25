@@ -36,7 +36,7 @@ export class QuestionsController {
   async create(@Body() createQuestionDto: CreateQuestionDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const question = await this.questionsService.create(createQuestionDto, authContext);
-    return { questionId: question.id };
+    return { questionId: question.questionId };
   }
 
   @Get()
