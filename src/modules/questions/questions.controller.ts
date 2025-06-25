@@ -10,11 +10,12 @@ import {
   Req,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { QuestionsService } from './questions.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionDto } from './dto/query-question.dto';
+import { RulePreviewDto } from './dto/rule-preview.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
@@ -98,12 +99,16 @@ export class QuestionsController {
     summary: 'Preview questions for rule criteria',
     description: 'Get questions and metadata based on rule criteria for UI preview'
   })
+  @ApiBody({
+    type: RulePreviewDto,
+    description: 'Rule criteria for filtering questions'
+  })
   @ApiResponse({
     status: 200,
     description: 'Rule preview generated successfully',
     type: ApiSuccessResponseDto,
   })
-  async getRulePreview(@Body() ruleCriteria: any, @Req() req: any) {
+  async getRulePreview(@Body() ruleCriteria: RulePreviewDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.questionsService.getQuestionsForRulePreview(ruleCriteria, authContext);
   }

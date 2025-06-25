@@ -535,6 +535,95 @@ def get_tests():
 }
 ```
 
+## Test Management
+
+### Adding a Single Question to Test Section
+
+```json
+POST /tests/{testId}/questions
+{
+  "sectionId": "section-123e4567-e89b-12d3-a456-426614174000",
+  "questionId": "question-123e4567-e89b-12d3-a456-426614174000"
+}
+```
+
+### Adding Multiple Questions to Test Section (Bulk)
+
+```json
+POST /tests/{testId}/questions/bulk
+{
+  "sectionId": "section-123e4567-e89b-12d3-a456-426614174000",
+  "questions": [
+    {
+      "questionId": "question-123e4567-e89b-12d3-a456-426614174000",
+      "ordering": 1,
+      "isCompulsory": false
+    },
+    {
+      "questionId": "question-456e7890-e89b-12d3-a456-426614174001",
+      "ordering": 2,
+      "isCompulsory": true
+    },
+    {
+      "questionId": "question-789e0123-e89b-12d3-a456-426614174002",
+      "ordering": 3,
+      "isCompulsory": false
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Questions added to test successfully",
+  "result": {
+    "added": 3,
+    "skipped": 0,
+    "errors": []
+  }
+}
+```
+
+### Bulk Addition with Duplicates and Errors
+
+```json
+POST /tests/{testId}/questions/bulk
+{
+  "sectionId": "section-123e4567-e89b-12d3-a456-426614174000",
+  "questions": [
+    {
+      "questionId": "question-123e4567-e89b-12d3-a456-426614174000",
+      "ordering": 1
+    },
+    {
+      "questionId": "question-123e4567-e89b-12d3-a456-426614174000",
+      "ordering": 2
+    },
+    {
+      "questionId": "question-not-found",
+      "ordering": 3
+    },
+    {
+      "questionId": "question-456e7890-e89b-12d3-a456-426614174001",
+      "ordering": 4
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Questions added to test successfully",
+  "result": {
+    "added": 2,
+    "skipped": 1,
+    "errors": ["Questions not found: question-not-found"]
+  }
+}
+```
+
 ## Media Structure
 
 The `media` field is a JSONB object that can contain URLs for different media types:

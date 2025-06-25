@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between } from 'typeorm';
+import { Repository, Like, Between, In } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -11,6 +11,8 @@ import { QueryTestDto } from './dto/query-test.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
+import { TestSection } from './entities/test-section.entity';
+import { Question } from '../questions/entities/question.entity';
 
 @Injectable()
 export class TestsService {
@@ -19,6 +21,10 @@ export class TestsService {
     private readonly testRepository: Repository<Test>,
     @InjectRepository(TestQuestion)
     private readonly testQuestionRepository: Repository<TestQuestion>,
+    @InjectRepository(TestSection)
+    private readonly testSectionRepository: Repository<TestSection>,
+    @InjectRepository(Question)
+    private readonly questionRepository: Repository<Question>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -178,7 +184,7 @@ export class TestsService {
     return test;
   }
 
-  async addQuestionToTest(testId: string, sectionId: string, questionId: string, authContext: AuthContext): Promise<void> {
+  async addQuestionToTest(testId: string, sectionId: string, questionId: string, isCompulsory: boolean = true, authContext: AuthContext): Promise<void> {
     // Validate test type and question addition
     await this.validateQuestionAddition(testId, authContext);
 
@@ -202,12 +208,121 @@ export class TestsService {
       sectionId,
       questionId,
       ordering: 0, // Will be set based on existing questions
-      isCompulsory: false,
+      isCompulsory,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
     });
 
     await this.testQuestionRepository.save(testQuestion);
+  }
+
+  async addQuestionsBulkToTest(testId: string, sectionId: string, questions: Array<{ questionId: string; ordering?: number; isCompulsory?: boolean }>, authContext: AuthContext): Promise<{ added: number; skipped: number; errors: string[] }> {
+    // Validate test type and question addition
+    await this.validateQuestionAddition(testId, authContext);
+
+    // Validate that the section belongs to the test
+    const section = await this.testSectionRepository.findOne({
+      where: {
+        sectionId,
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!section) {
+      throw new NotFoundException('Section not found or does not belong to the specified test');
+    }
+
+    const result = {
+      added: 0,
+      skipped: 0,
+      errors: [] as string[]
+    };
+
+    // Get existing questions in the test to avoid duplicates
+    const existingQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      select: ['questionId'],
+    });
+
+    const existingQuestionIds = new Set(existingQuestions.map(q => q.questionId));
+
+    // Validate that all questions exist
+    const questionIds = questions.map(q => q.questionId);
+    const foundQuestions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      select: ['questionId'],
+    });
+
+    const foundQuestionIds = new Set(foundQuestions.map(q => q.questionId));
+    const notFoundQuestionIds = questionIds.filter(id => !foundQuestionIds.has(id));
+
+    if (notFoundQuestionIds.length > 0) {
+      result.errors.push(`Questions not found: ${notFoundQuestionIds.join(', ')}`);
+    }
+
+    // Process each question
+    const questionsToAdd = [];
+    for (const questionData of questions) {
+      if (!foundQuestionIds.has(questionData.questionId)) {
+        continue; // Skip questions that don't exist
+      }
+
+      if (existingQuestionIds.has(questionData.questionId)) {
+        result.skipped++;
+        continue; // Skip questions that are already in the test
+      }
+
+      // Determine ordering
+      let ordering = questionData.ordering;
+      if (ordering === undefined) {
+        // Get the next available ordering number
+        const maxOrdering = await this.testQuestionRepository
+          .createQueryBuilder('tq')
+          .where('tq.testId = :testId', { testId })
+          .andWhere('tq.sectionId = :sectionId', { sectionId })
+          .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+          .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+          .select('MAX(tq.ordering)', 'maxOrdering')
+          .getRawOne();
+
+        ordering = (maxOrdering?.maxOrdering || 0) + 1;
+      }
+
+      questionsToAdd.push({
+        testId,
+        sectionId,
+        questionId: questionData.questionId,
+        ordering,
+        isCompulsory: questionData.isCompulsory || false,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      });
+
+      existingQuestionIds.add(questionData.questionId); // Mark as added to avoid duplicates in the same request
+    }
+
+    // Add all questions in a batch
+    if (questionsToAdd.length > 0) {
+      await this.testQuestionRepository
+        .createQueryBuilder()
+        .insert()
+        .into(TestQuestion)
+        .values(questionsToAdd)
+        .execute();
+      result.added = questionsToAdd.length;
+    }
+
+    return result;
   }
 
   private async invalidateTestCache(tenantId: string): Promise<void> {
