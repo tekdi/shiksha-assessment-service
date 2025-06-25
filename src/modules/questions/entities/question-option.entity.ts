@@ -7,13 +7,13 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
-import { Question } from './question.entity';
+import { Question, QuestionMedia } from './question.entity';
 
 @Entity('questionOptions')
 export class QuestionOption {
   @ApiProperty()
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  questionOptionId: string;
 
   @ApiProperty()
   @Column({ type: 'uuid' })
@@ -27,17 +27,44 @@ export class QuestionOption {
   @Column({ type: 'uuid' })
   questionId: string;
 
-  @ApiProperty()
+  @ApiProperty({ 
+    description: 'Option text content'
+  })
   @Column({ type: 'text' })
   text: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ 
+    required: false,
+    description: 'Media URLs for the option',
+    example: {
+      image: "https://cdn.example.com/opt1.png",
+      video: "https://cdn.example.com/opt2.mp4"
+    }
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  media: QuestionMedia;
+
+  @ApiProperty({ 
+    required: false,
+    description: 'Text for matching (used in match questions)'
+  })
   @Column({ type: 'text', nullable: true })
   matchWith: string;
 
+  @ApiProperty({ 
+    required: false,
+    description: 'Media URLs for matching (used in match questions)',
+    example: {
+      image: "https://cdn.example.com/match1.png",
+      video: "https://cdn.example.com/match2.mp4"
+    }
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  matchWithMedia: QuestionMedia;
+
   @ApiProperty()
   @Column({ type: 'integer', default: 0 })
-  position: number;
+  ordering: number;
 
   @ApiProperty()
   @Column({ type: 'boolean', default: false })

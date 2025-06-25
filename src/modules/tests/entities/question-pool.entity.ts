@@ -96,7 +96,7 @@ export class QuestionPool {
   @JoinColumn({ name: 'sectionId' })
   section: TestSection;
 
-  @ManyToOne(() => TestRule, rule => rule.id)
+  @ManyToOne(() => TestRule, rule => rule.ruleId)
   @JoinColumn({ name: 'ruleId' })
   rule: TestRule;
 } 

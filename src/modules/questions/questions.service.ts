@@ -1,10 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
-import { Question } from './entities/question.entity';
+import { Question, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -24,6 +24,9 @@ export class QuestionsService {
 
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
     const { options, ...questionData } = createQuestionDto;
+    
+    // Validate that non-subjective/non-essay questions have options
+    this.validateQuestionOptions(createQuestionDto.type, options);
     
     const question = this.questionRepository.create({
       ...questionData,
@@ -62,7 +65,29 @@ export class QuestionsService {
       return cached;
     }
 
-    const { limit = 10, offset = 0, search, status, type, level, categoryId, minMarks, maxMarks, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { 
+      limit = 10, 
+      offset = 0, 
+      search, 
+      status, 
+      type, 
+      level, 
+      categoryId, 
+      minMarks, 
+      maxMarks, 
+      categories,
+      difficultyLevels,
+      questionTypes,
+      tags,
+      marks,
+      excludeQuestionIds,
+      includeQuestionIds,
+      timeRangeFrom,
+      timeRangeTo,
+      rulePreview,
+      sortBy = 'createdAt', 
+      sortOrder = 'DESC' 
+    } = queryDto;
 
     const queryBuilder = this.questionRepository
       .createQueryBuilder('question')
@@ -70,13 +95,15 @@ export class QuestionsService {
       .where('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId });
 
+    // Text search
     if (search) {
       queryBuilder.andWhere(
-        '(question.title ILIKE :search OR question.description ILIKE :search)',
+        '(question.text ILIKE :search OR question.description ILIKE :search)',
         { search: `%${search}%` }
       );
     }
 
+    // Basic filters
     if (status) {
       queryBuilder.andWhere('question.status = :status', { status });
     }
@@ -93,6 +120,30 @@ export class QuestionsService {
       queryBuilder.andWhere('question.categoryId = :categoryId', { categoryId });
     }
 
+    // Rule criteria filters
+    if (categories && categories.length > 0) {
+      queryBuilder.andWhere('question.categoryId IN (:...categories)', { categories });
+    }
+
+    if (difficultyLevels && difficultyLevels.length > 0) {
+      queryBuilder.andWhere('question.level IN (:...difficultyLevels)', { difficultyLevels });
+    }
+
+    if (questionTypes && questionTypes.length > 0) {
+      queryBuilder.andWhere('question.type IN (:...questionTypes)', { questionTypes });
+    }
+
+    if (tags && tags.length > 0) {
+      // Assuming tags are stored as JSONB array in the question entity
+      // If tags are stored differently, adjust this query accordingly
+      queryBuilder.andWhere('question.tags @> :tags', { tags: JSON.stringify(tags) });
+    }
+
+    if (marks && marks.length > 0) {
+      queryBuilder.andWhere('question.marks IN (:...marks)', { marks });
+    }
+
+    // Marks range (minMarks and maxMarks take precedence over marks array if both are provided)
     if (minMarks !== undefined || maxMarks !== undefined) {
       if (minMarks !== undefined && maxMarks !== undefined) {
         queryBuilder.andWhere('question.marks BETWEEN :minMarks AND :maxMarks', { minMarks, maxMarks });
@@ -101,6 +152,38 @@ export class QuestionsService {
       } else if (maxMarks !== undefined) {
         queryBuilder.andWhere('question.marks <= :maxMarks', { maxMarks });
       }
+    }
+
+    // Include/Exclude specific questions
+    if (excludeQuestionIds && excludeQuestionIds.length > 0) {
+      queryBuilder.andWhere('question.questionId NOT IN (:...excludeQuestionIds)', { excludeQuestionIds });
+    }
+
+    if (includeQuestionIds && includeQuestionIds.length > 0) {
+      queryBuilder.andWhere('question.questionId IN (:...includeQuestionIds)', { includeQuestionIds });
+    }
+
+    // Time range filter
+    if (timeRangeFrom || timeRangeTo) {
+      if (timeRangeFrom && timeRangeTo) {
+        queryBuilder.andWhere('question.createdAt BETWEEN :timeRangeFrom AND :timeRangeTo', {
+          timeRangeFrom: new Date(timeRangeFrom),
+          timeRangeTo: new Date(timeRangeTo)
+        });
+      } else if (timeRangeFrom) {
+        queryBuilder.andWhere('question.createdAt >= :timeRangeFrom', {
+          timeRangeFrom: new Date(timeRangeFrom)
+        });
+      } else if (timeRangeTo) {
+        queryBuilder.andWhere('question.createdAt <= :timeRangeTo', {
+          timeRangeTo: new Date(timeRangeTo)
+        });
+      }
+    }
+
+    // Rule preview mode - only show published questions
+    if (rulePreview === 'true') {
+      queryBuilder.andWhere('question.status = :publishedStatus', { publishedStatus: 'published' });
     }
 
     const total = await queryBuilder.getCount();
@@ -118,6 +201,14 @@ export class QuestionsService {
       totalPages: Math.ceil(total / limit),
       currentPage: Math.floor(offset / limit) + 1,
       size: limit,
+      // Add metadata for rule preview
+      ...(rulePreview === 'true' && {
+        metadata: {
+          totalQuestions: total,
+          availableForRules: total,
+          rulePreviewMode: true
+        }
+      })
     };
 
     // Cache for 1 day
@@ -146,6 +237,14 @@ export class QuestionsService {
   async update(id: string, updateQuestionDto: UpdateQuestionDto, authContext: AuthContext): Promise<Question> {
     const question = await this.findOne(id, authContext);
     const { options, ...questionData } = updateQuestionDto;
+
+    // If question type is being updated, validate the new type with options
+    if (questionData.type && questionData.type !== question.type) {
+      this.validateQuestionOptions(questionData.type, options);
+    } else if (options !== undefined) {
+      // If options are being updated but type isn't changing, validate with current type
+      this.validateQuestionOptions(question.type, options);
+    }
 
     Object.assign(question, {
       ...questionData,
@@ -200,6 +299,157 @@ export class QuestionsService {
     } catch (error) {
       // Log error but don't fail the operation
       console.warn('Failed to invalidate question cache:', error);
+    }
+  }
+
+  async getQuestionsForRulePreview(ruleCriteria: any, authContext: AuthContext) {
+    const cacheKey = `rule_preview:${authContext.tenantId}:${JSON.stringify(ruleCriteria)}`;
+    const cached = await this.cacheManager.get(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+
+    const queryBuilder = this.questionRepository
+      .createQueryBuilder('question')
+      .leftJoinAndSelect('question.options', 'options')
+      .where('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('question.status = :status', { status: 'published' });
+
+    // Apply rule criteria
+    if (ruleCriteria.categories && ruleCriteria.categories.length > 0) {
+      queryBuilder.andWhere('question.categoryId IN (:...categories)', { categories: ruleCriteria.categories });
+    }
+
+    if (ruleCriteria.difficultyLevels && ruleCriteria.difficultyLevels.length > 0) {
+      queryBuilder.andWhere('question.level IN (:...difficultyLevels)', { difficultyLevels: ruleCriteria.difficultyLevels });
+    }
+
+    if (ruleCriteria.questionTypes && ruleCriteria.questionTypes.length > 0) {
+      queryBuilder.andWhere('question.type IN (:...questionTypes)', { questionTypes: ruleCriteria.questionTypes });
+    }
+
+    if (ruleCriteria.marks && ruleCriteria.marks.length > 0) {
+      queryBuilder.andWhere('question.marks IN (:...marks)', { marks: ruleCriteria.marks });
+    }
+
+    if (ruleCriteria.tags && ruleCriteria.tags.length > 0) {
+      queryBuilder.andWhere('question.tags @> :tags', { tags: JSON.stringify(ruleCriteria.tags) });
+    }
+
+    if (ruleCriteria.excludeQuestionIds && ruleCriteria.excludeQuestionIds.length > 0) {
+      queryBuilder.andWhere('question.questionId NOT IN (:...excludeQuestionIds)', { excludeQuestionIds: ruleCriteria.excludeQuestionIds });
+    }
+
+    if (ruleCriteria.includeQuestionIds && ruleCriteria.includeQuestionIds.length > 0) {
+      queryBuilder.andWhere('question.questionId IN (:...includeQuestionIds)', { includeQuestionIds: ruleCriteria.includeQuestionIds });
+    }
+
+    if (ruleCriteria.timeRange) {
+      queryBuilder.andWhere('question.createdAt BETWEEN :fromDate AND :toDate', {
+        fromDate: ruleCriteria.timeRange.from,
+        toDate: ruleCriteria.timeRange.to,
+      });
+    }
+
+    const questions = await queryBuilder.getMany();
+
+    // Calculate metadata
+    const totalQuestions = questions.length;
+    const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0);
+    const marksDistribution = questions.reduce((acc, q) => {
+      acc[q.marks] = (acc[q.marks] || 0) + 1;
+      return acc;
+    }, {} as Record<number, number>);
+
+    const result = {
+      questions,
+      metadata: {
+        totalQuestions,
+        totalMarks,
+        marksDistribution,
+        averageMarks: totalQuestions > 0 ? (totalMarks / totalQuestions).toFixed(2) : 0,
+        questionTypes: questions.reduce((acc, q) => {
+          acc[q.type] = (acc[q.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        difficultyLevels: questions.reduce((acc, q) => {
+          acc[q.level] = (acc[q.level] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        categories: questions.reduce((acc, q) => {
+          if (q.categoryId) {
+            acc[q.categoryId] = (acc[q.categoryId] || 0) + 1;
+          }
+          return acc;
+        }, {} as Record<string, number>)
+      }
+    };
+
+    // Cache for 30 minutes (shorter cache for preview)
+    await this.cacheManager.set(cacheKey, result, 1800);
+
+    return result;
+  }
+
+  private validateQuestionOptions(type: QuestionType, options?: any[]): void {
+    // For non-subjective/non-essay questions, options are mandatory
+    if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
+      if (!options || options.length === 0) {
+        throw new BadRequestException(`Options are mandatory for question type '${type}'. Please provide at least one option.`);
+      }
+      
+      // Validate that all options have required fields
+      options.forEach((option, index) => {
+        if (!option.text || option.text.trim().length === 0) {
+          throw new BadRequestException(`Option ${index + 1} must have a non-empty text.`);
+        }
+        
+        // Validate isCorrect is a boolean
+        if (typeof option.isCorrect !== 'boolean') {
+          throw new BadRequestException(`Option ${index + 1} must have a valid isCorrect boolean value.`);
+        }
+      });
+      
+      // Additional validation for specific question types
+      switch (type) {
+        case QuestionType.MCQ:
+        case QuestionType.TRUE_FALSE:
+          // These types should have exactly one correct answer
+          const correctOptions = options.filter(option => option.isCorrect);
+          if (correctOptions.length !== 1) {
+            throw new BadRequestException(`${type} questions must have exactly one correct answer.`);
+          }
+          break;
+          
+        case QuestionType.MULTIPLE_ANSWER:
+          // Multiple answer questions should have at least one correct answer
+          const multipleCorrectOptions = options.filter(option => option.isCorrect);
+          if (multipleCorrectOptions.length === 0) {
+            throw new BadRequestException('Multiple answer questions must have at least one correct answer.');
+          }
+          break;
+          
+        case QuestionType.FILL_BLANK:
+          // Fill in the blank questions should have options with blankIndex
+          const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
+          if (optionsWithBlankIndex.length === 0) {
+            throw new BadRequestException('Fill in the blank questions must have options with blankIndex specified.');
+          }
+          break;
+          
+        case QuestionType.MATCH:
+          // Matching questions should have options with matchWith
+          const optionsWithMatch = options.filter(option => 
+            option.matchWith && 
+            option.matchWith.trim().length > 0
+          );
+          if (optionsWithMatch.length === 0) {
+            throw new BadRequestException('Matching questions must have options with matchWith specified.');
+          }
+          break;
+      }
     }
   }
 } 

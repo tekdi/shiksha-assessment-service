@@ -11,11 +11,13 @@ import {
   Req,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { TestsService } from './tests.service';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
+import { AddQuestionToTestDto } from './dto/add-question-to-test.dto';
+import { AddQuestionsBulkDto } from './dto/add-questions-bulk.dto';
 import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -115,5 +117,101 @@ export class TestsController {
     const isHardDelete = hardDelete === 'true';
     await this.testsService.remove(id, authContext, isHardDelete);
     return { message: 'Test deleted successfully' };
+  }
+
+  @Post(':id/questions')
+  @ApiOperation({ 
+    summary: 'Add a question to a test section',
+    description: 'Adds a specific question to a test section. The question must exist and the section must belong to the specified test.'
+  })
+  @ApiBody({
+    type: AddQuestionToTestDto,
+    description: 'Question and section details'
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Question added to test successfully',
+    type: ApiSuccessResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Question is already added to this test or test is published',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test, section, or question not found',
+  })
+  async addQuestionToTest(
+    @Param('id') testId: string,
+    @Body() addQuestionDto: AddQuestionToTestDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    await this.testsService.addQuestionToTest(
+      testId, 
+      addQuestionDto.sectionId, 
+      addQuestionDto.questionId, 
+      addQuestionDto.isCompulsory || false,
+      authContext
+    );
+    return { message: 'Question added to test successfully' };
+  }
+
+  @Post(':id/questions/bulk')
+  @ApiOperation({ 
+    summary: 'Add multiple questions to a test section in bulk',
+    description: 'Adds multiple questions to a test section in a single request. Duplicate questions are automatically skipped. Questions can be ordered and marked as compulsory.'
+  })
+  @ApiBody({
+    type: AddQuestionsBulkDto,
+    description: 'Section and questions details for bulk addition'
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Questions added to test successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Questions added to test successfully' },
+        result: {
+          type: 'object',
+          properties: {
+            added: { type: 'number', example: 5, description: 'Number of questions successfully added' },
+            skipped: { type: 'number', example: 2, description: 'Number of questions skipped (duplicates or not found)' },
+            errors: { 
+              type: 'array', 
+              items: { type: 'string' },
+              example: ['Questions not found: qstn-123, qstn-456'],
+              description: 'List of error messages'
+            }
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Test is published or invalid request data',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test or section not found',
+  })
+  async addQuestionsBulkToTest(
+    @Param('id') testId: string,
+    @Body() addQuestionsBulkDto: AddQuestionsBulkDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const result = await this.testsService.addQuestionsBulkToTest(
+      testId, 
+      addQuestionsBulkDto.sectionId, 
+      addQuestionsBulkDto.questions, 
+      authContext
+    );
+    return { 
+      message: 'Questions added to test successfully',
+      result
+    };
   }
 } 
