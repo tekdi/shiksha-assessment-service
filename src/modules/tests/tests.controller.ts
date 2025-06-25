@@ -116,4 +116,21 @@ export class TestsController {
     await this.testsService.remove(id, authContext, isHardDelete);
     return { message: 'Test deleted successfully' };
   }
+
+  @Post(':id/questions')
+  @ApiOperation({ summary: 'Add a question to a test section' })
+  @ApiResponse({
+    status: 201,
+    description: 'Question added to test successfully',
+    type: ApiSuccessResponseDto,
+  })
+  async addQuestionToTest(
+    @Param('id') testId: string,
+    @Body() body: { sectionId: string; questionId: string },
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    await this.testsService.addQuestionToTest(testId, body.sectionId, body.questionId, authContext);
+    return { message: 'Question added to test successfully' };
+  }
 } 

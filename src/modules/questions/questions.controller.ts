@@ -36,7 +36,7 @@ export class QuestionsController {
   async create(@Body() createQuestionDto: CreateQuestionDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const question = await this.questionsService.create(createQuestionDto, authContext);
-    return { questionId: question.id };
+    return { questionId: question.questionId };
   }
 
   @Get()
@@ -77,7 +77,7 @@ export class QuestionsController {
   ) {
     const authContext: AuthContext = req.user;
     const question = await this.questionsService.update(id, updateQuestionDto, authContext);
-    return { questionId: question.id };
+    return { questionId: question.questionId };
   }
 
   @Delete(':id')
@@ -91,5 +91,20 @@ export class QuestionsController {
     const authContext: AuthContext = req.user;
     await this.questionsService.remove(id, authContext);
     return { message: 'Question deleted successfully' };
+  }
+
+  @Post('rule-preview')
+  @ApiOperation({ 
+    summary: 'Preview questions for rule criteria',
+    description: 'Get questions and metadata based on rule criteria for UI preview'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Rule preview generated successfully',
+    type: ApiSuccessResponseDto,
+  })
+  async getRulePreview(@Body() ruleCriteria: any, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    return this.questionsService.getQuestionsForRulePreview(ruleCriteria, authContext);
   }
 } 

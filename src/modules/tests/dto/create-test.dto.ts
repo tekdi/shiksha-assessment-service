@@ -31,6 +31,11 @@ export class CreateTestDto {
   @IsString()
   reviewers?: string;
 
+  @ApiPropertyOptional({ enum: TestStatus })
+  @IsOptional()
+  @IsEnum(TestStatus)
+  status?: TestStatus;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -130,4 +135,29 @@ export class CreateTestDto {
   @IsOptional()
   @IsBoolean()
   showQuestionsOverview?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  ordering?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  attempts?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  attemptsGrading?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  checkedOut?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  checkedOutTime?: string;
 } 
