@@ -82,10 +82,16 @@ export class HelperUtil {
     }
 
     // Try with random number
-    let randomNum = Math.floor(Math.random() * 1000); // Generate random number between 0-9999
+    let randomNum = Math.floor(Math.random() * 1000); // Generate random number between 0-999
     let finalAlias = `${baseAlias}-${randomNum}`;
-    
+    let attempts = 0;
+    const maxAttempts = 100;
     while (true) {
+      if (attempts++ > maxAttempts) {
+        // Fallback to timestamp-based suffix
+        return `${baseAlias}-${Date.now()}`;
+      }
+      
       const existing = await repository.findOne({
         where: { 
           alias: finalAlias,
