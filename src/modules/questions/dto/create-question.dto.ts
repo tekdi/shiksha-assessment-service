@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionType, QuestionLevel, QuestionStatus, GradingType, QuestionParams, QuestionMedia } from '../entities/question.entity';
 
@@ -28,6 +28,7 @@ export class QuestionMediaDto {
 export class RubricCriteriaDto {
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiProperty()
@@ -82,6 +83,7 @@ export class CreateQuestionOptionDto {
   @ApiProperty({ 
     description: 'Option text content'
   })
+  @IsNotEmpty()
   @IsString()
   text: string;
 
@@ -146,6 +148,7 @@ export class CreateQuestionDto {
   @ApiProperty({ 
     description: 'Question text content'
   })
+  @IsNotEmpty()
   @IsString()
   text: string;
 
@@ -188,6 +191,7 @@ export class CreateQuestionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(1)
   marks?: number;
 
   @ApiPropertyOptional({ enum: QuestionStatus })

@@ -25,8 +25,14 @@ export class QuestionsService {
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
     const { options, ...questionData } = createQuestionDto;
     
-    // Validate that non-subjective/non-essay questions have options
+    // Validate question data
+    this.validateQuestionData(createQuestionDto);
+    
+    // Validate question options
     this.validateQuestionOptions(createQuestionDto.type, options);
+    
+    // Validate question parameters
+    this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
     
     const question = this.questionRepository.create({
       ...questionData,
@@ -238,6 +244,12 @@ export class QuestionsService {
     const question = await this.findOne(id, authContext);
     const { options, ...questionData } = updateQuestionDto;
 
+    // Create a merged DTO for validation
+    const mergedDto = { ...question, ...updateQuestionDto };
+    
+    // Validate question data
+    this.validateQuestionData(mergedDto);
+
     // If question type is being updated, validate the new type with options
     if (questionData.type && questionData.type !== question.type) {
       this.validateQuestionOptions(questionData.type, options);
@@ -245,6 +257,9 @@ export class QuestionsService {
       // If options are being updated but type isn't changing, validate with current type
       this.validateQuestionOptions(question.type, options);
     }
+
+    // Validate question parameters
+    this.validateQuestionParams(mergedDto.type, mergedDto.params, mergedDto.marks);
 
     Object.assign(question, {
       ...questionData,
@@ -430,12 +445,28 @@ export class QuestionsService {
             throw new BadRequestException('Multiple answer questions must have at least one correct answer.');
           }
           break;
+
+        case QuestionType.OBJECTIVE:
+          // Objective questions should have at least one correct answer with caseSensitive false
+          const objectiveCorrectOptions = options.filter(option => option.isCorrect);
+          if (objectiveCorrectOptions.length === 0) {
+            throw new BadRequestException('Objective questions must have at least one correct answer.');
+          }
+          break;
           
         case QuestionType.FILL_BLANK:
           // Fill in the blank questions should have options with blankIndex
           const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
           if (optionsWithBlankIndex.length === 0) {
             throw new BadRequestException('Fill in the blank questions must have options with blankIndex specified.');
+          }
+          
+          // Validate blankIndex values are sequential and don't have gaps
+          const blankIndices = optionsWithBlankIndex.map(option => option.blankIndex).sort((a, b) => a - b);
+          for (let i = 0; i < blankIndices.length; i++) {
+            if (blankIndices[i] !== i) {
+              throw new BadRequestException(`Fill in the blank questions must have sequential blankIndex values starting from 0. Found gap at index ${i}.`);
+            }
           }
           break;
           
@@ -449,6 +480,45 @@ export class QuestionsService {
             throw new BadRequestException('Matching questions must have options with matchWith specified.');
           }
           break;
+      }
+    }
+  }
+
+  private validateQuestionParams(type: QuestionType, params?: any, marks?: number): void {
+    if (!params) return;
+
+    // Validate maxLength > minLength when both are provided
+    if (params.maxLength !== undefined && params.minLength !== undefined) {
+      if (params.maxLength <= params.minLength) {
+        throw new BadRequestException('maxLength must be greater than minLength.');
+      }
+    }
+
+    // Validate wordLimit is reasonable
+    if (params.wordLimit !== undefined) {
+      if (params.wordLimit <= 0) {
+        throw new BadRequestException('wordLimit must be greater than 0.');
+      }
+    }
+  }
+
+  private validateQuestionData(createQuestionDto: CreateQuestionDto): void {
+
+    // Validate multiple answer questions with partial scoring
+    if (createQuestionDto.type === QuestionType.MULTIPLE_ANSWER && 
+        createQuestionDto.allowPartialScoring && 
+        createQuestionDto.options) {
+      
+      const correctOptions = createQuestionDto.options.filter(option => option.isCorrect);
+      const optionsWithMarks = correctOptions.filter(option => option.marks !== undefined);
+      
+      if (optionsWithMarks.length !== correctOptions.length) {
+        throw new BadRequestException('All correct options must have marks specified when partial scoring is enabled.');
+      }
+
+      const totalOptionMarks = correctOptions.reduce((sum, option) => sum + (option.marks || 0), 0);
+      if (createQuestionDto.marks !== undefined && totalOptionMarks !== createQuestionDto.marks) {
+        throw new BadRequestException(`Sum of option marks (${totalOptionMarks}) must equal question marks (${createQuestionDto.marks}) when partial scoring is enabled.`);
       }
     }
   }
