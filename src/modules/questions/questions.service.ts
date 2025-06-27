@@ -452,13 +452,14 @@ export class QuestionsService {
           }
           break;
 
-        case QuestionType.OBJECTIVE:
+        case QuestionType.OBJECTIVE: {
           // Objective questions should have at least one correct answer with caseSensitive false
           const objectiveCorrectOptions = options.filter(option => option.isCorrect);
           if (objectiveCorrectOptions.length === 0) {
             throw new BadRequestException('Objective questions must have at least one correct answer.');
           }
           break;
+        }
           
         case QuestionType.FILL_BLANK:
           // Fill in the blank questions should have options with blankIndex
