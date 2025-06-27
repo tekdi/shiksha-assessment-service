@@ -191,7 +191,6 @@ export class CreateQuestionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
-  @Min(1)
   marks?: number;
 
   @ApiPropertyOptional({ enum: QuestionStatus })
