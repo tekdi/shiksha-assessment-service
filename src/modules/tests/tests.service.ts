@@ -166,8 +166,7 @@ export class TestsService {
       },
       relations: [
         'sections',
-        'sections.questions',
-        'questions',
+        'sections.questions'
       ],
       order: {
         sections: {
