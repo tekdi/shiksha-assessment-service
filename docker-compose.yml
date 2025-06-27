@@ -1,0 +1,59 @@
+version: "3.6"
+
+services:
+  assessment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shiksha-assessment-service
+    ports:
+      - "${PORT}:${PORT}"
+    env_file:
+      - .env  # Load all environment variables from file
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_DATABASE=${DB_NAME}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      - postgres
+    networks:
+      - shiksha-assessment-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: shiksha-assessment-db
+    restart: unless-stopped
+    env_file:
+      - .env  # Shared environment file
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:${DB_PORT}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - shiksha-assessment-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  shiksha-assessment-network:
+    driver: bridge
