@@ -22,7 +22,6 @@ export class RulesService {
   async create(createRuleDto: CreateRuleDto, authContext: AuthContext): Promise<TestRule> {
     // Validate test type and rule configuration
     await this.validateRuleConfiguration(createRuleDto.testId, authContext);
-
     const rule = this.ruleRepository.create({
       ...createRuleDto,
       tenantId: authContext.tenantId,

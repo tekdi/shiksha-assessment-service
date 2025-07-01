@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, In } from 'typeorm';
+import { Repository, Like, Between, In, Not, FindOptionsWhere } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -13,6 +13,8 @@ import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
+import { HelperUtil } from '@/common/utils/helper.util';
+
 
 @Injectable()
 export class TestsService {
@@ -32,6 +34,37 @@ export class TestsService {
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
     // Validate test configuration based on type
     await this.validateTestConfiguration(createTestDto);
+
+
+     // Generate a simple alias from the title if none provided
+     if (!createTestDto.alias) {
+      createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
+        createTestDto.title,
+        this.testRepository,
+        authContext.tenantId,
+        authContext.organisationId,
+      );
+    } else {
+      // Check if the alias already exists
+      const existingTest = await this.testRepository.findOne({
+        where: { 
+          alias: createTestDto.alias, 
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: Not(TestStatus.ARCHIVED)
+        } as FindOptionsWhere<Test>,
+      });
+
+      if (existingTest) {
+        const originalAlias = createTestDto.alias;
+        createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
+          originalAlias,
+          this.testRepository,
+          authContext.tenantId,
+          authContext.organisationId,
+        );
+      }
+    }
 
     const test = this.testRepository.create({
       ...createTestDto,

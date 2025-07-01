@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, Validate, ValidateIf } from 'class-validator';
 import { TestType, TestStatus, GradingType } from '../entities/test.entity';
+import { ValidateDatetimeConstraints } from '@/common/utils/helper.util';
 
 export class CreateTestDto {
   @ApiPropertyOptional()
@@ -79,6 +80,7 @@ export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   endDate?: string;
 
   @ApiPropertyOptional()
