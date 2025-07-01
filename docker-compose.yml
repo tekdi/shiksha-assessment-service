@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: ${NODE_ENV}
+      args:
+        NODE_ENV: ${NODE_ENV}
     container_name: shiksha-assessment-service
     ports:
       - "${PORT}:${PORT}"
