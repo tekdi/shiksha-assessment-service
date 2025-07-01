@@ -451,15 +451,6 @@ export class QuestionsService {
             throw new BadRequestException('Multiple answer questions must have at least one correct answer.');
           }
           break;
-
-        case QuestionType.OBJECTIVE: {
-          // Objective questions should have at least one correct answer with caseSensitive false
-          const objectiveCorrectOptions = options.filter(option => option.isCorrect);
-          if (objectiveCorrectOptions.length === 0) {
-            throw new BadRequestException('Objective questions must have at least one correct answer.');
-          }
-          break;
-        }
           
         case QuestionType.FILL_BLANK:
           // Fill in the blank questions should have options with blankIndex
