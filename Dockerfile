@@ -17,8 +17,7 @@
     
     COPY . .
     
-    # If in production, build the app
-    RUN if [ "$NODE_ENV" = "production" ]; then npm run build; fi
+    RUN npm run build
     
     
     # ---------- Development Runtime ----------
