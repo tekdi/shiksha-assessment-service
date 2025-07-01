@@ -5,17 +5,21 @@ import {
   Body,
   Param,
   Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
+import { StartNewAttemptDto } from './dto/start-new-attempt.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
 @Controller('attempts')
+@UseInterceptors(AuthContextInterceptor)
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
@@ -86,5 +90,24 @@ export class AttemptsController {
   async getPendingReviews(@Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
+  }
+
+  @Get(':attemptId/:userId')
+  @ApiOperation({ 
+    summary: 'Resume a existing attempt',
+    description: 'Load the existing in-progress attempt and recover previous answers, state, and time'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Attempt resumed successfully'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attempt not found',
+  })
+  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    const attempt = await this.attemptsService.getAttempt(attemptId, authContext);
+    return { result: attempt };
   }
 } 

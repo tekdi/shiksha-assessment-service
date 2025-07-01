@@ -6,10 +6,13 @@ import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
+import { TestSection } from '../tests/entities/test-section.entity';
 import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
+import { ResumeAttemptDto } from './dto/resume-attempt.dto';
+import { StartNewAttemptDto } from './dto/start-new-attempt.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
 
@@ -26,6 +29,8 @@ export class AttemptsService {
     private readonly testQuestionRepository: Repository<TestQuestion>,
     @InjectRepository(TestRule)
     private readonly testRuleRepository: Repository<TestRule>,
+    @InjectRepository(TestSection)
+    private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
     private readonly pluginManager: PluginManagerService,
@@ -36,7 +41,7 @@ export class AttemptsService {
     // Check if test exists and user can attempt
     const test = await this.testRepository.findOne({
       where: {
-        testId: testId,
+        testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -426,18 +431,11 @@ export class AttemptsService {
         selectedQuestionIds = selectedQuestions.map(q => q.questionId);
       } else {
         // Approach B: Dynamic selection based on criteria
-        const questionIds = await this.questionPoolService.generateQuestionPool(rule.ruleId, authContext);
+        const selectedQuestionIds = await this.questionPoolService.generateQuestionPool(rule.ruleId, authContext);
 
-        if (questionIds.length < rule.numberOfQuestions) {
-          throw new Error(`Not enough questions available for rule ${rule.name}. Found ${questionIds.length}, required ${rule.numberOfQuestions}`);
+        if (selectedQuestionIds.length < rule.numberOfQuestions) {
+          throw new Error(`Not enough questions available for rule ${rule.name}. Found ${selectedQuestionIds.length}, required ${rule.numberOfQuestions}`);
         }
-
-        // Select questions based on rule strategy
-        selectedQuestionIds = this.selectQuestionsFromPool(
-          questionIds,
-          rule.numberOfQuestions,
-          rule.selectionStrategy
-        );
       }
 
       // Add selected questions to the generated test
@@ -455,21 +453,6 @@ export class AttemptsService {
           })
         );
       }
-    }
-  }
-
-  private selectQuestionsFromPool(questionIds: string[], count: number, strategy: string): string[] {
-    switch (strategy) {
-      case 'random':
-        return this.shuffleArray(questionIds).slice(0, count);
-      case 'sequential':
-        return questionIds.slice(0, count);
-      case 'weighted':
-        // For weighted strategy, you might want to implement more complex logic
-        // For now, using random selection
-        return this.shuffleArray(questionIds).slice(0, count);
-      default:
-        return this.shuffleArray(questionIds).slice(0, count);
     }
   }
 
@@ -620,4 +603,236 @@ export class AttemptsService {
     }
     return shuffled;
   }
+
+  async getAttempt(attemptId: string, authContext: AuthContext): Promise<ResumeAttemptDto> {
+    // Get attempt with test information
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        userId: authContext.userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    // Get test information - use resolved test for rule-based tests
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get test questions with ordering
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+    });
+
+    // Get all questions with their options
+    const questionIds = testQuestions.map(tq => tq.questionId);
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      relations: ['options'],
+      order: { ordering: 'ASC' },
+    });
+
+    // Get test sections if they exist
+    const sections = await this.testSectionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+    });
+
+    // Get user answers for this attempt with additional metadata
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    // Create a map of answers for quick lookup
+    const answersMap = new Map();
+    userAnswers.forEach(ua => {
+      answersMap.set(ua.questionId, {
+        questionId: ua.questionId,
+        answer: JSON.parse(ua.answer),
+        score: ua.score,
+        reviewStatus: ua.reviewStatus,
+        remarks: ua.remarks,
+        submittedAt: ua.createdAt,
+        updatedAt: ua.updatedAt,
+      });
+    });
+
+    // Organize questions by sections
+    const questionsBySection = new Map();
+    const questionsWithoutSection = [];
+
+    for (const testQuestion of testQuestions) {
+      const question = questions.find(q => q.questionId === testQuestion.questionId);
+      if (!question) continue;
+
+      const questionData = {
+        questionId: question.questionId,
+        text: question.text,
+        description: question.description,
+        type: question.type,
+        level: question.level,
+        marks: question.marks,
+        idealTime: question.idealTime,
+        gradingType: question.gradingType,
+        allowPartialScoring: question.allowPartialScoring,
+        params: question.params,
+        media: question.media,
+        ordering: testQuestion.ordering,
+        isCompulsory: testQuestion.isCompulsory,
+        sectionId: testQuestion.sectionId,
+        ruleId: testQuestion.ruleId,
+        options: question.options?.map(opt => ({
+          questionOptionId: opt.questionOptionId,
+          text: opt.text,
+          media: opt.media,
+          matchWith: opt.matchWith,
+          matchWithMedia: opt.matchWithMedia,
+          ordering: opt.ordering,
+          blankIndex: opt.blankIndex,
+          caseSensitive: opt.caseSensitive,
+          // Don't include isCorrect and marks for security
+        })) || [],
+        userAnswer: answersMap.get(question.questionId) || null,
+      };
+
+      if (testQuestion.sectionId) {
+        if (!questionsBySection.has(testQuestion.sectionId)) {
+          questionsBySection.set(testQuestion.sectionId, []);
+        }
+        questionsBySection.get(testQuestion.sectionId).push(questionData);
+      } else {
+        questionsWithoutSection.push(questionData);
+      }
+    }
+
+    // Build sections with questions
+    const sectionsWithQuestions = sections.map(section => ({
+      sectionId: section.sectionId,
+      title: section.title,
+      description: section.description,
+      ordering: section.ordering,
+      minQuestions: section.minQuestions,
+      maxQuestions: section.maxQuestions,
+      questions: questionsBySection.get(section.sectionId) || [],
+    }));
+
+    // Add questions without sections if any
+    if (questionsWithoutSection.length > 0) {
+      sectionsWithQuestions.push({
+        sectionId: null,
+        title: 'General Questions',
+        description: 'Questions not assigned to any specific section',
+        ordering: 999,
+        minQuestions: null,
+        maxQuestions: null,
+        questions: questionsWithoutSection,
+      });
+    }
+
+    // Parse answers from JSON strings for backward compatibility
+    const answers = userAnswers.map(ua => ({
+      questionId: ua.questionId,
+      answer: JSON.parse(ua.answer),
+      score: ua.score,
+      reviewStatus: ua.reviewStatus,
+      remarks: ua.remarks,
+      submittedAt: ua.createdAt,
+      updatedAt: ua.updatedAt,
+    }));
+
+    // Calculate progress metrics
+    const totalQuestions = questions.length;
+    const answeredQuestions = answers.length;
+    const progressPercentage = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
+
+    // Determine current position if not set
+    let currentPosition = attempt.currentPosition;
+    if (!currentPosition && answers.length > 0) {
+      // Find the last answered question's position
+      const lastAnsweredQuestion = testQuestions.find(tq => 
+        answers.some(ans => ans.questionId === tq.questionId)
+      );
+      currentPosition = lastAnsweredQuestion ? lastAnsweredQuestion.ordering : 1;
+    } else if (!currentPosition) {
+      currentPosition = 1; // Start from first question
+    }
+
+    return {
+      attemptId: attempt.attemptId,
+      testId: attempt.testId,
+      resolvedTestId: attempt.resolvedTestId,
+      userId: attempt.userId,
+      attempt: attempt.attempt,
+      status: attempt.status,
+      reviewStatus: attempt.reviewStatus,
+      submissionType: attempt.submissionType,
+      result: attempt.result,
+      score: attempt.score,
+      currentPosition,
+      timeSpent: attempt.timeSpent,
+      startedAt: attempt.startedAt,
+      submittedAt: attempt.submittedAt,
+      test: {
+        testId: test.testId,
+        title: test.title,
+        description: test.description,
+        totalMarks: test.totalMarks,
+        timeDuration: test.timeDuration,
+        showTime: test.showTime,
+        type: test.type,
+        passingMarks: test.passingMarks,
+        showCorrectAnswer: test.showCorrectAnswer,
+        showQuestionsOverview: test.showQuestionsOverview,
+        questionsShuffle: test.questionsShuffle,
+        answersShuffle: test.answersShuffle,
+        paginationLimit: test.paginationLimit,
+        showThankyouPage: test.showThankyouPage,
+        showAllQuestions: test.showAllQuestions,
+        answerSheet: test.answerSheet,
+        printAnswersheet: test.printAnswersheet,
+      },
+      sections: sectionsWithQuestions,
+      answers,
+      progress: {
+        totalQuestions,
+        answeredQuestions,
+        progressPercentage,
+        remainingQuestions: totalQuestions - answeredQuestions,
+      },
+      timeRemaining: test.timeDuration ? Math.max(0, test.timeDuration - (attempt.timeSpent || 0)) : null,
+    };
+  }
+
 } 

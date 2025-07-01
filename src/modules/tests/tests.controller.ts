@@ -214,4 +214,27 @@ export class TestsController {
       result
     };
   }
+
+  @Get(':testId/users/:userId/status')
+  @ApiOperation({ 
+    summary: 'Check user test status',
+    description: 'Determine if the user can resume, reattempt, or is restricted based on previous attempts'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User test status retrieved successfully'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test not found',
+  })
+  async getUserTestStatus(
+    @Param('testId') testId: string,
+    @Param('userId') userId: string,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const status = await this.testsService.getUserTestStatus(testId, userId, authContext);
+    return { result: status };
+  }
 } 

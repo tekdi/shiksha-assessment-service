@@ -13,6 +13,8 @@ import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
+import { UserTestStatusDto } from './dto/user-test-status.dto';
+import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
 
 @Injectable()
 export class TestsService {
@@ -120,11 +122,25 @@ export class TestsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      relations: ['sections', 'questions'],
+      relations: ['sections'],
     });
 
     if (!test) {
       throw new NotFoundException('Test not found');
+    }
+
+    // Load sections with their questions separately to avoid potential ordering issues
+    for (const section of test.sections) {
+      section.questions = await this.testQuestionRepository.find({
+        where: {
+          sectionId: section.sectionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: {
+          ordering: 'ASC',
+        },
+      });
     }
 
     return test;
@@ -165,14 +181,10 @@ export class TestsService {
         organisationId: authContext.organisationId,
       },
       relations: [
-        'sections',
-        'sections.questions'
+        'sections'
       ],
       order: {
         sections: {
-          ordering: 'ASC',
-        },
-        questions: {
           ordering: 'ASC',
         },
       },
@@ -180,6 +192,20 @@ export class TestsService {
 
     if (!test) {
       throw new NotFoundException('Test not found');
+    }
+
+    // Load sections with their questions separately to avoid the ordering issue
+    for (const section of test.sections) {
+      section.questions = await this.testQuestionRepository.find({
+        where: {
+          sectionId: section.sectionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: {
+          ordering: 'ASC',
+        },
+      });
     }
 
     return test;
@@ -401,5 +427,58 @@ export class TestsService {
       default:
         throw new BadRequestException(`Unsupported test type: ${test.type}`);
     }
+  }
+
+  async getUserTestStatus(testId: string, userId: string, authContext: AuthContext): Promise<UserTestStatusDto> {
+    // Check if test exists
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get all attempts for this user and test
+    const attempts = await this.testRepository.manager.find(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'DESC' },
+    });
+
+    if (attempts.length === 0) {
+      // No attempts yet - user can start a new attempt
+      return {
+        canResume: false,
+        canReattempt: true,
+        lastAttemptStatus: null,
+        lastAttemptId: null,
+      };
+    }
+
+    const lastAttempt = attempts[0];
+    const totalAttempts = attempts.length;
+    const maxAttempts = test.attempts;
+
+    // Check if user can resume (has an in-progress attempt)
+    const canResume = lastAttempt.status === AttemptStatus.IN_PROGRESS;
+
+    // Check if user can reattempt (hasn't reached max attempts)
+    const canReattempt = totalAttempts < maxAttempts;
+
+    return {
+      canResume,
+      canReattempt,
+      lastAttemptStatus: lastAttempt.status,
+      lastAttemptId: lastAttempt.attemptId,
+    };
   }
 } 
