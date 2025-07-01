@@ -105,6 +105,8 @@ export class TestsService {
 
     if (status) {
       queryBuilder.andWhere('test.status = :status', { status });
+    } else {
+      queryBuilder.andWhere('test.status != :status', { status: TestStatus.ARCHIVED });
     }
 
     if (type) {
@@ -197,8 +199,7 @@ export class TestsService {
       },
       relations: [
         'sections',
-        'sections.questions',
-        'questions',
+        'sections.questions'
       ],
       order: {
         sections: {

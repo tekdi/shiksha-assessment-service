@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsUUID, IsEnum } from 'class-validator';
+
+export enum SectionStatus {
+  DRAFT = 'draft',
+  PUBLISHED = 'published',
+  UNPUBLISHED = 'unpublished',
+  ARCHIVED = 'archived',
+}
 
 export class CreateSectionDto {
   @ApiProperty()
@@ -20,10 +27,10 @@ export class CreateSectionDto {
   @IsNumber()
   ordering?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: SectionStatus })
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(SectionStatus)
+  status?: SectionStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
