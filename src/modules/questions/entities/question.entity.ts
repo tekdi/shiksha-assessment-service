@@ -15,7 +15,6 @@ export enum QuestionType {
   FILL_BLANK = 'fill_blank',
   MATCH = 'match',
   SUBJECTIVE = 'subjective', //short answer, can not be evaluate automatically
-  OBJECTIVE = 'objective', // short answer, can be evaluate automatically
   ESSAY = 'essay', //long answer, can not be evaluate automatically
 }
 
