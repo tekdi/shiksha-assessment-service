@@ -9,6 +9,7 @@ export class ReviewAnswerDto {
 
   @ApiProperty()
   @IsNumber()
+  @Type(() => Number)
   score: number;
 
   @ApiPropertyOptional()
