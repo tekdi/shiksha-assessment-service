@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { AttemptStatus } from '../entities/test-attempt.entity';
+import { AttemptsGradeMethod } from '../entities/test.entity';
 
 export class UserTestStatusDto {
   @ApiProperty({

@@ -277,12 +277,115 @@ export class ProgressDto {
   remainingQuestions: number;
 }
 
-export class EnhancedTestDto {
+export class AttemptDetailsDto {
+  @ApiProperty({
+    description: 'Attempt ID',
+    example: 'attempt_abc123',
+  })
+  attemptId: string;
+
+  @ApiProperty({
+    description: 'User ID',
+    example: 'user_456',
+  })
+  userId: string;
+
+  @ApiProperty({
+    description: 'Attempt number',
+    example: 1,
+  })
+  attempt: number;
+
+  @ApiProperty({
+    description: 'Attempt status',
+    enum: AttemptStatus,
+    example: 'I',
+  })
+  status: AttemptStatus;
+
+  @ApiProperty({
+    description: 'Review status',
+    enum: ReviewStatus,
+    example: 'N',
+  })
+  reviewStatus: ReviewStatus;
+
+  @ApiProperty({
+    description: 'Submission type',
+    enum: SubmissionType,
+    example: 'self',
+  })
+  submissionType: SubmissionType;
+
+  @ApiProperty({
+    description: 'Result type',
+    enum: ResultType,
+    required: false,
+    example: null,
+  })
+  result: ResultType | null;
+
+  @ApiProperty({
+    description: 'Score',
+    required: false,
+    example: null,
+  })
+  score: number | null;
+
+  @ApiProperty({
+    description: 'Current position in test',
+    required: false,
+    example: 5,
+  })
+  currentPosition: number | null;
+
+  @ApiProperty({
+    description: 'Time spent in seconds',
+    required: false,
+    example: 1800,
+  })
+  timeSpent: number | null;
+
+  @ApiProperty({
+    description: 'When the attempt was started',
+    example: '2024-01-15T10:30:00Z',
+  })
+  startedAt: Date;
+
+  @ApiProperty({
+    description: 'When the attempt was submitted',
+    required: false,
+    example: null,
+  })
+  submittedAt: Date | null;
+
+  @ApiProperty({
+    description: 'Progress information',
+    type: ProgressDto,
+  })
+  progress: ProgressDto;
+
+  @ApiProperty({
+    description: 'Time remaining in seconds',
+    required: false,
+    example: 1800,
+  })
+  timeRemaining: number | null;
+}
+
+export class ResumeAttemptDto {
   @ApiProperty({
     description: 'Test ID',
     example: 'test_123',
   })
   testId: string;
+
+  @ApiProperty({
+    description: 'Resolved test ID (for rule-based tests)',
+    required: false,
+    example: 'test_generated_456',
+  })
+  resolvedTestId?: string;
 
   @ApiProperty({
     description: 'Test title',
@@ -379,131 +482,16 @@ export class EnhancedTestDto {
     example: false,
   })
   printAnswersheet: boolean;
-}
-
-export class ResumeAttemptDto {
-  @ApiProperty({
-    description: 'Attempt ID',
-    example: 'attempt_abc123',
-  })
-  attemptId: string;
 
   @ApiProperty({
-    description: 'Test ID',
-    example: 'test_123',
+    description: 'Attempt details',
+    type: AttemptDetailsDto,
   })
-  testId: string;
-
-  @ApiProperty({
-    description: 'Resolved test ID (for rule-based tests)',
-    required: false,
-    example: 'test_generated_456',
-  })
-  resolvedTestId?: string;
-
-  @ApiProperty({
-    description: 'User ID',
-    example: 'user_456',
-  })
-  userId: string;
-
-  @ApiProperty({
-    description: 'Attempt number',
-    example: 1,
-  })
-  attempt: number;
-
-  @ApiProperty({
-    description: 'Attempt status',
-    enum: AttemptStatus,
-    example: 'I',
-  })
-  status: AttemptStatus;
-
-  @ApiProperty({
-    description: 'Review status',
-    enum: ReviewStatus,
-    example: 'N',
-  })
-  reviewStatus: ReviewStatus;
-
-  @ApiProperty({
-    description: 'Submission type',
-    enum: SubmissionType,
-    example: 'self',
-  })
-  submissionType: SubmissionType;
-
-  @ApiProperty({
-    description: 'Result type',
-    enum: ResultType,
-    required: false,
-    example: null,
-  })
-  result: ResultType | null;
-
-  @ApiProperty({
-    description: 'Score',
-    required: false,
-    example: null,
-  })
-  score: number | null;
-
-  @ApiProperty({
-    description: 'Current position in test',
-    required: false,
-    example: 5,
-  })
-  currentPosition: number | null;
-
-  @ApiProperty({
-    description: 'Time spent in seconds',
-    required: false,
-    example: 1800,
-  })
-  timeSpent: number | null;
-
-  @ApiProperty({
-    description: 'When the attempt was started',
-    example: '2024-01-15T10:30:00Z',
-  })
-  startedAt: Date;
-
-  @ApiProperty({
-    description: 'When the attempt was submitted',
-    required: false,
-    example: null,
-  })
-  submittedAt: Date | null;
-
-  @ApiProperty({
-    description: 'Enhanced test information',
-    type: EnhancedTestDto,
-  })
-  test: EnhancedTestDto;
+  attempt: AttemptDetailsDto;
 
   @ApiProperty({
     description: 'Test sections with questions',
     type: [SectionDto],
   })
   sections: SectionDto[];
-
-  @ApiProperty({
-    description: 'User answers submitted so far',
-    type: [UserAnswerDto],
-  })
-  answers: UserAnswerDto[];
-
-  @ApiProperty({
-    description: 'Progress information',
-    type: ProgressDto,
-  })
-  progress: ProgressDto;
-
-  @ApiProperty({
-    description: 'Time remaining in seconds',
-    required: false,
-    example: 1800,
-  })
-  timeRemaining: number | null;
 } 

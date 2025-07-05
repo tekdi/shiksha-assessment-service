@@ -24,6 +24,7 @@ services:
       - REDIS_PORT=${REDIS_PORT}
     volumes:
       - ./uploads:/app/uploads
+    command: npm run start:dev
     depends_on:
       - postgres
     networks:

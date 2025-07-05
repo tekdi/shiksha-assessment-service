@@ -3,28 +3,34 @@ import { IsString, IsOptional, IsArray, IsUUID, ValidateNested, IsNumber } from 
 import { Type } from 'class-transformer';
 
 export class AnswerDto {
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ 
+    type: [String],
+    description: 'Selected option IDs for MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, and MATCH questions'
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  selectedOptionIds?: string[]; // For MCQ/Multiple choice
+  selectedOptionIds?: string[]; // For MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, MATCH
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Text answer for SUBJECTIVE and ESSAY questions'
+  })
   @IsOptional()
   @IsString()
-  text?: string; // For subjective/essay
+  text?: string; // For SUBJECTIVE, ESSAY
 
-  @ApiPropertyOptional({ type: [String] })
+  // Legacy fields for backward compatibility (deprecated)
+  @ApiPropertyOptional({ type: [String], deprecated: true })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  matches?: string[]; // For matching questions
+  matches?: string[]; // Deprecated - use selectedOptionIds for MATCH questions
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ type: [String], deprecated: true })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  blanks?: string[]; // For fill-in-the-blank
+  blanks?: string[]; // Deprecated - use selectedOptionIds for FILL_BLANK questions
 }
 
 export class SubmitAnswerDto {

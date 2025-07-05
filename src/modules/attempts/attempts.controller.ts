@@ -94,7 +94,7 @@ export class AttemptsController {
 
   @Get(':attemptId/:userId')
   @ApiOperation({ 
-    summary: 'Resume a existing attempt',
+    summary: 'Get / Resume a existing attempt',
     description: 'Load the existing in-progress attempt and recover previous answers, state, and time'
   })
   @ApiResponse({ 
@@ -108,6 +108,25 @@ export class AttemptsController {
   async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.getAttempt(attemptId, authContext);
-    return { result: attempt };
+    return attempt;
+  }
+
+  @Get(':attemptId/result')
+  @ApiOperation({ 
+    summary: 'Get attempt result',
+    description: 'Retrieve the complete result of a submitted attempt including scores, answers, and review status'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Attempt result retrieved successfully'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attempt not found',
+  })
+  async getAttemptResult(@Param('attemptId') attemptId: string, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.getAttemptResult(attemptId, authContext);
+    return result;
   }
 } 

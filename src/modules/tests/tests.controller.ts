@@ -18,6 +18,7 @@ import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
 import { AddQuestionToTestDto } from './dto/add-question-to-test.dto';
 import { AddQuestionsBulkDto } from './dto/add-questions-bulk.dto';
+import { UserTestResultDto } from './dto/user-test-result.dto';
 import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -236,5 +237,29 @@ export class TestsController {
     const authContext: AuthContext = req.user;
     const status = await this.testsService.getUserTestStatus(testId, userId, authContext);
     return { result: status };
+  }
+
+  @Get(':testId/users/:userId/result')
+  @ApiOperation({ 
+    summary: 'Get user test result',
+    description: 'Retrieve the final result for a user based on the test\'s attemptsGrading method (first_attempt, last_attempt, highest, average)'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'User test result retrieved successfully',
+    type: UserTestResultDto
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test not found',
+  })
+  async getUserTestResult(
+    @Param('testId') testId: string,
+    @Param('userId') userId: string,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const result = await this.testsService.getUserTestResult(testId, userId, authContext);
+    return { result };
   }
 } 
