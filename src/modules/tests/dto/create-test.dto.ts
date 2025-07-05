@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString } from 'class-validator';
-import { TestType, TestStatus, GradingType } from '../entities/test.entity';
+import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
 
 export class CreateTestDto {
   @ApiPropertyOptional()
@@ -146,10 +146,10 @@ export class CreateTestDto {
   @IsNumber()
   attempts?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: AttemptsGradeMethod })
   @IsOptional()
-  @IsString()
-  attemptsGrading?: string;
+  @IsEnum(AttemptsGradeMethod)
+  attemptsGrading?: AttemptsGradeMethod;
 
   @ApiPropertyOptional()
   @IsOptional()

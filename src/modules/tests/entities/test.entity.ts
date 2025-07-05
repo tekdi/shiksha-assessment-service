@@ -31,6 +31,13 @@ export enum GradingType {
   ASSIGNMENT = 'assignment',
   FEEDBACK = 'feedback',
 }
+export enum AttemptsGradeMethod {
+  FIRST_ATTEMPT = 'first_attempt',
+  LAST_ATTEMPT = 'last_attempt',
+  AVERAGE = 'average',
+  HIGHEST = 'highest',
+}
+
 
 @Entity('tests')
 export class Test {
@@ -62,9 +69,9 @@ export class Test {
   @Column({ type: 'integer', default: 1 })
   attempts: number;
 
-  @ApiProperty({ required: false })
-  @Column({ type: 'text', nullable: true })
-  attemptsGrading: string;
+  @ApiProperty({ enum: AttemptsGradeMethod })
+  @Column({ type: 'text', default: AttemptsGradeMethod.LAST_ATTEMPT })
+  attemptsGrading: AttemptsGradeMethod;
 
   @ApiProperty({ enum: TestStatus })
   @Column({ type: 'text', default: TestStatus.DRAFT })
