@@ -257,159 +257,14 @@ export class AttemptsService {
     // Calculate total marks for this attempt
     const totalMarks = await this.calculateTotalMarks(attemptId, authContext);
 
-    // Get all answers for this attempt
-    const userAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Get questions for the answers
-    const questionIds = userAnswers.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
-      where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+    // Get all answers and questions for this attempt
+    const { userAnswers, questionMap } = await this.getAttemptAnswersAndQuestions(attemptId, authContext);
 
     // Determine evaluation strategy based on test.isObjective flag
     if (test.isObjective) {
-      // Auto-evaluate all questions (objective test)
-      const score = await this.calculateObjectiveScore(attemptId, authContext);
-      const validatedScore = Number(score) || 0;
-      attempt.score = validatedScore; // Assign the calculated score in marks
-      attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
-      attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
-
-      // Only update answers that don't have scores or have incorrect review status
-      for (const answer of userAnswers) {
-        const question = questionMap.get(answer.questionId);
-        if (!question) continue;
-
-        const needsUpdate = answer.score === null || 
-                           answer.score === undefined || 
-                           answer.reviewStatus !== ReviewStatus.NOT_APPLICABLE;
-
-        if (needsUpdate) {
-          const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-          const validatedQuestionScore = Number(questionScore) || 0;
-          
-          await this.testUserAnswerRepository.update(
-            {
-              attemptId,
-              questionId: answer.questionId,
-              tenantId: authContext.tenantId,
-              organisationId: authContext.organisationId,
-            },
-            {
-              reviewStatus: AnswerReviewStatus.NOT_APPLICABLE,
-              score: validatedQuestionScore,
-            }
-          );
-        }
-      }
+      await this.handleObjectiveTestSubmission(attempt, test, userAnswers, questionMap, authContext);
     } else {
-      // Check if test has subjective questions
-      const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attemptId, authContext);
-      
-      if (hasSubjectiveQuestions) {
-        // Auto-evaluate objective questions and mark subjective for review
-        const objectiveScore = await this.calculateObjectiveScore(attemptId, authContext);
-        const validatedObjectiveScore = Number(objectiveScore) || 0;
-        attempt.score = validatedObjectiveScore; // Partial score from objective questions
-        attempt.result = null;
-        attempt.reviewStatus = ReviewStatus.PENDING;
-
-        // Update answer review statuses based on question type
-        for (const answer of userAnswers) {
-          const question = questionMap.get(answer.questionId);
-          if (!question) continue;
-
-          const isSubjective = question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY;
-          
-          if (isSubjective) {
-            // Mark subjective questions for review (only if not already marked)
-            if (answer.reviewStatus !== AnswerReviewStatus.PENDING) {
-              await this.testUserAnswerRepository.update(
-                {
-                  attemptId,
-                  questionId: answer.questionId,
-                  tenantId: authContext.tenantId,
-                  organisationId: authContext.organisationId,
-                },
-                {
-                  reviewStatus: AnswerReviewStatus.PENDING,
-                  score: null, // Score will be set during review
-                }
-              );
-            }
-          } else {
-            // Auto-score objective questions (only if not already scored)
-            const needsUpdate = answer.score === null || 
-                               answer.score === undefined || 
-                               answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
-
-            if (needsUpdate) {
-              const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-              const validatedQuestionScore = Number(questionScore) || 0;
-              
-              await this.testUserAnswerRepository.update(
-                {
-                  attemptId,
-                  questionId: answer.questionId,
-                  tenantId: authContext.tenantId,
-                  organisationId: authContext.organisationId,
-                },
-                {
-                  reviewStatus: AnswerReviewStatus.NOT_APPLICABLE,
-                  score: validatedQuestionScore,
-                }
-              );
-            }
-          }
-        }
-      } else {
-        // All questions are objective, auto-evaluate
-        const score = await this.calculateObjectiveScore(attemptId, authContext);
-        const validatedScore = Number(score) || 0;
-        attempt.score = validatedScore;
-        attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
-        attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
-
-        // Only update answers that don't have scores or have incorrect review status
-        for (const answer of userAnswers) {
-          const question = questionMap.get(answer.questionId);
-          if (!question) continue;
-
-          const needsUpdate = answer.score === null || 
-                             answer.score === undefined || 
-                             answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
-
-          if (needsUpdate) {
-            const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-            const validatedQuestionScore = Number(questionScore) || 0;
-            
-            await this.testUserAnswerRepository.update(
-              {
-                attemptId,
-                questionId: answer.questionId,
-                tenantId: authContext.tenantId,
-                organisationId: authContext.organisationId,
-              },
-              {
-                reviewStatus: AnswerReviewStatus.NOT_APPLICABLE,
-                score: validatedQuestionScore,
-              }
-            );
-          }
-        }
-      }
+      await this.handleMixedTestSubmission(attempt, test, userAnswers, questionMap, authContext);
     }
 
     // Update attempt status
@@ -753,32 +608,22 @@ export class AttemptsService {
   }
 
   private async calculateFinalScore(attemptId: string, authContext: AuthContext): Promise<number> {
-    const answers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
+    const { answers, totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
+    
     let totalScore = 0;
-    let totalMarks = 0;
-
     for (const answer of answers) {
-      const question = await this.questionRepository.findOne({
-        where: { questionId: answer.questionId },
-      });
-
-      if (question) {
-        totalMarks += question.marks;
-        totalScore += answer.score || 0;
-      }
+      totalScore += answer.score || 0;
     }
 
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
   }
 
   private async calculateTotalMarks(attemptId: string, authContext: AuthContext): Promise<number> {
+    const { totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
+    return totalMarks;
+  }
+
+  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: TestUserAnswer[], totalMarks: number }> {
     const answers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
@@ -788,7 +633,6 @@ export class AttemptsService {
     });
 
     let totalMarks = 0;
-
     for (const answer of answers) {
       const question = await this.questionRepository.findOne({
         where: { questionId: answer.questionId },
@@ -799,7 +643,7 @@ export class AttemptsService {
       }
     }
 
-    return totalMarks;
+    return { answers, totalMarks };
   }
 
   private shuffleArray<T>(array: T[]): T[] {
@@ -809,5 +653,166 @@ export class AttemptsService {
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
+  }
+
+  private async getAttemptAnswersAndQuestions(attemptId: string, authContext: AuthContext): Promise<{ userAnswers: TestUserAnswer[], questionMap: Map<string, Question> }> {
+    // Get all answers for this attempt
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Get questions for the answers
+    const questionIds = userAnswers.map(answer => answer.questionId);
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+
+    return { userAnswers, questionMap };
+  }
+
+  private async updateAnswerScore(
+    attemptId: string, 
+    questionId: string, 
+    score: number | null, 
+    reviewStatus: AnswerReviewStatus, 
+    authContext: AuthContext
+  ): Promise<void> {
+    await this.testUserAnswerRepository.update(
+      {
+        attemptId,
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      {
+        reviewStatus,
+        score,
+      }
+    );
+  }
+
+  private async handleObjectiveTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
+    // Auto-evaluate all questions (objective test)
+    const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
+    const validatedScore = Number(score) || 0;
+    attempt.score = validatedScore; // Assign the calculated score in marks
+    attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+    attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
+
+    // Only update answers that don't have scores or have incorrect review status
+    for (const answer of userAnswers) {
+      const question = questionMap.get(answer.questionId);
+      if (!question) continue;
+
+      const needsUpdate = answer.score === null || 
+                         answer.score === undefined || 
+                         answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
+
+      if (needsUpdate) {
+        const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+        const validatedQuestionScore = Number(questionScore) || 0;
+        
+        await this.updateAnswerScore(
+          attempt.attemptId,
+          answer.questionId,
+          validatedQuestionScore,
+          AnswerReviewStatus.NOT_APPLICABLE,
+          authContext
+        );
+      }
+    }
+  }
+
+  private async handleMixedTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
+    // Check if test has subjective questions
+    const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attempt.attemptId, authContext);
+    
+    if (hasSubjectiveQuestions) {
+      // Auto-evaluate objective questions and mark subjective for review
+      const objectiveScore = await this.calculateObjectiveScore(attempt.attemptId, authContext);
+      const validatedObjectiveScore = Number(objectiveScore) || 0;
+      attempt.score = validatedObjectiveScore; // Partial score from objective questions
+      attempt.result = null;
+      attempt.reviewStatus = ReviewStatus.PENDING;
+
+      // Update answer review statuses based on question type
+      for (const answer of userAnswers) {
+        const question = questionMap.get(answer.questionId);
+        if (!question) continue;
+
+        const isSubjective = question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY;
+        
+        if (isSubjective) {
+          // Mark subjective questions for review (only if not already marked)
+          if (answer.reviewStatus !== AnswerReviewStatus.PENDING) {
+            await this.updateAnswerScore(
+              attempt.attemptId,
+              answer.questionId,
+              null,
+              AnswerReviewStatus.PENDING,
+              authContext
+            );
+          }
+        } else {
+          // Auto-score objective questions (only if not already scored)
+          const needsUpdate = answer.score === null || 
+                             answer.score === undefined || 
+                             answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
+
+          if (needsUpdate) {
+            const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+            const validatedQuestionScore = Number(questionScore) || 0;
+            
+            await this.updateAnswerScore(
+              attempt.attemptId,
+              answer.questionId,
+              validatedQuestionScore,
+              AnswerReviewStatus.NOT_APPLICABLE,
+              authContext
+            );
+          }
+        }
+      }
+    } else {
+      // All questions are objective, auto-evaluate
+      const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
+      const validatedScore = Number(score) || 0;
+      attempt.score = validatedScore;
+      attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+      attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
+
+      // Only update answers that don't have scores or have incorrect review status
+      for (const answer of userAnswers) {
+        const question = questionMap.get(answer.questionId);
+        if (!question) continue;
+
+        const needsUpdate = answer.score === null || 
+                           answer.score === undefined || 
+                           answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
+
+        if (needsUpdate) {
+          const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+          const validatedQuestionScore = Number(questionScore) || 0;
+          
+          await this.updateAnswerScore(
+            attempt.attemptId,
+            answer.questionId,
+            validatedQuestionScore,
+            AnswerReviewStatus.NOT_APPLICABLE,
+            authContext
+          );
+        }
+      }
+    }
   }
 } 
