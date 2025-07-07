@@ -1,11 +1,34 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { QuestionType, QuestionLevel, QuestionStatus, GradingType, QuestionParams } from '../entities/question.entity';
+import { QuestionType, QuestionLevel, QuestionStatus, GradingType, QuestionParams, QuestionMedia } from '../entities/question.entity';
+
+export class QuestionMediaDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
+  image?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
+  video?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
+  audio?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
+  document?: string;
+}
 
 export class RubricCriteriaDto {
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiProperty()
@@ -57,14 +80,43 @@ export class QuestionParamsDto {
 }
 
 export class CreateQuestionOptionDto {
-  @ApiProperty()
+  @ApiProperty({ 
+    description: 'Option text content'
+  })
+  @IsNotEmpty()
   @IsString()
   text: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ 
+    description: 'Media URLs for the option',
+    example: {
+      image: "https://cdn.example.com/opt1.png",
+      video: "https://cdn.example.com/opt2.mp4"
+    }
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuestionMediaDto)
+  media?: QuestionMediaDto;
+
+  @ApiPropertyOptional({ 
+    description: 'Text for matching (used in match questions)'
+  })
   @IsOptional()
   @IsString()
   matchWith?: string;
+
+  @ApiPropertyOptional({ 
+    description: 'Media URLs for matching (used in match questions)',
+    example: {
+      image: "https://cdn.example.com/match1.png",
+      video: "https://cdn.example.com/match2.mp4"
+    }
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuestionMediaDto)
+  matchWithMedia?: QuestionMediaDto;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -93,9 +145,24 @@ export class CreateQuestionOptionDto {
 }
 
 export class CreateQuestionDto {
-  @ApiProperty()
+  @ApiProperty({ 
+    description: 'Question text content'
+  })
+  @IsNotEmpty()
   @IsString()
-  title: string;
+  text: string;
+
+  @ApiPropertyOptional({ 
+    description: 'Media URLs for the question',
+    example: {
+      image: "https://cdn.example.com/question.png",
+      video: "https://cdn.example.com/question.mp4"
+    }
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuestionMediaDto)
+  media?: QuestionMediaDto;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -10,6 +10,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { AttemptsService } from './attempts.service';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
+import { AttemptResultDto } from './dto/attempt-result.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 
@@ -86,5 +87,25 @@ export class AttemptsController {
   async getPendingReviews(@Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
+  }
+
+  @Get(':attemptId/result')
+  @ApiOperation({ 
+    summary: 'Get attempt result',
+    description: 'Retrieve the complete result of a submitted attempt including scores, answers, and review status'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Attempt result retrieved successfully',
+    type: AttemptResultDto
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attempt not found',
+  })
+  async getAttemptResult(@Param('attemptId') attemptId: string, @Req() req: any): Promise<AttemptResultDto> {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.getAttemptResult(attemptId, authContext);
+    return result;
   }
 } 
