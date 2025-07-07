@@ -4,9 +4,6 @@ import { AttemptsController } from './attempts.controller';
 import { AttemptsService } from './attempts.service';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
-import { Test } from '../tests/entities/test.entity';
-import { TestQuestion } from '../tests/entities/test-question.entity';
-import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question } from '../questions/entities/question.entity';
 import { PluginModule } from '../plugins/plugin.module';
 
@@ -15,9 +12,6 @@ import { PluginModule } from '../plugins/plugin.module';
     TypeOrmModule.forFeature([
       TestAttempt,
       TestUserAnswer,
-      Test,
-      TestQuestion,
-      TestRule,
       Question,
     ]),
     PluginModule,

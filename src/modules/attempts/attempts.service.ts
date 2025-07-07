@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType } from '../tests/entities/test.entity';
@@ -216,7 +216,7 @@ export class AttemptsService {
     );
   }
 
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -248,6 +248,9 @@ export class AttemptsService {
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
+    // Calculate total marks
+    const totalMarks = await this.calculateTotalMarks(attemptId, authContext);
+
     // Trigger plugin event
     await this.pluginManager.triggerEvent(
       PluginManagerService.EVENTS.ATTEMPT_SUBMITTED,
@@ -266,7 +269,7 @@ export class AttemptsService {
       }
     );
 
-    return savedAttempt;
+    return { ...savedAttempt, totalMarks };
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
@@ -482,7 +485,7 @@ export class AttemptsService {
   private async hasSubjectiveQuestions(attemptId: string, authContext: AuthContext): Promise<boolean> {
     const subjectiveQuestions = await this.questionRepository
       .createQueryBuilder('question')
-      .innerJoin('testUserAnswers', 'answers', 'answers.questionId = question.id')
+      .innerJoin('testUserAnswers', 'answers', 'answers.questionId = question.questionId')
       .where('answers.attemptId = :attemptId', { attemptId })
       .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
@@ -495,7 +498,7 @@ export class AttemptsService {
   private async calculateObjectiveScore(attemptId: string, authContext: AuthContext): Promise<number> {
     const answers = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
-      .innerJoin('questions', 'question', 'question.id = answer.questionId')
+      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
       .where('answer.attemptId = :attemptId', { attemptId })
       .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
@@ -563,6 +566,30 @@ export class AttemptsService {
     }
 
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
+  }
+
+  private async calculateTotalMarks(attemptId: string, authContext: AuthContext): Promise<number> {
+    const answers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    let totalMarks = 0;
+
+    for (const answer of answers) {
+      const question = await this.questionRepository.findOne({
+        where: { questionId: answer.questionId },
+      });
+
+      if (question) {
+        totalMarks += question.marks;
+      }
+    }
+
+    return totalMarks;
   }
 
   private shuffleArray<T>(array: T[]): T[] {
