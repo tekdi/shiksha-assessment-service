@@ -78,35 +78,17 @@ export class AttemptsService {
     }
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_STARTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        attemptNumber: savedAttempt.attempt,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_STARTED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      attemptNumber: savedAttempt.attempt,
+    });
 
     return savedAttempt;
   }
 
   async getAttemptQuestions(attemptId: string, authContext: AuthContext): Promise<Question[]> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Get questions from the resolved test (generated test for rule-based)
     const testId = attempt.resolvedTestId || attempt.testId;
@@ -155,17 +137,7 @@ export class AttemptsService {
     }
 
     // Get question to validate answer format
-    const question = await this.questionRepository.findOne({
-      where: {
-        questionId: submitAnswerDto.questionId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!question) {
-      throw new NotFoundException('Question not found');
-    }
+    const question = await this.findQuestionById(submitAnswerDto.questionId, authContext);
 
     // Validate answer based on question type
     this.validateAnswer(submitAnswerDto.answer, question);
@@ -206,34 +178,16 @@ export class AttemptsService {
     }
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ANSWER_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        timeSpent: submitAnswerDto.timeSpent,
-        answer: submitAnswerDto.answer,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ANSWER_SUBMITTED, authContext, {
+      attemptId,
+      questionId: submitAnswerDto.questionId,
+      timeSpent: submitAnswerDto.timeSpent,
+      answer: submitAnswerDto.answer,
+    });
   }
 
   async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Check if attempt is already submitted
     if (attempt.status === AttemptStatus.SUBMITTED) {
@@ -242,17 +196,7 @@ export class AttemptsService {
 
     // Get test information
     const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.testRepository.findOne({
-      where: {
-        testId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!test) {
-      throw new NotFoundException('Test not found');
-    }
+    const test = await this.findTestById(testId, authContext);
 
     // Calculate total marks for this attempt
     const totalMarks = await this.calculateTotalMarks(attemptId, authContext);
@@ -275,39 +219,21 @@ export class AttemptsService {
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        score: savedAttempt.score,
-        result: savedAttempt.result,
-        timeSpent: savedAttempt.timeSpent,
-        reviewStatus: savedAttempt.reviewStatus,
-        isObjective: test.isObjective,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_SUBMITTED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      score: savedAttempt.score,
+      result: savedAttempt.result,
+      timeSpent: savedAttempt.timeSpent,
+      reviewStatus: savedAttempt.reviewStatus,
+      isObjective: test.isObjective,
+    });
 
     return { ...savedAttempt, totalMarks };
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Update scores for reviewed answers
     for (const answerReview of reviewDto.answers) {
@@ -339,22 +265,14 @@ export class AttemptsService {
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_REVIEWED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        score: savedAttempt.score,
-        result: savedAttempt.result,
-        reviewedBy: authContext.userId,
-        answersReviewed: reviewDto.answers.length,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_REVIEWED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      score: savedAttempt.score,
+      result: savedAttempt.result,
+      reviewedBy: authContext.userId,
+      answersReviewed: reviewDto.answers.length,
+    });
 
     return savedAttempt;
   }
@@ -705,32 +623,12 @@ export class AttemptsService {
     // Auto-evaluate all questions (objective test)
     const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
     const validatedScore = Number(score) || 0;
-    attempt.score = validatedScore; // Assign the calculated score in marks
+    attempt.score = validatedScore;
     attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
     attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
 
-    // Only update answers that don't have scores or have incorrect review status
-    for (const answer of userAnswers) {
-      const question = questionMap.get(answer.questionId);
-      if (!question) continue;
-
-      const needsUpdate = answer.score === null || 
-                         answer.score === undefined || 
-                         answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
-
-      if (needsUpdate) {
-        const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-        const validatedQuestionScore = Number(questionScore) || 0;
-        
-        await this.updateAnswerScore(
-          attempt.attemptId,
-          answer.questionId,
-          validatedQuestionScore,
-          AnswerReviewStatus.NOT_APPLICABLE,
-          authContext
-        );
-      }
-    }
+    // Process all answers as objective questions
+    await this.processAnswersAsObjective(userAnswers, questionMap, attempt.attemptId, authContext);
   }
 
   private async handleMixedTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
@@ -741,48 +639,12 @@ export class AttemptsService {
       // Auto-evaluate objective questions and mark subjective for review
       const objectiveScore = await this.calculateObjectiveScore(attempt.attemptId, authContext);
       const validatedObjectiveScore = Number(objectiveScore) || 0;
-      attempt.score = validatedObjectiveScore; // Partial score from objective questions
+      attempt.score = validatedObjectiveScore;
       attempt.result = null;
       attempt.reviewStatus = ReviewStatus.PENDING;
 
-      // Update answer review statuses based on question type
-      for (const answer of userAnswers) {
-        const question = questionMap.get(answer.questionId);
-        if (!question) continue;
-
-        const isSubjective = question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY;
-        
-        if (isSubjective) {
-          // Mark subjective questions for review (only if not already marked)
-          if (answer.reviewStatus !== AnswerReviewStatus.PENDING) {
-            await this.updateAnswerScore(
-              attempt.attemptId,
-              answer.questionId,
-              null,
-              AnswerReviewStatus.PENDING,
-              authContext
-            );
-          }
-        } else {
-          // Auto-score objective questions (only if not already scored)
-          const needsUpdate = answer.score === null || 
-                             answer.score === undefined || 
-                             answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
-
-          if (needsUpdate) {
-            const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-            const validatedQuestionScore = Number(questionScore) || 0;
-            
-            await this.updateAnswerScore(
-              attempt.attemptId,
-              answer.questionId,
-              validatedQuestionScore,
-              AnswerReviewStatus.NOT_APPLICABLE,
-              authContext
-            );
-          }
-        }
-      }
+      // Process answers based on question type
+      await this.processMixedAnswers(userAnswers, questionMap, attempt.attemptId, authContext);
     } else {
       // All questions are objective, auto-evaluate
       const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
@@ -791,28 +653,142 @@ export class AttemptsService {
       attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
       attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
 
-      // Only update answers that don't have scores or have incorrect review status
-      for (const answer of userAnswers) {
-        const question = questionMap.get(answer.questionId);
-        if (!question) continue;
+      // Process all answers as objective questions
+      await this.processAnswersAsObjective(userAnswers, questionMap, attempt.attemptId, authContext);
+    }
+  }
 
-        const needsUpdate = answer.score === null || 
-                           answer.score === undefined || 
-                           answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
+  private async processAnswersAsObjective(userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, attemptId: string, authContext: AuthContext): Promise<void> {
+    for (const answer of userAnswers) {
+      const question = questionMap.get(answer.questionId);
+      if (!question) continue;
 
-        if (needsUpdate) {
-          const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-          const validatedQuestionScore = Number(questionScore) || 0;
-          
-          await this.updateAnswerScore(
-            attempt.attemptId,
-            answer.questionId,
-            validatedQuestionScore,
-            AnswerReviewStatus.NOT_APPLICABLE,
-            authContext
-          );
-        }
+      const needsUpdate = this.needsScoreUpdate(answer);
+      if (needsUpdate) {
+        const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+        const validatedQuestionScore = Number(questionScore) || 0;
+        
+        await this.updateAnswerScore(
+          attemptId,
+          answer.questionId,
+          validatedQuestionScore,
+          AnswerReviewStatus.NOT_APPLICABLE,
+          authContext
+        );
       }
     }
+  }
+
+  private async processMixedAnswers(userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, attemptId: string, authContext: AuthContext): Promise<void> {
+    for (const answer of userAnswers) {
+      const question = questionMap.get(answer.questionId);
+      if (!question) continue;
+
+      const isSubjective = this.isSubjectiveQuestion(question);
+      
+      if (isSubjective) {
+        await this.markAnswerForReview(answer, attemptId, authContext);
+      } else {
+        await this.processObjectiveAnswer(answer, question, attemptId, authContext);
+      }
+    }
+  }
+
+  private needsScoreUpdate(answer: TestUserAnswer): boolean {
+    return answer.score === null || 
+           answer.score === undefined || 
+           answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
+  }
+
+  private isSubjectiveQuestion(question: Question): boolean {
+    return question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY;
+  }
+
+  private async markAnswerForReview(answer: TestUserAnswer, attemptId: string, authContext: AuthContext): Promise<void> {
+    if (answer.reviewStatus !== AnswerReviewStatus.PENDING) {
+      await this.updateAnswerScore(
+        attemptId,
+        answer.questionId,
+        null,
+        AnswerReviewStatus.PENDING,
+        authContext
+      );
+    }
+  }
+
+  private async processObjectiveAnswer(answer: TestUserAnswer, question: Question, attemptId: string, authContext: AuthContext): Promise<void> {
+    const needsUpdate = this.needsScoreUpdate(answer);
+    if (needsUpdate) {
+      const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+      const validatedQuestionScore = Number(questionScore) || 0;
+      
+      await this.updateAnswerScore(
+        attemptId,
+        answer.questionId,
+        validatedQuestionScore,
+        AnswerReviewStatus.NOT_APPLICABLE,
+        authContext
+      );
+    }
+  }
+
+  private async findAttemptById(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    return attempt;
+  }
+
+  private async findTestById(testId: string, authContext: AuthContext): Promise<Test> {
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    return test;
+  }
+
+  private async findQuestionById(questionId: string, authContext: AuthContext): Promise<Question> {
+    const question = await this.questionRepository.findOne({
+      where: {
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    return question;
+  }
+
+  private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
+    await this.pluginManager.triggerEvent(
+      eventName,
+      {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        userId: authContext.userId,
+      },
+      eventData
+    );
   }
 } 
