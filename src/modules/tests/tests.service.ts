@@ -528,21 +528,23 @@ export class TestsService {
 
     if (submittedAttempts.length > 0) {
       switch (test.attemptsGrading) {
-        case AttemptsGradeMethod.FIRST_ATTEMPT:
+        case AttemptsGradeMethod.FIRST_ATTEMPT: {
           const firstAttempt = submittedAttempts[0]; // First by start time
           finalScore = firstAttempt.score || 0;
           finalResult = firstAttempt.result || null;
           finalAttemptId = firstAttempt.attemptId;
           break;
+        }
 
-        case AttemptsGradeMethod.LAST_ATTEMPT:
+        case AttemptsGradeMethod.LAST_ATTEMPT: {
           const lastAttempt = submittedAttempts[submittedAttempts.length - 1]; // Last by start time
           finalScore = lastAttempt.score || 0;
           finalResult = lastAttempt.result || null;
           finalAttemptId = lastAttempt.attemptId;
           break;
+        }
 
-        case AttemptsGradeMethod.HIGHEST:
+        case AttemptsGradeMethod.HIGHEST: {
           const highestAttempt = submittedAttempts.reduce((prev, current) => 
             (current.score || 0) > (prev.score || 0) ? current : prev
           );
@@ -550,19 +552,22 @@ export class TestsService {
           finalResult = highestAttempt.result || null;
           finalAttemptId = highestAttempt.attemptId;
           break;
+        }
 
-        case AttemptsGradeMethod.AVERAGE:
+        case AttemptsGradeMethod.AVERAGE: {
           const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
           finalScore = totalScore / submittedAttempts.length;
           finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
           finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId; // Use last attempt as reference
           break;
+        }
 
-        default:
+        default: {
           const defaultAttempt = submittedAttempts[submittedAttempts.length - 1];
           finalScore = defaultAttempt.score || 0;
           finalResult = defaultAttempt.result || null;
           finalAttemptId = defaultAttempt.attemptId;
+        }
       }
     }
 
