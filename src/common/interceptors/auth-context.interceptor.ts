@@ -16,7 +16,14 @@ export class AuthContextInterceptor implements NestInterceptor {
     // Extract tenant and organisation IDs from headers (support both formats)
     const tenantId = request.headers['tenantid'] || request.headers['tenant-id'] || request.headers['tenantId'];
     const organisationId = request.headers['organisationid'] || request.headers['organisation-id'] || request.headers['organisationId'];
-    const userId = request.headers['userid'] || request.headers['user-id'] || request.headers['userId'] || 'system'; // Default to 'system' for now
+    
+    // Extract userId from headers first, then query params, with 'system' as default
+    const userId = request.headers['userid'] || 
+                   request.headers['user-id'] || 
+                   request.headers['userId'] || 
+                   request.query.userId || 
+                   request.query.userid || 
+                   'system';
     
     // Validate required headers
     if (!tenantId) {
