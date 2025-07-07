@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
-import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
-import { Test, TestType } from '../tests/entities/test.entity';
+import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
+import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
@@ -572,5 +572,129 @@ export class AttemptsService {
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
+  }
+
+  async getAttemptResult(attemptId: string, authContext: AuthContext): Promise<{
+    attemptId: string;
+    testId: string;
+    userId: string;
+    status: AttemptStatus;
+    reviewStatus: ReviewStatus;
+    score: number;
+    result: ResultType;
+    submittedAt: Date;
+    timeSpent: number;
+    test: {
+      title: string;
+      passingMarks: number;
+      totalMarks: number;
+      isObjective: boolean;
+    };
+    attempt: Array<{
+      questionId: string;
+      questionText: string;
+      questionType: string;
+      marks: number;
+      score: number;
+      reviewStatus: string;
+      remarks?: string;
+      reviewedBy?: string;
+      reviewedAt?: Date;
+      selectedOptionIds?: any[]; // For MCQ, True-False, Multiple Answer, Fill Blank, Match
+      text?: string; // For Subjective/Essay
+    }>;
+  }> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    // Get test details
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get user answers for this attempt
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    // Get questions for this attempt
+    const questionIds = userAnswers.map(answer => answer.questionId);
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Create a map for quick question lookup
+    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Build attempt results
+    const attemptResults = userAnswers.map(answer => {
+      const question = questionMap.get(answer.questionId);
+      const answerData = JSON.parse(answer.answer);
+
+      return {
+        questionId: answer.questionId,
+        questionText: question?.title || '',
+        questionType: question?.type || '',
+        marks: question?.marks || 0,
+        score: answer.score || 0,
+        reviewStatus: answer.reviewStatus || 'P',
+        remarks: answer.remarks,
+        reviewedBy: answer.reviewedBy,
+        reviewedAt: answer.reviewedAt,
+        selectedOptionIds: answerData.selectedOptionIds || [],
+        text: answerData.text || '',
+        blanks: answerData.blanks || [],
+        matches: answerData.matches || [],
+      };
+    });
+
+    // Determine if test is objective (all questions are quiz type)
+    const isObjective = questions.every(q => q.gradingType === GradingType.QUIZ);
+
+    return {
+      attemptId: attempt.attemptId,
+      testId: attempt.testId,
+      userId: attempt.userId,
+      status: attempt.status,
+      reviewStatus: attempt.reviewStatus,
+      score: attempt.score || 0,
+      result: attempt.result,
+      submittedAt: attempt.submittedAt,
+      timeSpent: attempt.timeSpent || 0,
+      test: {
+        title: test.title,
+        passingMarks: test.passingMarks,
+        totalMarks: test.totalMarks,
+        isObjective,
+      },
+      attempt: attemptResults,
+    };
   }
 } 
