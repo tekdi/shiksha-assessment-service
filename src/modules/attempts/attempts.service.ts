@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
-import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
+import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
@@ -295,7 +295,7 @@ export class AttemptsService {
           score: answerReview.score,
           remarks: answerReview.remarks,
           reviewedBy: authContext.userId,
-          reviewStatus: 'R' as any, // REVIEWED
+          reviewStatus: AnswerReviewStatus.REVIEWED,
           reviewedAt: new Date(),
         }
       );
