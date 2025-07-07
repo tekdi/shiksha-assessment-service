@@ -15,7 +15,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Global prefix
-  app.setGlobalPrefix('assessment/v1');
+  app.setGlobalPrefix(process.env.ASSESSMENT_PREFIX);
 
   // Global exception filter
   app.useGlobalFilters(new ApiExceptionFilter());

@@ -18,8 +18,6 @@ import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
 import { AddQuestionToTestDto } from './dto/add-question-to-test.dto';
 import { AddQuestionsBulkDto } from './dto/add-questions-bulk.dto';
-import { UserTestResultDto } from './dto/user-test-result.dto';
-import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
@@ -247,7 +245,6 @@ export class TestsController {
   @ApiResponse({ 
     status: 200, 
     description: 'User test result retrieved successfully',
-    type: UserTestResultDto
   })
   @ApiResponse({
     status: 404,
