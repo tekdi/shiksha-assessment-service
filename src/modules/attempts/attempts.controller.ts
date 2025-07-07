@@ -23,9 +23,13 @@ export class AttemptsController {
   @Post('start/:testId')
   @ApiOperation({ summary: 'Start a new test attempt' })
   @ApiResponse({ status: 201, description: 'Attempt started', type: ApiSuccessResponseDto })
-  async startAttempt(@Param('testId') testId: string, @Req() req: any) {
+  async startAttempt(
+    @Param('testId') testId: string, 
+    @Body() startAttemptDto: StartNewAttemptDto,
+    @Req() req: any
+  ) {
     const authContext: AuthContext = req.user;
-    const attempt = await this.attemptsService.startAttempt(testId, authContext.userId, authContext);
+    const attempt = await this.attemptsService.startAttempt(testId, authContext.userId, authContext, startAttemptDto);
     return { attemptId: attempt.attemptId };
   }
 

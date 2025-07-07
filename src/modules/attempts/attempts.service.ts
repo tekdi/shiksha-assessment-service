@@ -12,6 +12,7 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
+import { StartNewAttemptDto } from './dto/start-new-attempt.dto';
 
 @Injectable()
 export class AttemptsService {
@@ -32,7 +33,7 @@ export class AttemptsService {
     private readonly questionPoolService: QuestionPoolService,
   ) {}
 
-  async startAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
+  async startAttempt(testId: string, userId: string, authContext: AuthContext, startAttemptDto?: StartNewAttemptDto): Promise<TestAttempt> {
     // Check if test exists and user can attempt
     const test = await this.testRepository.findOne({
       where: {
@@ -61,17 +62,15 @@ export class AttemptsService {
     }
 
     // Get all existing attempts for this user and test
-    const existingAttempts = await this.attemptRepository.find({
+    const totalAttempts = await this.attemptRepository.count({
       where: {
         testId,
         userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { startedAt: 'DESC' },
     });
 
-    const totalAttempts = existingAttempts.length;
     const maxAttempts = test.attempts;
 
     // Check if user has reached maximum attempts
@@ -87,6 +86,9 @@ export class AttemptsService {
       status: AttemptStatus.IN_PROGRESS,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
+      // Use DTO values if provided
+      timeSpent: startAttemptDto?.initialTimeSpent || 0,
+      currentPosition: startAttemptDto?.initialPosition || 1,
     });
 
     const savedAttempt = await this.attemptRepository.save(attempt);
@@ -110,9 +112,6 @@ export class AttemptsService {
         attemptNumber: savedAttempt.attempt,
       }
     );
-
-    // Validate questions have correct options
-    await this.validateQuestionsHaveCorrectOptions(testId, authContext);
 
     return savedAttempt;
   }
@@ -643,23 +642,4 @@ export class AttemptsService {
     return shuffled;
   }
 
-  private async validateQuestionsHaveCorrectOptions(testId: string, authContext: AuthContext): Promise<void> {
-    // This is a placeholder for validation logic. You can expand this as needed.
-    // For now, it just checks that all MCQ/True-False questions have at least one correct option.
-    const testQuestions = await this.testQuestionRepository.find({
-      where: {
-        testId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-    const questionIds = testQuestions.map(q => q.questionId);
-    if (!questionIds.length) return;
-    const questions = await this.questionRepository.findByIds(questionIds);
-    for (const question of questions) {
-      if ((question.type === QuestionType.MCQ || question.type === QuestionType.TRUE_FALSE) && (!question.options || !question.options.some(opt => opt.isCorrect))) {
-        throw new Error(`Question ${question.questionId} does not have a correct option defined.`);
-      }
-    }
-  }
 } 
