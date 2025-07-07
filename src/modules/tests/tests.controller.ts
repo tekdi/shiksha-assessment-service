@@ -218,7 +218,7 @@ export class TestsController {
   @Get(':testId/users/:userId/status')
   @ApiOperation({ 
     summary: 'Check user test status',
-    description: 'Determine if the user can resume, reattempt, or is restricted based on previous attempts'
+    description: 'Determine if the user can resume, reattempt, or is restricted based on previous attempts. Returns max attempts allowed and total attempts made by the user.'
   })
   @ApiResponse({
     status: 200,

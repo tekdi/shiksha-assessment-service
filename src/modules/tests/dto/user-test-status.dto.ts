@@ -28,4 +28,16 @@ export class UserTestStatusDto {
     required: false,
   })
   lastAttemptId: string | null;
+
+  @ApiProperty({
+    description: 'Maximum number of attempts allowed for this test',
+    example: 3,
+  })
+  maxAttempts: number;
+
+  @ApiProperty({
+    description: 'Total number of attempts made by the user for this test',
+    example: 2,
+  })
+  totalAttempts: number;
 } 

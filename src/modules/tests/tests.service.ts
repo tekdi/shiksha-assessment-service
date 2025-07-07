@@ -430,6 +430,9 @@ export class TestsService {
       order: { startedAt: 'DESC' },
     });
 
+    const totalAttempts = attempts.length;
+    const maxAttempts = test.attempts;
+
     if (attempts.length === 0) {
       // No attempts yet - user can start a new attempt
       return {
@@ -437,12 +440,12 @@ export class TestsService {
         canReattempt: true,
         lastAttemptStatus: null,
         lastAttemptId: null,
+        maxAttempts,
+        totalAttempts,
       };
     }
 
     const lastAttempt = attempts[0];
-    const totalAttempts = attempts.length;
-    const maxAttempts = test.attempts;
 
     // Check if user can resume (has an in-progress attempt)
     const canResume = lastAttempt.status === AttemptStatus.IN_PROGRESS; 
@@ -455,6 +458,8 @@ export class TestsService {
       canReattempt,
       lastAttemptStatus: lastAttempt.status,
       lastAttemptId: lastAttempt.attemptId,
+      maxAttempts,
+      totalAttempts,
     };
   }
 
