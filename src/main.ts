@@ -15,7 +15,9 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Global prefix
-  app.setGlobalPrefix('assessment/v1');
+  const apiPrefix = process.env.ASSESSMENT_PREFIX || 'assessment/v1';
+  app.setGlobalPrefix(apiPrefix);
+  console.log(`🔧 API prefix configured as: ${apiPrefix}`);
 
   // Global exception filter
   app.useGlobalFilters(new ApiExceptionFilter());
@@ -78,7 +80,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 6000;
   await app.listen(port);
   
   console.log(`🚀 Assessment Service is running on: http://localhost:${port}`);
