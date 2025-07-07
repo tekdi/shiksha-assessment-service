@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum, IsNumber, IsUUID, IsBoolean, IsArray, ValidateNested, IsObject } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RuleType, SelectionStrategy } from '../entities/test-rule.entity';
+import { TestStatus } from '../entities/test.entity';
 
 export class RuleCriteriaDto {
   @ApiPropertyOptional({ type: [String] })
@@ -27,6 +28,12 @@ export class RuleCriteriaDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @ApiPropertyOptional({ type: [Number] })
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  marks?: number[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
@@ -63,12 +70,12 @@ export class CreateRuleDto {
   @IsEnum(RuleType)
   ruleType: RuleType;
 
-  @ApiPropertyOptional()
+  @ApiProperty()
   @IsOptional()
   @IsUUID()
   testId?: string;
 
-  @ApiPropertyOptional()
+  @ApiProperty()
   @IsOptional()
   @IsUUID()
   sectionId?: string;
@@ -76,6 +83,10 @@ export class CreateRuleDto {
   @ApiProperty()
   @IsNumber()
   numberOfQuestions: number;
+
+  @ApiProperty()
+  @IsNumber()
+  poolSize: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -97,13 +108,18 @@ export class CreateRuleDto {
   @Type(() => RuleCriteriaDto)
   criteria: RuleCriteriaDto;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: TestStatus })
   @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
+  @IsEnum(TestStatus)
+  status?: TestStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   priority?: number;
+
+  @ApiPropertyOptional({ enum: ['PRESELECTED', 'DYNAMIC'] })
+  @IsOptional()
+  @IsEnum(['PRESELECTED', 'DYNAMIC'])
+  selectionMode?: 'PRESELECTED' | 'DYNAMIC';
 } 

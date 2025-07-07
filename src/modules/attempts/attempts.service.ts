@@ -11,6 +11,7 @@ import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
+import { QuestionPoolService } from '../tests/question-pool.service';
 
 @Injectable()
 export class AttemptsService {
@@ -28,13 +29,14 @@ export class AttemptsService {
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
     private readonly pluginManager: PluginManagerService,
+    private readonly questionPoolService: QuestionPoolService,
   ) {}
 
   async startAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
     // Check if test exists and user can attempt
     const test = await this.testRepository.findOne({
       where: {
-        id: testId,
+        testId: testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -120,9 +122,13 @@ export class AttemptsService {
 
     const questionIds = testQuestions.map(tq => tq.questionId);
     
+    if (questionIds.length === 0) {
+      return [];
+    }
+    
     return this.questionRepository.find({
       where: {
-        questionId: { $in: questionIds } as any,
+        questionId: In(questionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -336,7 +342,7 @@ export class AttemptsService {
     return this.attemptRepository
       .createQueryBuilder('attempt')
       .leftJoin('testUserAnswers', 'answers', 'answers.attemptId = attempt.attemptId')
-      .leftJoin('questions', 'question', 'question.id = answers.questionId')
+      .leftJoin('questions', 'question', 'question.questionId = answers.questionId')
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
       .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.PENDING })
@@ -348,9 +354,11 @@ export class AttemptsService {
         'attempt.userId',
         'attempt.submittedAt',
         'answers.questionId',
-        'question.title',
+        'question.text as title',
         'question.type',
-        'answers.answer',
+        'question.marks',
+        'question.gradingType',
+        'question.params'
       ])
       .getMany();
   }
@@ -373,13 +381,13 @@ export class AttemptsService {
     const savedGeneratedTest = await this.testRepository.save(generatedTest);
 
     // Link the attempt to the generated test
-    attempt.resolvedTestId = savedGeneratedTest.id;
+    attempt.resolvedTestId = savedGeneratedTest.testId;
     await this.attemptRepository.save(attempt);
 
     // Get rules for the original test
     const rules = await this.testRuleRepository.find({
       where: {
-        testId: originalTest.id,
+        testId: originalTest.testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
         isActive: true,
@@ -390,39 +398,78 @@ export class AttemptsService {
     let questionOrder = 1;
 
     for (const rule of rules) {
-      // Get all questions from testQuestions that match this rule
-      const availableQuestions = await this.testQuestionRepository.find({
-        where: {
-          testId: originalTest.testId,
-          ruleId: rule.id,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-        order: { ordering: 'ASC' },
-      });
+      let selectedQuestionIds: string[] = [];
 
-      // Select questions based on rule strategy
-      const selectedQuestions = this.selectQuestionsFromRule(
-        availableQuestions,
-        rule.numberOfQuestions,
-        rule.selectionStrategy
-      );
+      if (rule.selectionMode === 'PRESELECTED') {
+        // Approach A: Use pre-selected questions from testQuestions table
+        const availableQuestions = await this.testQuestionRepository.find({
+          where: {
+            testId: originalTest.testId,
+            ruleId: rule.ruleId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+          order: { ordering: 'ASC' },
+        });
+
+        if (availableQuestions.length < rule.numberOfQuestions) {
+          throw new Error(`Not enough pre-selected questions for rule ${rule.name}. Found ${availableQuestions.length}, required ${rule.numberOfQuestions}`);
+        }
+
+        // Select questions based on rule strategy
+        const selectedQuestions = this.selectQuestionsFromRule(
+          availableQuestions,
+          rule.numberOfQuestions,
+          rule.selectionStrategy
+        );
+
+        selectedQuestionIds = selectedQuestions.map(q => q.questionId);
+      } else {
+        // Approach B: Dynamic selection based on criteria
+        const questionIds = await this.questionPoolService.generateQuestionPool(rule.ruleId, authContext);
+
+        if (questionIds.length < rule.numberOfQuestions) {
+          throw new Error(`Not enough questions available for rule ${rule.name}. Found ${questionIds.length}, required ${rule.numberOfQuestions}`);
+        }
+
+        // Select questions based on rule strategy
+        selectedQuestionIds = this.selectQuestionsFromPool(
+          questionIds,
+          rule.numberOfQuestions,
+          rule.selectionStrategy
+        );
+      }
 
       // Add selected questions to the generated test
-      for (const selectedQuestion of selectedQuestions) {
+      for (const questionId of selectedQuestionIds) {
         await this.testQuestionRepository.save(
           this.testQuestionRepository.create({
             testId: savedGeneratedTest.testId,
-            sectionId: selectedQuestion.sectionId,
-            questionId: selectedQuestion.questionId,
+            sectionId: rule.sectionId,
+            questionId: questionId,
             ordering: questionOrder++,
-            ruleId: rule.id,
-            isCompulsory: selectedQuestion.isCompulsory,
+            ruleId: rule.ruleId,
+            isCompulsory: false, // Questions from rules are not compulsory by default
             tenantId: authContext.tenantId,
             organisationId: authContext.organisationId,
           })
         );
       }
+    }
+  }
+
+  private selectQuestionsFromPool(questionIds: string[], count: number, strategy: string): string[] {
+    switch (strategy) {
+      case 'random':
+        return this.shuffleArray(questionIds).slice(0, count);
+      case 'sequential':
+        return questionIds.slice(0, count);
+      case 'weighted':
+        // For weighted strategy, you might want to implement more complex logic
+        // For now, using random selection
+        return this.shuffleArray(questionIds).slice(0, count);
+      default:
+        return this.shuffleArray(questionIds).slice(0, count);
     }
   }
 
@@ -482,7 +529,7 @@ export class AttemptsService {
   private async hasSubjectiveQuestions(attemptId: string, authContext: AuthContext): Promise<boolean> {
     const subjectiveQuestions = await this.questionRepository
       .createQueryBuilder('question')
-      .innerJoin('testUserAnswers', 'answers', 'answers.questionId = question.id')
+      .innerJoin('testUserAnswers', 'answers', 'answers.questionId = question.questionId')
       .where('answers.attemptId = :attemptId', { attemptId })
       .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
@@ -495,7 +542,7 @@ export class AttemptsService {
   private async calculateObjectiveScore(attemptId: string, authContext: AuthContext): Promise<number> {
     const answers = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
-      .innerJoin('questions', 'question', 'question.id = answer.questionId')
+      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
       .where('answer.attemptId = :attemptId', { attemptId })
       .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })

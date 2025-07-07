@@ -9,7 +9,7 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { RulesService } from './rules.service';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
@@ -28,7 +28,7 @@ export class RulesController {
   async create(@Body() createRuleDto: CreateRuleDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const rule = await this.rulesService.create(createRuleDto, authContext);
-    return { ruleId: rule.id };
+    return { ruleId: rule.ruleId };
   }
 
   @Get()
@@ -61,7 +61,7 @@ export class RulesController {
   ) {
     const authContext: AuthContext = req.user;
     const rule = await this.rulesService.update(id, updateRuleDto, authContext);
-    return { ruleId: rule.id };
+    return { ruleId: rule.ruleId };
   }
 
   @Delete(':id')
@@ -87,5 +87,29 @@ export class RulesController {
   async getRulesForSection(@Param('sectionId') sectionId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.rulesService.getRulesForSection(sectionId, authContext);
+  }
+
+  @Get(':ruleId/preview')
+  @ApiOperation({ summary: 'Get rule preview with metadata' })
+  @ApiParam({ name: 'ruleId', description: 'Rule ID' })
+  @ApiResponse({ status: 200, description: 'Rule preview with metadata' })
+  async getRulePreview(
+    @Param('ruleId') ruleId: string,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    return this.rulesService.getRulePreview(ruleId, authContext);
+  }
+
+  @Post(':ruleId/questions')
+  @ApiOperation({ summary: 'Get questions based on rule criteria for pre-selection' })
+  @ApiParam({ name: 'ruleId', description: 'Rule ID' })
+  @ApiResponse({ status: 200, description: 'Questions matching rule criteria' })
+  async getQuestionsByCriteria(
+    @Param('ruleId') ruleId: string,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    return this.rulesService.getQuestionsByCriteria(ruleId, authContext);
   }
 } 
