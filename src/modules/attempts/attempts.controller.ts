@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
@@ -12,10 +13,12 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
 @Controller('attempts')
+@UseInterceptors(AuthContextInterceptor)
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
@@ -37,16 +40,21 @@ export class AttemptsController {
   }
 
   @Post(':attemptId/answers')
-  @ApiOperation({ summary: 'Submit an answer for a question' })
-  @ApiResponse({ status: 200, description: 'Answer submitted', type: ApiSuccessResponseDto })
+  @ApiOperation({ 
+    summary: 'Submit multiple answers for questions',
+    description: 'Submit answers for multiple questions in a test attempt. Accepts an array of answer objects.'
+  })
+  @ApiResponse({ status: 200, description: 'Answers submitted', type: ApiSuccessResponseDto })
   async submitAnswer(
     @Param('attemptId') attemptId: string,
-    @Body() submitAnswerDto: SubmitAnswerDto,
+    @Body() answersArray: SubmitAnswerDto[],
     @Req() req: any,
   ) {
     const authContext: AuthContext = req.user;
-    await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
-    return { message: 'Answer submitted successfully' };
+    
+    // Submit all answers efficiently in one call
+    await this.attemptsService.submitAnswer(attemptId, answersArray, authContext);
+    return { message: 'Answers submitted successfully' };
   }
 
   @Post(':attemptId/submit')

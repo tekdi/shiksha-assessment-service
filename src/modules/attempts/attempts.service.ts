@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType } from '../tests/entities/test.entity';
@@ -129,8 +129,15 @@ export class AttemptsService {
     });
   }
 
-  async submitAnswer(attemptId: string, submitAnswerDto: SubmitAnswerDto, authContext: AuthContext): Promise<void> {
-    // Verify attempt exists and belongs to user
+  async submitAnswer(attemptId: string, submitAnswerDto: SubmitAnswerDto[], authContext: AuthContext): Promise<void> {
+    // Convert single answer to array for unified processing
+    const answersArray = Array.isArray(submitAnswerDto) ? submitAnswerDto : [submitAnswerDto];
+    
+    if (answersArray.length === 0) {
+      return;
+    }
+
+    // Verify attempt exists and belongs to user (only once)
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -148,72 +155,97 @@ export class AttemptsService {
       throw new Error('Cannot submit answer to completed attempt');
     }
 
-    // Get question to validate answer format
-    const question = await this.questionRepository.findOne({
+    // Get all questions to validate answer formats and determine question types (batch query)
+    const questionIds = answersArray.map(answer => answer.questionId);
+    const questions = await this.questionRepository.find({
       where: {
-        questionId: submitAnswerDto.questionId,
+        questionId: In(questionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
+      relations: ['options'], // Load options for scoring
     });
 
-    if (!question) {
-      throw new NotFoundException('Question not found');
+    // Create a map for quick question lookup
+    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Validate all answers first
+    for (const answer of answersArray) {
+      const question = questionMap.get(answer.questionId);
+      if (!question) {
+        throw new NotFoundException(`Question ${answer.questionId} not found`);
+      }
+      this.validateAnswer(answer.answer, question);
     }
 
-    // Validate answer based on question type
-    this.validateAnswer(submitAnswerDto.answer, question);
+    // Process all answers in batch
+    const answersToSave: TestUserAnswer[] = [];
+    let totalTimeSpent = 0;
 
-    // Convert answer to JSON string
-    const answerJson = JSON.stringify(submitAnswerDto.answer);
+    for (const answer of answersArray) {
+      const question = questionMap.get(answer.questionId);
+      const answerJson = JSON.stringify(answer.answer);
 
-    // Save or update answer
-    const existingAnswer = await this.testUserAnswerRepository.findOne({
-      where: {
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (existingAnswer) {
-      existingAnswer.answer = answerJson;
-      existingAnswer.updatedAt = new Date();
-      await this.testUserAnswerRepository.save(existingAnswer);
-    } else {
-      const userAnswer = this.testUserAnswerRepository.create({
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        answer: answerJson,
-        anssOrder: '1', // This could be enhanced to track order
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
+      // Check if answer already exists
+      const existingAnswer = await this.testUserAnswerRepository.findOne({
+        where: {
+          attemptId,
+          questionId: answer.questionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
       });
-      await this.testUserAnswerRepository.save(userAnswer);
+
+      if (existingAnswer) {
+        existingAnswer.answer = answerJson;
+        existingAnswer.updatedAt = new Date();
+        await this.testUserAnswerRepository.save(existingAnswer);
+      } else {
+        const userAnswer = this.testUserAnswerRepository.create({
+          attemptId,
+          questionId: answer.questionId,
+          answer: answerJson,
+          anssOrder: '1', // This could be enhanced to track order
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        });
+        answersToSave.push(userAnswer);
+      }
+
+      // Accumulate time spent
+      if (answer.timeSpent) {
+        totalTimeSpent += answer.timeSpent;
+      }
     }
 
-    // Update attempt time spent if provided
-    if (submitAnswerDto.timeSpent) {
-      attempt.timeSpent = (attempt.timeSpent || 0) + submitAnswerDto.timeSpent;
+    // Save all new answers in batch
+    if (answersToSave.length > 0) {
+      await this.testUserAnswerRepository.save(answersToSave);
+    }
+
+    // Update attempt time spent if any time was spent
+    if (totalTimeSpent > 0) {
+      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
       await this.attemptRepository.save(attempt);
     }
 
-    // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ANSWER_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        timeSpent: submitAnswerDto.timeSpent,
-        answer: submitAnswerDto.answer,
-      }
-    );
+    // Trigger plugin events for all answers
+    for (const answer of answersArray) {
+      await this.pluginManager.triggerEvent(
+        PluginManagerService.EVENTS.ANSWER_SUBMITTED,
+        {
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          userId: authContext.userId,
+        },
+        {
+          attemptId,
+          questionId: answer.questionId,
+          timeSpent: answer.timeSpent,
+          answer: answer.answer,
+        }
+      );
+    }
   }
 
   async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
