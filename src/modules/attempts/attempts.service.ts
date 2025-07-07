@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
@@ -12,6 +12,8 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
+import { ResumeAttemptDto } from './dto/resume-attempt.dto';
+import { TestSection } from '../tests/entities/test-section.entity';
 
 @Injectable()
 export class AttemptsService {
@@ -26,6 +28,8 @@ export class AttemptsService {
     private readonly testQuestionRepository: Repository<TestQuestion>,
     @InjectRepository(TestRule)
     private readonly testRuleRepository: Repository<TestRule>,
+    @InjectRepository(TestSection)
+    private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
     private readonly pluginManager: PluginManagerService,
@@ -94,6 +98,231 @@ export class AttemptsService {
 
     return savedAttempt;
   }
+
+
+  async getAttempt(attemptId: string, authContext: AuthContext): Promise<ResumeAttemptDto> {
+    // Get attempt with test information
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        userId: authContext.userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    // Only allow in-progress attempts to be resumed
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new BadRequestException('Cannot resume a submitted attempt. Use the result endpoint to view submitted attempt details.');
+    }
+
+    // Get test information - use resolved test for rule-based tests
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get test questions with ordering
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+    });
+
+    // Get all questions with their options
+    const questionIds = testQuestions.map(tq => tq.questionId);
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      relations: ['options'],
+      order: { ordering: 'ASC' },
+    });
+
+    // Get test sections if they exist
+    const sections = await this.testSectionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+    });
+
+    // Get user answers for this attempt with additional metadata
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    // Create a map of answers for quick lookup
+    const answersMap = new Map();
+    userAnswers.forEach(ua => {
+      answersMap.set(ua.questionId, {
+        questionId: ua.questionId,
+        answer: JSON.parse(ua.answer),
+        score: ua.score,
+        reviewStatus: ua.reviewStatus,
+        remarks: ua.remarks,
+        submittedAt: ua.createdAt,
+        updatedAt: ua.updatedAt,
+      });
+    });
+
+    // Organize questions by sections
+    const questionsBySection = new Map();
+    const questionsWithoutSection = [];
+
+    for (const testQuestion of testQuestions) {
+      const question = questions.find(q => q.questionId === testQuestion.questionId);
+      if (!question) continue;
+
+      const questionData = {
+        questionId: question.questionId,
+        text: question.text,
+        description: question.description,
+        type: question.type,
+        level: question.level,
+        marks: question.marks,
+        idealTime: question.idealTime,
+        gradingType: question.gradingType,
+        allowPartialScoring: question.allowPartialScoring,
+        params: question.params,
+        media: question.media,
+        ordering: testQuestion.ordering,
+        isCompulsory: testQuestion.isCompulsory,
+        sectionId: testQuestion.sectionId,
+        ruleId: testQuestion.ruleId,
+        options: question.options?.map(opt => ({
+          questionOptionId: opt.questionOptionId,
+          text: opt.text,
+          media: opt.media,
+          matchWith: opt.matchWith,
+          matchWithMedia: opt.matchWithMedia,
+          ordering: opt.ordering,
+          blankIndex: opt.blankIndex,
+          caseSensitive: opt.caseSensitive,
+          // Don't include isCorrect and marks for security
+        })) || [],
+        userAnswer: answersMap.get(question.questionId) || null,
+      };
+
+      if (testQuestion.sectionId) {
+        if (!questionsBySection.has(testQuestion.sectionId)) {
+          questionsBySection.set(testQuestion.sectionId, []);
+        }
+        questionsBySection.get(testQuestion.sectionId).push(questionData);
+      } else {
+        questionsWithoutSection.push(questionData);
+      }
+    }
+
+    // Build sections with questions
+    const sectionsWithQuestions = sections.map(section => ({
+      sectionId: section.sectionId,
+      title: section.title,
+      description: section.description,
+      ordering: section.ordering,
+      minQuestions: section.minQuestions,
+      maxQuestions: section.maxQuestions,
+      questions: questionsBySection.get(section.sectionId) || [],
+    }));
+
+    // Add questions without sections if any
+    if (questionsWithoutSection.length > 0) {
+      sectionsWithQuestions.push({
+        sectionId: null,
+        title: 'General Questions',
+        description: 'Questions not assigned to any specific section',
+        ordering: 999,
+        minQuestions: null,
+        maxQuestions: null,
+        questions: questionsWithoutSection,
+      });
+    }
+
+    // Calculate progress metrics
+    const totalQuestions = questions.length;
+    const answeredQuestions = userAnswers.length;
+    const progressPercentage = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
+
+    // Determine current position if not set
+    let currentPosition = attempt.currentPosition;
+    if (!currentPosition && userAnswers.length > 0) {
+      // Find the last answered question's position
+      const lastAnsweredQuestion = testQuestions.find(tq => 
+        userAnswers.some(ua => ua.questionId === tq.questionId)
+      );
+      currentPosition = lastAnsweredQuestion ? lastAnsweredQuestion.ordering : 1;
+    } else if (!currentPosition) {
+      currentPosition = 1; // Start from first question
+    }
+
+    return {
+      testId: attempt.testId,
+      resolvedTestId: attempt.resolvedTestId,
+      title: test.title,
+      description: test.description,
+      totalMarks: test.totalMarks,
+      timeDuration: test.timeDuration,
+      showTime: test.showTime,
+      type: test.type,
+      passingMarks: test.passingMarks,
+      showCorrectAnswer: test.showCorrectAnswer,
+      showQuestionsOverview: test.showQuestionsOverview,
+      questionsShuffle: test.questionsShuffle,
+      answersShuffle: test.answersShuffle,
+      paginationLimit: test.paginationLimit,
+      showThankyouPage: test.showThankyouPage,
+      showAllQuestions: test.showAllQuestions,
+      answerSheet: test.answerSheet,
+      printAnswersheet: test.printAnswersheet,
+      attempt: {
+        attemptId: attempt.attemptId,
+        userId: attempt.userId,
+        attempt: attempt.attempt,
+        status: attempt.status,
+        reviewStatus: attempt.reviewStatus,
+        submissionType: attempt.submissionType,
+        result: attempt.result,
+        score: attempt.score,
+        currentPosition,
+        timeSpent: attempt.timeSpent,
+        startedAt: attempt.startedAt,
+        submittedAt: attempt.submittedAt,
+        progress: {
+          totalQuestions,
+          answeredQuestions,
+          progressPercentage,
+          remainingQuestions: totalQuestions - answeredQuestions,
+        },
+        timeRemaining: test.timeDuration ? Math.max(0, test.timeDuration - (attempt.timeSpent || 0)) : null,
+      },
+      sections: sectionsWithQuestions,
+    };
+  }
+
 
   async getAttemptQuestions(attemptId: string, authContext: AuthContext): Promise<Question[]> {
     const attempt = await this.attemptRepository.findOne({
