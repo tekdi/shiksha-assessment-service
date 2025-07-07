@@ -13,14 +13,9 @@ import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
-<<<<<<< HEAD
 import { AttemptStatus, ReviewStatus, TestAttempt } from './entities/test-attempt.entity';
 import { AttemptsGradeMethod } from './entities/test.entity';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
-=======
-import { UserTestStatusDto } from './dto/user-test-status.dto';
-import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
->>>>>>> 5ca2dc1b28a937904106b4e3531fe4eb0b9a95fe
 
 @Injectable()
 export class TestsService {
