@@ -16,6 +16,7 @@ import { Question } from '../questions/entities/question.entity';
 import { AttemptStatus, ReviewStatus, TestAttempt } from './entities/test-attempt.entity';
 import { AttemptsGradeMethod } from './entities/test.entity';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
+import { TestResultDto } from './dto/test-result.dto';
 
 @Injectable()
 export class TestsService {
@@ -464,33 +465,7 @@ export class TestsService {
     };
   }
 
-
-  async getUserTestResult(testId: string, userId: string, authContext: AuthContext): Promise<{
-    testId: string;
-    userId: string;
-    finalScore: number;
-    finalResult: string | null;
-    attemptsGrading: AttemptsGradeMethod;
-    attempts: Array<{
-      attemptId: string;
-      attempt: number;
-      score: number;
-      result: string;
-      status: AttemptStatus;
-      reviewStatus: ReviewStatus;
-      submittedAt: Date;
-      timeSpent: number;
-      isFinalAttempt: boolean;
-    }>;
-    test: {
-      title: string;
-      passingMarks: number;
-      totalMarks: number;
-      isObjective: boolean;
-      showCorrectAnswer: boolean;
-    };
-    hasPendingReview: boolean;
-  }> {
+  async getUserTestResult(testId: string, userId: string, authContext: AuthContext): Promise<TestResultDto> {
     // Check if test exists
     const test = await this.testRepository.findOne({
       where: {
@@ -606,5 +581,4 @@ export class TestsService {
       hasPendingReview,
     };
   }
-
 } 

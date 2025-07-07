@@ -22,6 +22,8 @@ import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
+import { UserTestStatusDto } from './dto/user-test-status.dto';
+import { TestResultDto } from './dto/test-result.dto';
 
 @ApiTags('Tests')
 @ApiBearerAuth()
@@ -246,6 +248,7 @@ export class TestsController {
   @ApiResponse({ 
     status: 200, 
     description: 'User test result retrieved successfully',
+    type: TestResultDto
   })
   @ApiResponse({
     status: 404,
