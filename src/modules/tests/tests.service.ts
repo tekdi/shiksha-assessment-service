@@ -13,6 +13,8 @@ import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
+import { AttemptStatus, ReviewStatus, TestAttempt } from './entities/test-attempt.entity';
+import { AttemptsGradeMethod } from './entities/test.entity';
 
 @Injectable()
 export class TestsService {
@@ -401,5 +403,147 @@ export class TestsService {
       default:
         throw new BadRequestException(`Unsupported test type: ${test.type}`);
     }
+  }
+  
+  async getUserTestResult(testId: string, userId: string, authContext: AuthContext): Promise<{
+    testId: string;
+    userId: string;
+    finalScore: number;
+    finalResult: string | null;
+    attemptsGrading: AttemptsGradeMethod;
+    attempts: Array<{
+      attemptId: string;
+      attempt: number;
+      score: number;
+      result: string;
+      status: AttemptStatus;
+      reviewStatus: ReviewStatus;
+      submittedAt: Date;
+      timeSpent: number;
+      isFinalAttempt: boolean;
+    }>;
+    test: {
+      title: string;
+      passingMarks: number;
+      totalMarks: number;
+      isObjective: boolean;
+      showCorrectAnswer: boolean;
+    };
+    hasPendingReview: boolean;
+  }> {
+    // Check if test exists
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get all attempts for this user and test
+    const allAttempts = await this.testRepository.manager.find(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'ASC' },
+    });
+
+    // Check if there are any attempts under review
+    const hasPendingReview = allAttempts.some(attempt => 
+      attempt.reviewStatus === ReviewStatus.PENDING
+    );
+
+    // Calculate final result based on grading method
+    const submittedAttempts = allAttempts.filter(a => a.status === AttemptStatus.SUBMITTED);
+    let finalScore: number = 0;
+    let finalResult: string | null = null;
+    let finalAttemptId: string = null;
+
+    if (submittedAttempts.length > 0) {
+      switch (test.attemptsGrading) {
+        case AttemptsGradeMethod.FIRST_ATTEMPT: {
+          const firstAttempt = submittedAttempts[0]; // First by start time
+          finalScore = firstAttempt.score || 0;
+          finalResult = firstAttempt.result || null;
+          finalAttemptId = firstAttempt.attemptId;
+          break;
+        }
+
+        case AttemptsGradeMethod.LAST_ATTEMPT: {
+          const lastAttempt = submittedAttempts[submittedAttempts.length - 1]; // Last by start time
+          finalScore = lastAttempt.score || 0;
+          finalResult = lastAttempt.result || null;
+          finalAttemptId = lastAttempt.attemptId;
+          break;
+        }
+
+        case AttemptsGradeMethod.HIGHEST: {
+          const highestAttempt = submittedAttempts.reduce((prev, current) => 
+            (current.score || 0) > (prev.score || 0) ? current : prev
+          );
+          finalScore = highestAttempt.score || 0;
+          finalResult = highestAttempt.result || null;
+          finalAttemptId = highestAttempt.attemptId;
+          break;
+        }
+
+        case AttemptsGradeMethod.AVERAGE: {
+          const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
+          finalScore = totalScore / submittedAttempts.length;
+          finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
+          finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId; // Use last attempt as reference
+          break;
+        }
+
+        default: {
+          const defaultAttempt = submittedAttempts[submittedAttempts.length - 1];
+          finalScore = defaultAttempt.score || 0;
+          finalResult = defaultAttempt.result || null;
+          finalAttemptId = defaultAttempt.attemptId;
+        }
+      }
+    }
+
+    // If there are any attempts under review, set finalResult to null
+    if (hasPendingReview) {
+      finalResult = null;
+    }
+
+    // Build attempts array with isFinalAttempt flag and reviewStatus
+    const attempts = allAttempts.map(attempt => ({
+      attemptId: attempt.attemptId,
+      attempt: attempt.attempt,
+      score: attempt.score || 0,
+      result: attempt.result || 'F',
+      status: attempt.status,
+      reviewStatus: attempt.reviewStatus,
+      submittedAt: attempt.submittedAt,
+      timeSpent: attempt.timeSpent || 0,
+      isFinalAttempt: attempt.attemptId === finalAttemptId,
+    }));
+
+    return {
+      testId,
+      userId,
+      finalScore,
+      finalResult,
+      attemptsGrading: test.attemptsGrading,
+      attempts,
+      test: {
+        title: test.title,
+        passingMarks: test.passingMarks,
+        totalMarks: test.totalMarks,
+        isObjective: test.isObjective,
+        showCorrectAnswer: test.showCorrectAnswer,
+      },
+      hasPendingReview,
+    };
   }
 } 
