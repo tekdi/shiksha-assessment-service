@@ -4,6 +4,11 @@ import { Type } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
 
+export enum SortOrder {
+  ASC = 'ASC',
+  DESC = 'DESC',
+}
+
 export class QueryTestDto extends PaginationDto {
   
   @ApiPropertyOptional()
@@ -32,4 +37,15 @@ export class QueryTestDto extends PaginationDto {
   @Type(() => Number)
   @IsNumber()
   maxMarks?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEnum(SortOrder)
+  sortOrder?: SortOrder;
+  
 } 

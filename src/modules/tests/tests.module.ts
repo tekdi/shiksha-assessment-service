@@ -6,6 +6,7 @@ import { SectionsController } from './sections.controller';
 import { SectionsService } from './sections.service';
 import { RulesController } from './rules.controller';
 import { RulesService } from './rules.service';
+import { QuestionPoolService } from './question-pool.service';
 import { Test } from './entities/test.entity';
 import { TestSection } from './entities/test-section.entity';
 import { TestQuestion } from './entities/test-question.entity';
@@ -27,7 +28,7 @@ import { Question } from '../questions/entities/question.entity';
     ]),
   ],
   controllers: [TestsController, SectionsController, RulesController],
-  providers: [TestsService, SectionsService, RulesService],
-  exports: [TestsService, SectionsService, RulesService],
+  providers: [TestsService, SectionsService, RulesService, QuestionPoolService],
+  exports: [TestsService, SectionsService, RulesService, QuestionPoolService],
 })
 export class TestsModule {} 

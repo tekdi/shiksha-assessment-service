@@ -28,7 +28,7 @@ export enum SelectionStrategy {
 export class TestRule {
   @ApiProperty()
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  ruleId: string;
 
   @ApiProperty()
   @Column({ type: 'uuid' })
@@ -62,6 +62,10 @@ export class TestRule {
   @Column({ type: 'integer' })
   numberOfQuestions: number;
 
+  @ApiProperty()
+  @Column({ type: 'integer' })
+  poolSize: number;
+
   @ApiProperty({ required: false })
   @Column({ type: 'integer', nullable: true })
   minMarks: number;
@@ -81,6 +85,7 @@ export class TestRule {
     difficultyLevels?: string[];
     questionTypes?: string[];
     tags?: string[];
+    marks?: number[];
     excludeQuestionIds?: string[];
     includeQuestionIds?: string[];
     timeRange?: {
@@ -88,6 +93,10 @@ export class TestRule {
       to: Date;
     };
   };
+
+  @ApiProperty({ enum: ['PRESELECTED', 'DYNAMIC'], description: 'PRESELECTED: Use pre-saved questions from testQuestions table, DYNAMIC: Query questions table during attempt' })
+  @Column({ type: 'enum', enum: ['PRESELECTED', 'DYNAMIC'], default: 'DYNAMIC' })
+  selectionMode: 'PRESELECTED' | 'DYNAMIC';
 
   @ApiProperty()
   @Column({ type: 'boolean', default: true })

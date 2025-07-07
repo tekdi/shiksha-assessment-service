@@ -14,8 +14,8 @@ export enum QuestionType {
   TRUE_FALSE = 'true_false',
   FILL_BLANK = 'fill_blank',
   MATCH = 'match',
-  SUBJECTIVE = 'subjective',
-  ESSAY = 'essay',
+  SUBJECTIVE = 'subjective', //short answer, can not be evaluate automatically
+  ESSAY = 'essay', //long answer, can not be evaluate automatically
 }
 
 export enum QuestionLevel {
@@ -33,6 +33,13 @@ export enum QuestionStatus {
 export enum GradingType {
   QUIZ = 'quiz',
   EXERCISE = 'exercise',
+}
+
+export interface QuestionMedia {
+  image?: string;
+  video?: string;
+  audio?: string;
+  document?: string;
 }
 
 export interface QuestionParams {
@@ -69,9 +76,22 @@ export class Question {
   @Column({ type: 'integer', default: 0 })
   ordering: number;
 
-  @ApiProperty()
+  @ApiProperty({ 
+    description: 'Question text content'
+  })
   @Column({ type: 'text' })
-  title: string;
+  text: string;
+
+  @ApiProperty({ 
+    required: false,
+    description: 'Media URLs for the question',
+    example: {
+      image: "https://cdn.example.com/question.png",
+      video: "https://cdn.example.com/question.mp4"
+    }
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  media: QuestionMedia;
 
   @ApiProperty({ required: false })
   @Column({ type: 'text', nullable: true })
@@ -148,5 +168,10 @@ export class Question {
   // Alias for compatibility with existing code
   get id(): string {
     return this.questionId;
+  }
+
+  // Backward compatibility getter for title
+  get title(): string {
+    return this.text || '';
   }
 } 
