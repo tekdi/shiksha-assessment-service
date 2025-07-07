@@ -13,8 +13,14 @@ import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
+<<<<<<< HEAD
 import { AttemptStatus, ReviewStatus, TestAttempt } from './entities/test-attempt.entity';
 import { AttemptsGradeMethod } from './entities/test.entity';
+import { UserTestStatusDto } from './dto/user-test-status.dto';
+=======
+import { UserTestStatusDto } from './dto/user-test-status.dto';
+import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
+>>>>>>> 5ca2dc1b28a937904106b4e3531fe4eb0b9a95fe
 
 @Injectable()
 export class TestsService {
@@ -404,7 +410,66 @@ export class TestsService {
         throw new BadRequestException(`Unsupported test type: ${test.type}`);
     }
   }
-  
+
+  async getUserTestStatus(testId: string, userId: string, authContext: AuthContext): Promise<UserTestStatusDto> {
+    // Check if test exists
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get all attempts for this user and test
+    const attempts = await this.testRepository.manager.find(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'DESC' },
+    });
+
+    const totalAttempts = attempts.length;
+    const maxAttempts = test.attempts;
+
+    if (attempts.length === 0) {
+      // No attempts yet - user can start a new attempt
+      return {
+        canResume: false,
+        canReattempt: true,
+        lastAttemptStatus: null,
+        lastAttemptId: null,
+        maxAttempts,
+        totalAttempts,
+      };
+    }
+
+    const lastAttempt = attempts[0];
+
+    // Check if user can resume (has an in-progress attempt)
+    const canResume = lastAttempt.status === AttemptStatus.IN_PROGRESS; 
+
+    // Check if user can reattempt (hasn't reached max attempts)
+    const canReattempt = totalAttempts < maxAttempts;
+
+    return {
+      canResume,
+      canReattempt,
+      lastAttemptStatus: lastAttempt.status,
+      lastAttemptId: lastAttempt.attemptId,
+      maxAttempts,
+      totalAttempts,
+    };
+  }
+
+
   async getUserTestResult(testId: string, userId: string, authContext: AuthContext): Promise<{
     testId: string;
     userId: string;
@@ -468,23 +533,21 @@ export class TestsService {
 
     if (submittedAttempts.length > 0) {
       switch (test.attemptsGrading) {
-        case AttemptsGradeMethod.FIRST_ATTEMPT: {
+        case AttemptsGradeMethod.FIRST_ATTEMPT:
           const firstAttempt = submittedAttempts[0]; // First by start time
           finalScore = firstAttempt.score || 0;
           finalResult = firstAttempt.result || null;
           finalAttemptId = firstAttempt.attemptId;
           break;
-        }
 
-        case AttemptsGradeMethod.LAST_ATTEMPT: {
+        case AttemptsGradeMethod.LAST_ATTEMPT:
           const lastAttempt = submittedAttempts[submittedAttempts.length - 1]; // Last by start time
           finalScore = lastAttempt.score || 0;
           finalResult = lastAttempt.result || null;
           finalAttemptId = lastAttempt.attemptId;
           break;
-        }
 
-        case AttemptsGradeMethod.HIGHEST: {
+        case AttemptsGradeMethod.HIGHEST:
           const highestAttempt = submittedAttempts.reduce((prev, current) => 
             (current.score || 0) > (prev.score || 0) ? current : prev
           );
@@ -492,22 +555,19 @@ export class TestsService {
           finalResult = highestAttempt.result || null;
           finalAttemptId = highestAttempt.attemptId;
           break;
-        }
 
-        case AttemptsGradeMethod.AVERAGE: {
+        case AttemptsGradeMethod.AVERAGE:
           const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
           finalScore = totalScore / submittedAttempts.length;
           finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
           finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId; // Use last attempt as reference
           break;
-        }
 
-        default: {
+        default:
           const defaultAttempt = submittedAttempts[submittedAttempts.length - 1];
           finalScore = defaultAttempt.score || 0;
           finalResult = defaultAttempt.result || null;
           finalAttemptId = defaultAttempt.attemptId;
-        }
       }
     }
 
@@ -546,4 +606,5 @@ export class TestsService {
       hasPendingReview,
     };
   }
+
 } 
