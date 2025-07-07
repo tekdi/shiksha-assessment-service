@@ -188,17 +188,33 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 
 ---
 
-## 🔄 **Rule-Based Test Workflow**
+## 🔄 **Rule-Based Test Workflow - Two Approaches**
+
+### **Approach A: Pre-selected Questions (PRESELECTED mode)**
+1. **Admin creates rule** with criteria and sets `selectionMode = 'PRESELECTED'`
+2. **Admin calls API** to get questions based on criteria: `POST /rules/{ruleId}/questions`
+3. **Admin manually selects/removes** questions from the fetched list
+4. **Admin saves selected questions** in `testQuestions` table with `ruleId`
+5. **During attempt**: System selects from pre-saved `testQuestions` entries
+
+### **Approach B: Dynamic Criteria-based Selection (DYNAMIC mode)**
+1. **Admin creates rule** with criteria and sets `selectionMode = 'DYNAMIC'`
+2. **Admin validates rule** using `GET /rules/{ruleId}/preview` to check question availability
+3. **No pre-selection** of questions needed
+4. **During attempt**: System dynamically queries questions table based on criteria
 
 ### **Test Creation:**
 1. Create test with type 'rule_based'
 2. Create rules with criteria and selection strategies
-3. Add questions to `testQuestions` table with appropriate `ruleId`
+3. For PRESELECTED mode: Add questions to `testQuestions` table with appropriate `ruleId`
+4. For DYNAMIC mode: No pre-selection needed
 
 ### **User Attempt:**
 1. User starts attempt on rule-based test
 2. System creates new test with type 'generated'
-3. System selects questions from `testQuestions` based on rules
+3. System selects questions based on rule's `selectionMode`:
+   - **PRESELECTED**: From `testQuestions` table with matching `ruleId`
+   - **DYNAMIC**: From `questions` table based on criteria
 4. Selected questions are added to generated test
 5. Attempt is linked to generated test via `resolvedTestId`
 
@@ -254,3 +270,69 @@ testAttempts (1) ←→ (1) tests (generated) (via resolvedTestId)
 testUserAnswers (N) ←→ (1) testAttempts
 questions (1) ←→ (N) questionOptions
 ```
+
+## Dynamic Rule-Based Test Workflow
+
+### Phase 1: Test Creation & Rule Setup
+1. **Create Test** (`tests` table)
+   - Set `type = 'RULE_BASED'`
+   - Define test metadata (title, duration, passing marks, etc.)
+
+2. **Create Sections** (`test_sections` table)
+   - Define test structure and sections
+   - Each section can have multiple rules
+
+3. **Create Rules** (`test_rules` table)
+   - Define question selection criteria (categories, difficulty, types, etc.)
+   - Set `numberOfQuestions` and `poolSize`
+   - Set `selectionStrategy` (random, sequential, weighted)
+   - Rules are linked to sections via `sectionId`
+
+### Phase 2: Question Pool Generation (Dynamic)
+1. **User Starts Attempt**
+   - System creates a new `GENERATED` test for this specific attempt
+   - Links attempt to generated test via `resolvedTestId`
+
+2. **Rule Processing**
+   - For each rule, system queries questions based on criteria
+   - Uses `QuestionPoolService.generateQuestionPool()` method
+   - Applies filters: categories, difficulty, types, tags, marks, etc.
+   - Randomly selects questions up to `poolSize`
+
+3. **Question Selection**
+   - From the pool, selects `numberOfQuestions` based on strategy
+   - Adds selected questions to `test_questions` table for the generated test
+   - Links questions to original rule via `ruleId`
+
+### Phase 3: User Attempt & Answer Submission
+1. **Question Display**
+   - User sees questions from the generated test
+   - Questions are ordered based on `ordering` field
+
+2. **Answer Submission**
+   - User submits answers via `submitAnswer` endpoint
+   - Answers stored in `test_user_answers` table
+   - Supports all question types (MCQ, subjective, essay, etc.)
+
+3. **Attempt Completion**
+   - User submits final attempt
+   - System calculates scores for objective questions
+   - Subjective questions marked for manual review
+
+### Phase 4: Scoring & Review
+1. **Automatic Scoring**
+   - Objective questions scored automatically
+   - Subjective questions require manual review
+
+2. **Manual Review**
+   - Reviewers can review subjective answers
+   - Update scores and provide feedback
+   - Final scores calculated and stored
+
+### Key Benefits of This Approach:
+- **Simplified Schema**: No separate question pool tables
+- **Dynamic Generation**: Questions selected fresh for each attempt
+- **Better Traceability**: Each generated test is linked to specific attempt
+- **Flexible Selection**: Questions selected based on criteria, not pre-assigned
+- **Audit Trail**: Complete history of which questions were used in each attempt
+- **Multi-tenancy**: All data properly segregated by tenant/organisation
