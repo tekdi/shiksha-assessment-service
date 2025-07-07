@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
-import { Test, TestType } from '../tests/entities/test.entity';
+import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
@@ -34,7 +34,7 @@ export class AttemptsService {
     // Check if test exists and user can attempt
     const test = await this.testRepository.findOne({
       where: {
-        id: testId,
+        testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -44,25 +44,44 @@ export class AttemptsService {
       throw new NotFoundException('Test not found');
     }
 
-    // Check if user has remaining attempts
-    const existingAttempts = await this.attemptRepository.count({
+    // Check if test is published and active
+    if (test.status !== TestStatus.PUBLISHED) {
+      throw new Error('Test is not available for attempts');
+    }
+
+    // Check test availability dates
+    const now = new Date();
+    if (test.startDate && now < test.startDate) {
+      throw new Error('Test is not yet available for attempts');
+    }
+    if (test.endDate && now > test.endDate) {
+      throw new Error('Test is no longer available for attempts');
+    }
+
+    // Get all existing attempts for this user and test
+    const existingAttempts = await this.attemptRepository.find({
       where: {
         testId,
         userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
+      order: { startedAt: 'DESC' },
     });
 
-    if (existingAttempts >= test.attempts) {
-      throw new Error('Maximum attempts reached for this test');
+    const totalAttempts = existingAttempts.length;
+    const maxAttempts = test.attempts;
+
+    // Check if user has reached maximum attempts
+    if (totalAttempts >= maxAttempts) {
+      throw new Error(`Maximum attempts (${maxAttempts}) reached for this test. You cannot start a new attempt.`);
     }
 
     // Create attempt
     const attempt = this.attemptRepository.create({
       testId,
       userId,
-      attempt: existingAttempts + 1,
+      attempt: totalAttempts + 1,
       status: AttemptStatus.IN_PROGRESS,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
@@ -89,6 +108,9 @@ export class AttemptsService {
         attemptNumber: savedAttempt.attempt,
       }
     );
+
+    // Validate questions have correct options
+    await this.validateQuestionsHaveCorrectOptions(testId, authContext);
 
     return savedAttempt;
   }
@@ -572,5 +594,25 @@ export class AttemptsService {
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
+  }
+
+  private async validateQuestionsHaveCorrectOptions(testId: string, authContext: AuthContext): Promise<void> {
+    // This is a placeholder for validation logic. You can expand this as needed.
+    // For now, it just checks that all MCQ/True-False questions have at least one correct option.
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    const questionIds = testQuestions.map(q => q.questionId);
+    if (!questionIds.length) return;
+    const questions = await this.questionRepository.findByIds(questionIds);
+    for (const question of questions) {
+      if ((question.type === QuestionType.MCQ || question.type === QuestionType.TRUE_FALSE) && (!question.options || !question.options.some(opt => opt.isCorrect))) {
+        throw new Error(`Question ${question.questionId} does not have a correct option defined.`);
+      }
+    }
   }
 } 

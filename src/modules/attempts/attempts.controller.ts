@@ -12,6 +12,7 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { StartNewAttemptDto } from './dto/start-new-attempt.dto';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
