@@ -34,6 +34,9 @@ export class QuestionsService {
     // Validate question parameters
     this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
     
+    // Validate for duplicate options
+    this.validateDuplicateOptions(createQuestionDto);
+    
     const question = this.questionRepository.create({
       ...questionData,
       tenantId: authContext.tenantId,
@@ -265,6 +268,9 @@ export class QuestionsService {
     // Validate question parameters
     this.validateQuestionParams(mergedDto.type, mergedDto.params, mergedDto.marks);
 
+    // Validate for duplicate options
+    this.validateDuplicateOptions(mergedDto);
+
     Object.assign(question, {
       ...questionData,
       updatedBy: authContext.userId,
@@ -413,7 +419,7 @@ export class QuestionsService {
   }
 
   private validateQuestionOptions(questionDto: CreateQuestionDto): void {
-    const { type, options } = questionDto;
+    const { type, options, marks: questionMarks } = questionDto;
 
     // For non-subjective/non-essay questions, options are mandatory
     if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
@@ -431,28 +437,55 @@ export class QuestionsService {
         if (typeof option.isCorrect !== 'boolean') {
           throw new BadRequestException(`Option ${index + 1} must have a valid isCorrect boolean value.`);
         }
+
+        // Validate marks are positive if specified
+        if (option.marks !== undefined && option.marks <= 0) {
+          throw new BadRequestException(`Option ${index + 1} marks must be greater than 0.`);
+        }
+
+        // Validate marks don't exceed question marks
+        if (option.marks !== undefined && questionMarks !== undefined && option.marks > questionMarks) {
+          throw new BadRequestException(`Option ${index + 1} marks (${option.marks}) cannot exceed question marks (${questionMarks}).`);
+        }
       });
       
       // Additional validation for specific question types
       switch (type) {
         case QuestionType.MCQ:
-        case QuestionType.TRUE_FALSE:
+        case QuestionType.TRUE_FALSE: {
           // These types should have exactly one correct answer
           const correctOptions = options.filter(option => option.isCorrect);
           if (correctOptions.length !== 1) {
             throw new BadRequestException(`${type} questions must have exactly one correct answer.`);
           }
           break;
+        }
           
-        case QuestionType.MULTIPLE_ANSWER:
+        case QuestionType.MULTIPLE_ANSWER: {
           // Multiple answer questions should have at least one correct answer
           const multipleCorrectOptions = options.filter(option => option.isCorrect);
           if (multipleCorrectOptions.length === 0) {
             throw new BadRequestException('Multiple answer questions must have at least one correct answer.');
           }
+
+          // Validate marks consistency for multiple answer questions
+          if (questionDto.allowPartialScoring) {
+            // When partial scoring is enabled, all correct options must have marks
+            const correctOptionsWithoutMarks = multipleCorrectOptions.filter(option => option.marks === undefined);
+            if (correctOptionsWithoutMarks.length > 0) {
+              throw new BadRequestException('All correct options must have marks specified when partial scoring is enabled.');
+            }
+
+            // Validate total option marks equal question marks
+            const totalOptionMarks = multipleCorrectOptions.reduce((sum, option) => sum + (option.marks || 0), 0);
+            if (questionMarks !== undefined && totalOptionMarks !== questionMarks) {
+              throw new BadRequestException(`Sum of correct option marks (${totalOptionMarks}) must equal question marks (${questionMarks}) when partial scoring is enabled.`);
+            }
+          } 
           break;
+        }
           
-        case QuestionType.FILL_BLANK:
+        case QuestionType.FILL_BLANK: {
           // Fill in the blank questions should have options with blankIndex
           const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
           if (optionsWithBlankIndex.length === 0) {
@@ -467,23 +500,27 @@ export class QuestionsService {
             }
           }
 
+          // Validate each blank has at least one correct answer
+          const optionsByBlankIndex = new Map<number, any[]>();
+          optionsWithBlankIndex.forEach(option => {
+            if (!optionsByBlankIndex.has(option.blankIndex)) {
+              optionsByBlankIndex.set(option.blankIndex, []);
+            }
+            optionsByBlankIndex.get(option.blankIndex)!.push(option);
+          });
+
+          for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
+            const correctOptions = blankOptions.filter(option => option.isCorrect);
+            if (correctOptions.length === 0) {
+              throw new BadRequestException(`Blank ${blankIndex} must have at least one correct answer.`);
+            }
+          }
+
           // Additional validation for partial scoring
           if (questionDto.allowPartialScoring && options && options.length > 0) {
-            // Group options by blankIndex to validate marks
-            const optionsByBlankIndex = new Map<number, any[]>();
-            optionsWithBlankIndex.forEach(option => {
-              if (!optionsByBlankIndex.has(option.blankIndex)) {
-                optionsByBlankIndex.set(option.blankIndex, []);
-              }
-              optionsByBlankIndex.get(option.blankIndex)!.push(option);
-            });
-
-            // Validate each blank has at least one correct answer with marks
+            // Validate each blank has marks specified for correct answers
             for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
               const correctOptions = blankOptions.filter(option => option.isCorrect);
-              if (correctOptions.length === 0) {
-                throw new BadRequestException(`Blank ${blankIndex} must have at least one correct answer when partial scoring is enabled.`);
-              }
 
               // Validate marks are specified for correct options
               const optionsWithMarks = correctOptions.filter(option => option.marks !== undefined);
@@ -496,11 +533,32 @@ export class QuestionsService {
               if (invalidMarks.length > 0) {
                 throw new BadRequestException(`All marks for blank ${blankIndex} must be greater than 0 when partial scoring is enabled.`);
               }
+
+              // Validate that all correct options for the same blank have the same marks
+              const marks = correctOptions.map(option => option.marks);
+              const uniqueMarks = [...new Set(marks)];
+              if (uniqueMarks.length > 1) {
+                throw new BadRequestException(`All correct answers for blank ${blankIndex} must have the same marks when partial scoring is enabled.`);
+              }
+            }
+
+            // Calculate total marks from all blanks and validate against question marks
+            let totalBlankMarks = 0;
+            for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
+              const correctOptions = blankOptions.filter(option => option.isCorrect);
+              if (correctOptions.length > 0) {
+                totalBlankMarks += correctOptions[0].marks || 0;
+              }
+            }
+
+            if (questionMarks !== undefined && totalBlankMarks !== questionMarks) {
+              throw new BadRequestException(`Sum of blank marks (${totalBlankMarks}) must equal question marks (${questionMarks}) when partial scoring is enabled.`);
             }
           }
           break;
+        }
           
-        case QuestionType.MATCH:
+        case QuestionType.MATCH: {
           // Matching questions should have options with matchWith
           const optionsWithMatch = options.filter(option => 
             option.matchWith && 
@@ -509,7 +567,14 @@ export class QuestionsService {
           if (optionsWithMatch.length === 0) {
             throw new BadRequestException('Matching questions must have options with matchWith specified.');
           }
+
+          // Validate that all options with matchWith are correct
+          const incorrectOptionsWithMatch = optionsWithMatch.filter(option => !option.isCorrect);
+          if (incorrectOptionsWithMatch.length > 0) {
+            throw new BadRequestException('All options with matchWith must be marked as correct in matching questions.');
+          }
           break;
+        }
       }
     }
   }
@@ -533,13 +598,19 @@ export class QuestionsService {
   }
 
   private validateQuestionData(createQuestionDto: CreateQuestionDto): void {
+    const { type, options, marks: questionMarks, allowPartialScoring } = createQuestionDto;
+
+    // Validate question marks are positive if specified
+    if (questionMarks !== undefined && questionMarks <= 0) {
+      throw new BadRequestException('Question marks must be greater than 0.');
+    }
 
     // Validate multiple answer questions with partial scoring
-    if (createQuestionDto.type === QuestionType.MULTIPLE_ANSWER && 
-        createQuestionDto.allowPartialScoring && 
-        createQuestionDto.options) {
+    if (type === QuestionType.MULTIPLE_ANSWER && 
+        allowPartialScoring && 
+        options) {
       
-      const correctOptions = createQuestionDto.options.filter(option => option.isCorrect);
+      const correctOptions = options.filter(option => option.isCorrect);
       const optionsWithMarks = correctOptions.filter(option => option.marks !== undefined);
       
       if (optionsWithMarks.length !== correctOptions.length) {
@@ -547,19 +618,19 @@ export class QuestionsService {
       }
 
       const totalOptionMarks = correctOptions.reduce((sum, option) => sum + (option.marks || 0), 0);
-      if (createQuestionDto.marks !== undefined && totalOptionMarks !== createQuestionDto.marks) {
-        throw new BadRequestException(`Sum of option marks (${totalOptionMarks}) must equal question marks (${createQuestionDto.marks}) when partial scoring is enabled.`);
+      if (questionMarks !== undefined && totalOptionMarks !== questionMarks) {
+        throw new BadRequestException(`Sum of option marks (${totalOptionMarks}) must equal question marks (${questionMarks}) when partial scoring is enabled.`);
       }
     }
 
     // Validate fill in the blank questions with partial scoring
-    if (createQuestionDto.type === QuestionType.FILL_BLANK && 
-        createQuestionDto.allowPartialScoring && 
-        createQuestionDto.options) {
+    if (type === QuestionType.FILL_BLANK && 
+        allowPartialScoring && 
+        options) {
       
       // Group options by blankIndex
       const optionsByBlankIndex = new Map<number, any[]>();
-      createQuestionDto.options.forEach(option => {
+      options.forEach(option => {
         if (option.blankIndex !== undefined) {
           if (!optionsByBlankIndex.has(option.blankIndex)) {
             optionsByBlankIndex.set(option.blankIndex, []);
@@ -569,8 +640,8 @@ export class QuestionsService {
       });
 
       // Validate each blank has marks specified for correct answers
-      for (const [blankIndex, options] of optionsByBlankIndex) {
-        const correctOptions = options.filter(option => option.isCorrect);
+      for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
+        const correctOptions = blankOptions.filter(option => option.isCorrect);
         if (correctOptions.length === 0) {
           throw new BadRequestException(`Blank ${blankIndex} must have at least one correct answer.`);
         }
@@ -591,16 +662,69 @@ export class QuestionsService {
 
       // Calculate total marks from all blanks
       let totalBlankMarks = 0;
-      for (const [blankIndex, options] of optionsByBlankIndex) {
-        const correctOptions = options.filter(option => option.isCorrect);
+      for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
+        const correctOptions = blankOptions.filter(option => option.isCorrect);
         if (correctOptions.length > 0) {
           totalBlankMarks += correctOptions[0].marks || 0;
         }
       }
 
       // Validate total marks equals question marks
-      if (createQuestionDto.marks !== undefined && totalBlankMarks !== createQuestionDto.marks) {
-        throw new BadRequestException(`Sum of blank marks (${totalBlankMarks}) must equal question marks (${createQuestionDto.marks}) when partial scoring is enabled.`);
+      if (questionMarks !== undefined && totalBlankMarks !== questionMarks) {
+        throw new BadRequestException(`Sum of blank marks (${totalBlankMarks}) must equal question marks (${questionMarks}) when partial scoring is enabled.`);
+      }
+    }
+
+    // Validate question text length
+    if (createQuestionDto.text && createQuestionDto.text.trim().length === 0) {
+      throw new BadRequestException('Question text cannot be empty.');
+    }
+  }
+
+  private validateDuplicateOptions(createQuestionDto: CreateQuestionDto): void {
+    const { options, type } = createQuestionDto;
+
+    if (!options || options.length === 0) {
+      return;
+    }
+
+    // Check for duplicate option texts
+    const optionTexts = new Set<string>();
+    const duplicateTexts: string[] = [];
+
+    for (const option of options) {
+      if (option.text && option.text.trim().length > 0) {
+        const normalizedText = option.text.trim().toLowerCase();
+        if (optionTexts.has(normalizedText)) {
+          duplicateTexts.push(option.text.trim());
+        } else {
+          optionTexts.add(normalizedText);
+        }
+      }
+    }
+
+    if (duplicateTexts.length > 0) {
+      throw new BadRequestException(`Duplicate option texts found: ${duplicateTexts.join(', ')}`);
+    }
+
+    // For matching questions, check for duplicate matchWith values
+    if (type === QuestionType.MATCH) {
+      const matchWithValues = new Set<string>();
+      const duplicateMatchWith: string[] = [];
+
+      for (const option of options) {
+        if (option.matchWith && option.matchWith.trim().length > 0) {
+          const normalizedMatchWith = option.matchWith.trim().toLowerCase();
+          if (matchWithValues.has(normalizedMatchWith)) {
+            duplicateMatchWith.push(option.matchWith.trim());
+          } else {
+            matchWithValues.add(normalizedMatchWith);
+          }
+        }
+      }
+
+      if (duplicateMatchWith.length > 0) {
+        throw new BadRequestException(`Duplicate matchWith values found: ${duplicateMatchWith.join(', ')}`);
       }
     }
   }
