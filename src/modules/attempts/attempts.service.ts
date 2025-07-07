@@ -172,45 +172,78 @@ export class AttemptsService {
       relations: ['options'], // Load options for scoring
     });
 
-    // Create a map for quick question lookup
+    if (questions.length !== questionIds.length) {
+      const foundQuestionIds = questions.map(q => q.questionId);
+      const missingQuestionIds = questionIds.filter(id => !foundQuestionIds.includes(id));
+      throw new NotFoundException(`Questions not found: ${missingQuestionIds.join(', ')}`);
+    }
+
     const questionMap = new Map(questions.map(q => [q.questionId, q]));
 
     // Validate all answers first
-    for (const answer of answersArray) {
-      const question = questionMap.get(answer.questionId);
-      if (!question) {
-        throw new NotFoundException(`Question ${answer.questionId} not found`);
-      }
-      this.validateAnswer(answer.answer, question);
+    for (const answerDto of answersArray) {
+      this.validateAnswer(answerDto.answer, questionMap.get(answerDto.questionId));
     }
 
-    // Process all answers in batch
-    const answersToSave: TestUserAnswer[] = [];
+    // Get existing answers for this attempt (batch query)
+    const existingAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+
+    // Prepare answers to save/update
+    const answersToSave = [];
+    const answersToUpdate = [];
     let totalTimeSpent = 0;
+    let lastQuestionOrdering = attempt.currentPosition || 0;
 
-    for (const answer of answersArray) {
-      const question = questionMap.get(answer.questionId);
-      const answerJson = JSON.stringify(answer.answer);
+    for (const answerDto of answersArray) {
+      const answerJson = JSON.stringify(answerDto.answer);
+      const question = questionMap.get(answerDto.questionId);
+      const existingAnswer = existingAnswersMap.get(answerDto.questionId);
 
-      // Check if answer already exists
-      const existingAnswer = await this.testUserAnswerRepository.findOne({
-        where: {
-          attemptId,
-          questionId: answer.questionId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
+      // Determine if question is objective (can be auto-graded)
+      const isObjective = question && (
+        question.type === QuestionType.MCQ ||
+        question.type === QuestionType.TRUE_FALSE ||
+        question.type === QuestionType.MULTIPLE_ANSWER ||
+        question.type === QuestionType.FILL_BLANK ||
+        question.type === QuestionType.MATCH
+      );
+
+      // Calculate score and review status based on question type
+      let score = null;
+      let reviewStatus = 'P' as any; // Default to PENDING
+
+      if (isObjective) {
+        // Auto-grade objective questions
+        score = this.calculateQuestionScore(answerDto.answer, question);
+        reviewStatus = 'N' as any; // NOT_APPLICABLE for objective questions
+      } else if (question && (question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY)) {
+        // Subjective questions remain pending for manual review
+        score = null;
+        reviewStatus = 'P' as any; // PENDING for subjective questions
+      }
 
       if (existingAnswer) {
         existingAnswer.answer = answerJson;
+        existingAnswer.score = score;
+        existingAnswer.reviewStatus = reviewStatus;
         existingAnswer.updatedAt = new Date();
-        await this.testUserAnswerRepository.save(existingAnswer);
+        answersToUpdate.push(existingAnswer);
       } else {
         const userAnswer = this.testUserAnswerRepository.create({
           attemptId,
-          questionId: answer.questionId,
+          questionId: answerDto.questionId,
           answer: answerJson,
+          score: score,
+          reviewStatus: reviewStatus,
           anssOrder: '1', // This could be enhanced to track order
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
@@ -219,24 +252,55 @@ export class AttemptsService {
       }
 
       // Accumulate time spent
-      if (answer.timeSpent) {
-        totalTimeSpent += answer.timeSpent;
+      if (answerDto.timeSpent) {
+        totalTimeSpent += answerDto.timeSpent;
       }
     }
 
-    // Save all new answers in batch
+    // Save all answers in batch operations
     if (answersToSave.length > 0) {
       await this.testUserAnswerRepository.save(answersToSave);
     }
-
-    // Update attempt time spent if any time was spent
-    if (totalTimeSpent > 0) {
-      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
-      await this.attemptRepository.save(attempt);
+    if (answersToUpdate.length > 0) {
+      await this.testUserAnswerRepository.save(answersToUpdate);
     }
 
-    // Trigger plugin events for all answers
-    for (const answer of answersArray) {
+    // Update attempt time spent
+    if (totalTimeSpent > 0) {
+      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
+    }
+
+    // Update current position based on the last question's ordering
+    if (answersArray.length > 0) {
+      const testId = attempt.resolvedTestId || attempt.testId;
+      const lastQuestionId = answersArray[answersArray.length - 1].questionId;
+      const testQuestion = await this.testQuestionRepository.findOne({
+        where: {
+          testId,
+          questionId: lastQuestionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      if (testQuestion) {
+        attempt.currentPosition = testQuestion.ordering;
+      }
+    }
+
+    await this.attemptRepository.save(attempt);
+
+    // Trigger plugin events for each answer
+    for (const answerDto of answersArray) {
+      const question = questionMap.get(answerDto.questionId);
+      const isObjective = question && (
+        question.type === QuestionType.MCQ ||
+        question.type === QuestionType.TRUE_FALSE ||
+        question.type === QuestionType.MULTIPLE_ANSWER ||
+        question.type === QuestionType.FILL_BLANK ||
+        question.type === QuestionType.MATCH
+      );
+
       await this.pluginManager.triggerEvent(
         PluginManagerService.EVENTS.ANSWER_SUBMITTED,
         {
@@ -246,9 +310,12 @@ export class AttemptsService {
         },
         {
           attemptId,
-          questionId: answer.questionId,
-          timeSpent: answer.timeSpent,
-          answer: answer.answer,
+          questionId: answerDto.questionId,
+          timeSpent: answerDto.timeSpent,
+          answer: answerDto.answer,
+          currentPosition: attempt.currentPosition,
+          isObjective: isObjective,
+          score: isObjective ? this.calculateQuestionScore(answerDto.answer, question) : null,
         }
       );
     }
