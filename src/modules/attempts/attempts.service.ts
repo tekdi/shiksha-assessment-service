@@ -801,7 +801,7 @@ export class AttemptsService {
         switch (question.type) {
           case QuestionType.MCQ:
           case QuestionType.TRUE_FALSE:
-          case QuestionType.MULTIPLE_ANSWER:
+          case QuestionType.MULTIPLE_ANSWER: {
             // Include correct options
             const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
             answerData['correctOptions'] = correctOptions.map(opt => ({
@@ -810,8 +810,9 @@ export class AttemptsService {
               marks: opt.marks || 0,
             }));
             break;
+          }
           
-          case QuestionType.FILL_BLANK:
+          case QuestionType.FILL_BLANK: {
             // Include correct answers for fill-in-the-blank questions
             const correctBlanks = question.options?.filter(opt => opt.isCorrect) || [];
             answerData['correctAnswers'] = correctBlanks.map(opt => ({
@@ -820,8 +821,9 @@ export class AttemptsService {
               caseSensitive: opt.caseSensitive || false,
             }));
             break;
+          }
           
-          case QuestionType.MATCH:
+          case QuestionType.MATCH: {
             // Include correct matches
             const correctMatches = question.options?.filter(opt => opt.isCorrect) || [];
             answerData['correctMatches'] = correctMatches.map(opt => ({
@@ -830,14 +832,16 @@ export class AttemptsService {
               matchWith: opt.matchWith,
             }));
             break;
+          }
           
           case QuestionType.SUBJECTIVE:
-          case QuestionType.ESSAY:
+          case QuestionType.ESSAY: {
             // For subjective questions, include sample answer if available
             if ((question.params as any)?.sampleAnswer) {
               answerData['sampleAnswer'] = (question.params as any).sampleAnswer;
             }
             break;
+          }
         }
       }
 
