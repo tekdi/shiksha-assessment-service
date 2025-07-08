@@ -12,6 +12,7 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { ResumeAttemptDto } from './dto/resume-attempt.dto';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
@@ -38,7 +39,8 @@ export class AttemptsController {
   })
   @ApiResponse({ 
     status: 200, 
-    description: 'Attempt resumed successfully'
+    description: 'Attempt resumed successfully',
+    type: ApiSuccessResponseDto
   })
   @ApiResponse({
     status: 400,
@@ -48,7 +50,7 @@ export class AttemptsController {
     status: 404,
     description: 'Attempt not found',
   })
-  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any) {
+  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any): Promise<ResumeAttemptDto> {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.getAttempt(attemptId, authContext);
     return attempt;
