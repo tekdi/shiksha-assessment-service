@@ -665,25 +665,22 @@ export class AttemptsService {
 
     // Get test information with sections and questions (similar to getTestHierarchy)
     const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.testRepository
-      .createQueryBuilder('test')
-      .innerJoinAndSelect(
-        'test.sections', 
-        'section',
-        'section.status = :sectionStatus', 
-        { sectionStatus: SectionStatus.PUBLISHED }
-      )
-      .leftJoinAndSelect(
-        'section.questions', 
-        'testQuestion'
-      )
-      .where('test.testId = :testId', { testId })
-      .andWhere('test.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('test.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('test.status = :testStatus', { testStatus: TestStatus.PUBLISHED })
-      .orderBy('section.ordering', 'ASC')
-      .addOrderBy('testQuestion.ordering', 'ASC')
-      .getOne();
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: TestStatus.PUBLISHED,
+      },
+      relations: [
+        'sections'
+      ],
+      order: {
+        sections: {
+          ordering: 'ASC',
+        },
+      },
+    });
 
     if (!test) {
       throw new NotFoundException('Test not found');
@@ -699,10 +696,23 @@ export class AttemptsService {
       order: { createdAt: 'ASC' },
     });
 
+    // Get all test questions for this test
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+    });
+
+    console.log('Debug - Test questions found:', testQuestions.length);
+    
     // Get all question IDs from test questions
-    const questionIds = test.sections.flatMap(section => 
-      section.questions.map(testQuestion => testQuestion.questionId)
-    );
+    const questionIds = testQuestions.map(testQuestion => testQuestion.questionId);
+
+    console.log('Debug - Question IDs found:', questionIds.length);
+    console.log('Debug - Question IDs:', questionIds);
 
     // Load all questions with their options (only published questions)
     const questions = await this.questionRepository.find({
@@ -715,6 +725,8 @@ export class AttemptsService {
       relations: ['options'],
     });
 
+    console.log('Debug - Questions loaded:', questions.length);
+
     // Create maps for quick lookup
     const questionMap = new Map<string, Question>(questions.map(q => [q.questionId, q]));
     const userAnswerMap = new Map<string, any>();
@@ -723,8 +735,11 @@ export class AttemptsService {
     });
 
     // Build hierarchical structure: Test -> Sections -> Questions (only published sections and questions)
-    const sections = test.sections.map(section => {
-      const sectionQuestions = section.questions
+    const sections = test.sections
+      .filter(section => section.status === SectionStatus.PUBLISHED)
+      .map(section => {
+      const sectionQuestions = testQuestions
+        .filter(testQuestion => testQuestion.sectionId === section.sectionId)
         .map(testQuestion => {
           const question = questionMap.get(testQuestion.questionId);
           const userAnswer = userAnswerMap.get(testQuestion.questionId);
@@ -791,56 +806,48 @@ export class AttemptsService {
                   const selectedOptions = question.options?.filter(opt => 
                     userAnswerData.selectedOptionIds.includes(opt.questionOptionId)
                   ) || [];
-                  questionData.userAnswer = {
-                    selectedOptionIds: selectedOptions.map(opt => ({
-                      questionOptionId: opt.questionOptionId,
-                      text: opt.text,
-                    })),
-                  };
+                  questionData.selectedOptions = selectedOptions.map(opt => ({
+                    questionOptionId: opt.questionOptionId,
+                    text: opt.text,
+                  }));
                 }
                 break;
               
               case QuestionType.FILL_BLANK:
                 if (userAnswerData.selectedOptionIds || userAnswerData.blanks) {
                   const fillBlankAnswers = userAnswerData.selectedOptionIds || userAnswerData.blanks;
-                  questionData.userAnswer = {
-                    blanks: fillBlankAnswers.map((blank: any) => {
-                      const option = question.options?.find(opt => opt.blankIndex === blank.blankIndex);
-                      return {
-                        blankIndex: blank.blankIndex,
-                        text: blank.text || blank.answer || '',
-                        correctText: option?.text || '',
-                        caseSensitive: option?.caseSensitive || false,
-                      };
-                    }),
-                  };
+                  questionData.selectedOptions = fillBlankAnswers.map((blank: any) => {
+                    const option = question.options?.find(opt => opt.blankIndex === blank.blankIndex);
+                    return {
+                      blankIndex: blank.blankIndex,
+                      text: blank.text || blank.answer || '',
+                      correctText: option?.text || '',
+                      caseSensitive: option?.caseSensitive || false,
+                    };
+                  });
                 }
                 break;
               
               case QuestionType.MATCH:
                 if (userAnswerData.matches) {
                   const matchAnswers = userAnswerData.matches;
-                  questionData.userAnswer = {
-                    matches: matchAnswers.map((match: any) => {
-                      const option = question.options?.find(opt => opt.questionOptionId === match.optionId);
-                      const matchWithOption = question.options?.find(opt => opt.questionOptionId === match.matchWith);
-                      return {
-                        questionOptionId: match.optionId,
-                        text: option?.text || '',
-                        matchWith: match.matchWith,
-                        matchWithText: matchWithOption?.text || '',
-                      };
-                    }),
-                  };
+                  questionData.selectedOptions = matchAnswers.map((match: any) => {
+                    const option = question.options?.find(opt => opt.questionOptionId === match.optionId);
+                    const matchWithOption = question.options?.find(opt => opt.questionOptionId === match.matchWith);
+                    return {
+                      questionOptionId: match.optionId,
+                      text: option?.text || '',
+                      matchWith: match.matchWith,
+                      matchWithText: matchWithOption?.text || '',
+                    };
+                  });
                 }
                 break;
               
               case QuestionType.SUBJECTIVE:
               case QuestionType.ESSAY:
                 if (userAnswerData.text) {
-                  questionData.userAnswer = {
-                    text: userAnswerData.text,
-                  };
+                  questionData.selectedOptions = {text: userAnswerData.text};
                 }
                 break;
             }
@@ -853,37 +860,31 @@ export class AttemptsService {
               case QuestionType.TRUE_FALSE:
               case QuestionType.MULTIPLE_ANSWER: {
                 const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
-                questionData.correctAnswer = {
-                  correctOptions: correctOptions.map(opt => ({
-                    questionOptionId: opt.questionOptionId,
-                    text: opt.text,
-                    marks: opt.marks || 0,
-                  })),
-                };
+                questionData.correctOptions = correctOptions.map(opt => ({
+                  questionOptionId: opt.questionOptionId,
+                  text: opt.text,
+                  marks: opt.marks || 0,
+                }));
                 break;
               }
               
               case QuestionType.FILL_BLANK: {
                 const correctBlanks = question.options?.filter(opt => opt.isCorrect) || [];
-                questionData.correctAnswer = {
-                  correctOptions: correctBlanks.map(opt => ({
-                    blankIndex: opt.blankIndex,
-                    text: opt.text,
-                    caseSensitive: opt.caseSensitive || false,
-                  })),
-                };
+                questionData.correctOptions = correctBlanks.map(opt => ({
+                  blankIndex: opt.blankIndex,
+                  text: opt.text,
+                  caseSensitive: opt.caseSensitive || false,
+                }));
                 break;
               }
               
               case QuestionType.MATCH: {
                 const correctMatches = question.options?.filter(opt => opt.isCorrect) || [];
-                questionData.correctAnswer = {
-                  correctOptions: correctMatches.map(opt => ({
-                    questionOptionId: opt.questionOptionId,
-                    text: opt.text,
-                    matchWith: opt.matchWith,
-                  })),
-                };
+                questionData.correctOptions = correctMatches.map(opt => ({
+                  questionOptionId: opt.questionOptionId,
+                  text: opt.text,
+                  matchWith: opt.matchWith,
+                }));
                 break;
               }
               
@@ -891,12 +892,10 @@ export class AttemptsService {
               case QuestionType.ESSAY: {
                 const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
                 if (correctOptions.length > 0) {
-                  questionData.correctAnswer = {
-                    correctOptions: correctOptions.map(opt => ({
-                      text: opt.text,
-                      marks: opt.marks || 0,
-                    })),
-                  };
+                  questionData.correctOptions = correctOptions.map(opt => ({
+                    text: opt.text,
+                    marks: opt.marks || 0,
+                  }));
                 }
                 break;
               }
