@@ -914,25 +914,42 @@ export class AttemptsService {
       };
     });
 
+
+
     return {
-      attemptId: attempt.attemptId,
-      userId: attempt.userId,
-      status: attempt.status,
-      reviewStatus: attempt.reviewStatus,
-      score: attempt.score,
-      result: attempt.result,
-      submittedAt: attempt.submittedAt,
-      timeSpent: attempt.timeSpent,
-      test: {
+      result: {
         testId: test.testId,
+        resolvedTestId: attempt.resolvedTestId,
         title: test.title,
         description: test.description,
-        type: test.type,
-        status: test.status,
         totalMarks: test.totalMarks,
+        timeDuration: test.timeDuration,
+        showTime: test.showTime,
+        type: test.type,
         passingMarks: test.passingMarks,
-        isObjective: test.isObjective,
         showCorrectAnswer: test.showCorrectAnswer,
+        showQuestionsOverview: test.showQuestionsOverview,
+        questionsShuffle: test.questionsShuffle,
+        answersShuffle: test.answersShuffle,
+        paginationLimit: test.paginationLimit,
+        showThankyouPage: test.showThankyouPage,
+        showAllQuestions: test.showAllQuestions,
+        answerSheet: test.answerSheet,
+        printAnswersheet: test.printAnswersheet,
+        attempt: {
+          attemptId: attempt.attemptId,
+          userId: attempt.userId,
+          attempt: attempt.attempt,
+          status: attempt.status,
+          reviewStatus: attempt.reviewStatus,
+          submissionType: attempt.submissionType,
+          result: attempt.result,
+          score: attempt.score,
+          currentPosition: attempt.currentPosition,
+          timeSpent: attempt.timeSpent,
+          startedAt: attempt.startedAt,
+          submittedAt: attempt.submittedAt,
+        },
         sections: sections,
       },
     };
