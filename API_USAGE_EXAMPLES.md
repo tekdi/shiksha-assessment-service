@@ -649,4 +649,139 @@ The `media` field is a JSONB object that can contain URLs for different media ty
 - All media fields are optional
 - You can include multiple media types in a single object
 - The `matchWithMedia` field follows the same structure as `media`
-- For questions and options without media, set `media` to `null` or omit the field 
+- For questions and options without media, set `media` to `null` or omit the field
+
+## Test Structure Management
+
+### Update Test Structure
+
+The test structure endpoint allows you to update the entire test structure including section ordering and question placement within sections.
+
+```bash
+PUT /tests/{testId}/structure
+```
+
+**Request Body:**
+```json
+{
+  "sections": [
+    {
+      "sectionId": "section-123e4567-e89b-12d3-a456-426614174000",
+      "order": 1,
+      "questions": [
+        {
+          "questionId": "question-123e4567-e89b-12d3-a456-426614174000",
+          "order": 1
+        },
+        {
+          "questionId": "question-456e7890-e89b-12d3-a456-426614174001",
+          "order": 2
+        }
+      ]
+    },
+    {
+      "sectionId": "section-456e7890-e89b-12d3-a456-426614174001",
+      "order": 2,
+      "questions": [
+        {
+          "questionId": "question-789e0123-e89b-12d3-a456-426614174002",
+          "order": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Test structure updated successfully"
+}
+```
+
+### Important Validation Rules
+
+1. **Complete Structure Required**: All existing sections and questions must be included in the structure update
+2. **Test Ownership**: All sections and questions must belong to the specified test
+3. **Question Movement Restrictions**: If users have started taking the test, questions cannot be moved between sections (only reordering within sections is allowed)
+4. **Order Validation**: Section and question orders must be positive integers (1-based)
+
+### Error Responses
+
+**Missing Sections:**
+```json
+{
+  "statusCode": 400,
+  "message": "Missing sections in structure update: section-123e4567-e89b-12d3-a456-426614174000, section-456e7890-e89b-12d3-a456-426614174001",
+  "error": "Bad Request"
+}
+```
+
+**Missing Questions:**
+```json
+{
+  "statusCode": 400,
+  "message": "Missing questions in structure update: question-123e4567-e89b-12d3-a456-426614174000, question-456e7890-e89b-12d3-a456-426614174001",
+  "error": "Bad Request"
+}
+```
+
+**Test Tracking Started (Question Movement Not Allowed):**
+```json
+{
+  "statusCode": 400,
+  "message": "Cannot move questions between sections as users have already started this test. Only reordering within sections is allowed.",
+  "error": "Bad Request"
+}
+```
+
+**Sections Not Found:**
+```json
+{
+  "statusCode": 400,
+  "message": "Some sections not found or do not belong to the specified test",
+  "error": "Bad Request"
+}
+```
+
+**Questions Not Found:**
+```json
+{
+  "statusCode": 400,
+  "message": "Some questions not found or do not belong to the specified sections",
+  "error": "Bad Request"
+}
+```
+
+### Use Cases
+
+1. **Reordering Sections**: Change the order in which sections appear in the test
+2. **Reordering Questions**: Change the order of questions within sections
+3. **Moving Questions**: Move questions between sections (only when no users have started the test)
+4. **Complete Restructure**: Update the entire test structure in a single operation
+
+### Example: Reordering Within Sections (When Test Tracking Has Started)
+
+```json
+{
+  "sections": [
+    {
+      "sectionId": "section-123e4567-e89b-12d3-a456-426614174000",
+      "order": 1,
+      "questions": [
+        {
+          "questionId": "question-456e7890-e89b-12d3-a456-426614174001",
+          "order": 1
+        },
+        {
+          "questionId": "question-123e4567-e89b-12d3-a456-426614174000",
+          "order": 2
+        }
+      ]
+    }
+  ]
+}
+```
+
+This operation swaps the order of two questions within the same section, which is allowed even when users have started taking the test. 
