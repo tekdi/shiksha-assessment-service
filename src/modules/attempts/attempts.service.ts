@@ -193,19 +193,20 @@ export class AttemptsService {
       order: { createdAt: 'ASC' },
     });
 
-    // Create a map of answers for quick lookup
-    const answersMap = new Map();
-    userAnswers.forEach(ua => {
-      answersMap.set(ua.questionId, {
-        questionId: ua.questionId,
-        answer: JSON.parse(ua.answer),
-        score: ua.score,
-        reviewStatus: ua.reviewStatus,
-        remarks: ua.remarks,
-        submittedAt: ua.createdAt,
-        updatedAt: ua.updatedAt,
-      });
-    });
+         // Create a map of answers for quick lookup
+     const answersMap = new Map();
+     userAnswers.forEach(ua => {
+       const answerData = JSON.parse(ua.answer);
+       answersMap.set(ua.questionId, {
+         questionId: ua.questionId,
+         answer: answerData,
+         score: ua.score,
+         reviewStatus: ua.reviewStatus,
+         remarks: ua.remarks,
+         submittedAt: ua.createdAt,
+         updatedAt: ua.updatedAt,
+       });
+     });
 
     // Organize questions by sections
     const questionsBySection = new Map();
@@ -215,35 +216,94 @@ export class AttemptsService {
       const question = questions.find(q => q.questionId === testQuestion.questionId);
       if (!question) continue;
 
-      const questionData = {
-        questionId: question.questionId,
-        text: question.text,
-        description: question.description,
-        type: question.type,
-        level: question.level,
-        marks: question.marks,
-        idealTime: question.idealTime,
-        gradingType: question.gradingType,
-        allowPartialScoring: question.allowPartialScoring,
-        params: question.params,
-        media: question.media,
-        ordering: testQuestion.ordering,
-        isCompulsory: testQuestion.isCompulsory,
-        sectionId: testQuestion.sectionId,
-        ruleId: testQuestion.ruleId,
-        options: question.options?.map(opt => ({
-          questionOptionId: opt.questionOptionId,
-          text: opt.text,
-          media: opt.media,
-          matchWith: opt.matchWith,
-          matchWithMedia: opt.matchWithMedia,
-          ordering: opt.ordering,
-          blankIndex: opt.blankIndex,
-          caseSensitive: opt.caseSensitive,
-          // Don't include isCorrect and marks for security
-        })) || [],
-        userAnswer: answersMap.get(question.questionId) || null,
-      };
+             const userAnswer = answersMap.get(question.questionId);
+       
+       // Transform user answer to the desired format
+       let selectedOptions = null;
+       
+       if (userAnswer && userAnswer.answer) {
+         const answerData = userAnswer.answer;
+         
+         switch (question.type) {
+           case QuestionType.MCQ:
+           case QuestionType.TRUE_FALSE:
+           case QuestionType.MULTIPLE_ANSWER:
+             if (answerData.selectedOptionIds && answerData.selectedOptionIds.length > 0) {
+               selectedOptions = question.options?.filter(opt => 
+                 answerData.selectedOptionIds.includes(opt.questionOptionId)
+               ).map(opt => ({
+                 questionOptionId: opt.questionOptionId,
+                 text: opt.text,
+               })) || [];
+             }
+             break;
+             
+           case QuestionType.FILL_BLANK:
+             if (answerData.selectedOptionIds || answerData.blanks) {
+               const fillBlankAnswers = answerData.selectedOptionIds || answerData.blanks;
+               selectedOptions = fillBlankAnswers.map((blank: any) => {
+                 return {
+                   blankIndex: blank.blankIndex,
+                   text: blank.text || blank.answer || '',
+                 };
+               });
+             }
+             break;
+             
+           case QuestionType.MATCH:
+             if (answerData.matches) {
+               selectedOptions = answerData.matches.map((match: any) => {
+                 const option = question.options?.find(opt => opt.questionOptionId === match.optionId);
+                 return {
+                   questionOptionId: match.optionId,
+                   text: option?.text || '',  // User needs to see what they selected
+                   matchWith: match.matchWith,  // The text they matched with
+                 };
+               });
+             }
+             break;
+             
+           case QuestionType.SUBJECTIVE:
+           case QuestionType.ESSAY:
+             if (answerData.text) {
+               selectedOptions = [{
+                 text: answerData.text,
+               }];
+             }
+             break;
+         }
+       }
+       
+       const questionData = {
+         questionId: question.questionId,
+         text: question.text,
+         description: question.description,
+         type: question.type,
+         level: question.level,
+         marks: question.marks,
+         idealTime: question.idealTime,
+         gradingType: question.gradingType,
+         allowPartialScoring: question.allowPartialScoring,
+         params: question.params,
+         media: question.media,
+         ordering: testQuestion.ordering,
+         isCompulsory: testQuestion.isCompulsory,
+         sectionId: testQuestion.sectionId,
+         ruleId: testQuestion.ruleId,
+         options: question.options?.map(opt => ({
+           questionOptionId: opt.questionOptionId,
+           text: opt.text,
+           media: opt.media,
+           matchWith: opt.matchWith,
+           matchWithMedia: opt.matchWithMedia,
+           ordering: opt.ordering,
+           blankIndex: opt.blankIndex,
+           caseSensitive: opt.caseSensitive,
+           // Don't include isCorrect and marks for security
+         })) || [],
+         // Add transformed user answer data
+         ...(selectedOptions && { selectedOptions }),
+       };
 
       if (testQuestion.sectionId) {
         if (!questionsBySection.has(testQuestion.sectionId)) {
@@ -769,6 +829,12 @@ export class AttemptsService {
       case QuestionType.MATCH:
         if (!answer.matches || answer.matches.length === 0) {
           throw new Error('Matching questions require match answers');
+        }
+        // Validate that each match has optionId and matchWith
+        for (const match of answer.matches) {
+          if (!match.optionId || !match.matchWith) {
+            throw new Error('Each match must have optionId and matchWith');
+          }
         }
         break;
     }
