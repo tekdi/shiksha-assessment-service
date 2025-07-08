@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
-import { Test, TestType } from '../tests/entities/test.entity';
+import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
@@ -40,7 +40,7 @@ export class AttemptsService {
     // Check if test exists and user can attempt
     const test = await this.testRepository.findOne({
       where: {
-        testId: testId,
+        testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -50,8 +50,22 @@ export class AttemptsService {
       throw new NotFoundException('Test not found');
     }
 
-    // Check if user has remaining attempts
-    const existingAttempts = await this.attemptRepository.count({
+    // Check if test is published and active
+    if (test.status !== TestStatus.PUBLISHED) {
+      throw new Error('Test is not available for attempts');
+    }
+
+    // Check test availability dates
+    const now = new Date();
+    if (test.startDate && now < test.startDate) {
+      throw new Error('Test is not yet available for attempts');
+    }
+    if (test.endDate && now > test.endDate) {
+      throw new Error('Test is no longer available for attempts');
+    }
+
+    // Get all existing attempts for this user and test
+    const totalAttempts = await this.attemptRepository.count({
       where: {
         testId,
         userId,
@@ -60,18 +74,21 @@ export class AttemptsService {
       },
     });
 
-    if (existingAttempts >= test.attempts) {
-      throw new Error('Maximum attempts reached for this test');
+    const maxAttempts = test.attempts;
+
+    // Check if user has reached maximum attempts
+    if (totalAttempts >= maxAttempts) {
+      throw new Error(`Maximum attempts (${maxAttempts}) reached for this test. You cannot start a new attempt.`);
     }
 
     // Create attempt
     const attempt = this.attemptRepository.create({
       testId,
       userId,
-      attempt: existingAttempts + 1,
+      attempt: totalAttempts + 1,
       status: AttemptStatus.IN_PROGRESS,
       tenantId: authContext.tenantId,
-      organisationId: authContext.organisationId,
+      organisationId: authContext.organisationId
     });
 
     const savedAttempt = await this.attemptRepository.save(attempt);
@@ -849,4 +866,5 @@ export class AttemptsService {
     }
     return shuffled;
   }
+
 } 
