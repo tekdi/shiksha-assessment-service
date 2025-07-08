@@ -15,10 +15,13 @@ import { CreateRuleDto } from './dto/create-rule.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
+import { UseInterceptors } from '@nestjs/common';
 
 @ApiTags('Test Rules')
 @ApiBearerAuth()
 @Controller('rules')
+@UseInterceptors(AuthContextInterceptor)
 export class RulesController {
   constructor(private readonly rulesService: RulesService) {}
 
