@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
@@ -12,10 +13,13 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { ResumeAttemptDto } from './dto/resume-attempt.dto';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
 @Controller('attempts')
+@UseInterceptors(AuthContextInterceptor)
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
@@ -29,6 +33,30 @@ export class AttemptsController {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.startAttempt(testId, authContext.userId, authContext);
     return { attemptId: attempt.attemptId };
+  }
+
+  @Get(':attemptId/resume')
+  @ApiOperation({ 
+    summary: 'Get / Resume an in-progress attempt',
+    description: 'Load an existing in-progress attempt and recover previous answers, state, time, and review statuses. Cannot be used for submitted attempts.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Attempt resumed successfully',
+    type: ApiSuccessResponseDto
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot resume a submitted attempt',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attempt not found',
+  })
+  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any): Promise<{ result: any }> {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.getAttempt(attemptId, authContext);
+    return result;
   }
 
   @Get(':attemptId/questions')
@@ -90,4 +118,5 @@ export class AttemptsController {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
   }
+
 } 

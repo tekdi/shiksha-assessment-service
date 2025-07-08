@@ -14,11 +14,13 @@ export class AnswerDto {
   @IsString()
   text?: string; // For subjective/essay
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ type: [Object] })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  matches?: string[]; // For matching questions
+  matches?: Array<{
+    optionId: string;
+    matchWith: string;
+  }>; // For matching questions - optionId matches with matchWith text
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
