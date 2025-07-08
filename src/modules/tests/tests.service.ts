@@ -14,7 +14,8 @@ import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
-
+import { UserTestStatusDto } from './dto/user-test-status.dto';
+import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
 
 @Injectable()
 export class TestsService {
@@ -435,4 +436,63 @@ export class TestsService {
         throw new BadRequestException(`Unsupported test type: ${test.type}`);
     }
   }
+
+  async getUserTestStatus(testId: string, userId: string, authContext: AuthContext): Promise<UserTestStatusDto> {
+    // Check if test exists
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get all attempts for this user and test
+    const attempts = await this.testRepository.manager.find(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'DESC' },
+    });
+
+    const totalAttempts = attempts.length;
+    const maxAttempts = test.attempts;
+
+    if (attempts.length === 0) {
+      // No attempts yet - user can start a new attempt
+      return {
+        canResume: false,
+        canReattempt: true,
+        lastAttemptStatus: null,
+        lastAttemptId: null,
+        maxAttempts,
+        totalAttempts,
+      };
+    }
+
+    const lastAttempt = attempts[0];
+
+    // Check if user can resume (has an in-progress attempt)
+    const canResume = lastAttempt.status === AttemptStatus.IN_PROGRESS; 
+
+    // Check if user can reattempt (hasn't reached max attempts)
+    const canReattempt = totalAttempts < maxAttempts;
+
+    return {
+      canResume,
+      canReattempt,
+      lastAttemptStatus: lastAttempt.status,
+      lastAttemptId: lastAttempt.attemptId,
+      maxAttempts,
+      totalAttempts,
+    };
+  }
+
 } 

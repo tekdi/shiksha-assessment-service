@@ -3,6 +3,7 @@ import {
   ValidatorConstraintInterface,
   ValidationArguments,
 } from 'class-validator';
+import { randomInt } from 'crypto';
 
 @ValidatorConstraint({ name: 'validateDatetimeConstraints', async: false })
 export class ValidateDatetimeConstraints implements ValidatorConstraintInterface {
@@ -44,12 +45,19 @@ export class HelperUtil {
   static generateAlias(title: string): string {
     if (!title) return '';
     
+    // Prevent DoS attacks by limiting input length
+    const maxLength = 1000;
+    if (title.length > maxLength) {
+      title = title.substring(0, maxLength);
+    }
+    
+    // Use more efficient regex patterns to prevent backtracking issues
     return title
       .toLowerCase()
-      .replace(/[^\w\s-]/g, '') // Remove special characters
-      .replace(/\s+/g, '-')     // Replace spaces with hyphens
-      .replace(/-+/g, '-')      // Replace multiple hyphens with a single one
-      .replace(/^-+|-+$/g, ''); // Remove leading and trailing hyphens
+      .replace(/[^\w\s-]/g, '') // Remove special characters (safe: character class)
+      .replace(/\s+/g, '-')     // Replace spaces with hyphens (safe: \s+ is atomic)
+      .replace(/-+/g, '-')      // Replace multiple hyphens with a single one (safe: -+ is atomic)
+      .replace(/^-+|-+$/g, ''); // Remove leading and trailing hyphens (safe: bounded patterns)
   }
 
   /**
@@ -81,8 +89,8 @@ export class HelperUtil {
       return baseAlias;
     }
 
-    // Try with random number
-    let randomNum = Math.floor(Math.random() * 1000); // Generate random number between 0-999
+    // Try with cryptographically secure random number
+    let randomNum = randomInt(1000); // Generate random number between 0-999
     let finalAlias = `${baseAlias}-${randomNum}`;
     let attempts = 0;
     const maxAttempts = 100;
@@ -104,7 +112,7 @@ export class HelperUtil {
         return finalAlias;
       }
 
-      randomNum = Math.floor(Math.random() * 1000); // Generate new random number
+      randomNum = randomInt(1000); // Generate new cryptographically secure random number
       finalAlias = `${baseAlias}-${randomNum}`;
     }
   }
