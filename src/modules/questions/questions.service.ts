@@ -415,12 +415,8 @@ export class QuestionsService {
   private validateQuestionOptions(questionDto: CreateQuestionDto): void {
     const { type, options } = questionDto;
 
-    // For non-subjective/non-essay questions, options are mandatory
-    if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
-      if (!options || options.length === 0) {
-        throw new BadRequestException(`Options are mandatory for question type '${type}'. Please provide at least one option.`);
-      }
-      
+    // For all question types, if options are provided, validate them
+    if (options && options.length > 0) {
       // Validate that all options have required fields
       options.forEach((option, index) => {
         if (!option.text || option.text.trim().length === 0) {
@@ -510,6 +506,20 @@ export class QuestionsService {
             throw new BadRequestException('Matching questions must have options with matchWith specified.');
           }
           break;
+
+        case QuestionType.SUBJECTIVE:
+        case QuestionType.ESSAY:
+          // For subjective and essay questions, options are optional but if provided, they should be reference correct answers
+          const subjectiveCorrectOptions = options.filter(option => option.isCorrect);
+          if (subjectiveCorrectOptions.length === 0) {
+            throw new BadRequestException(`${type} questions with options must have at least one reference correct answer option.`);
+          }
+          break;
+      }
+    } else {
+      // For non-subjective/non-essay questions, options are mandatory
+      if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
+        throw new BadRequestException(`Options are mandatory for question type '${type}'. Please provide at least one option.`);
       }
     }
   }

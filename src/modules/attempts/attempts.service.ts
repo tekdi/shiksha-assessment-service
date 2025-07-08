@@ -866,7 +866,7 @@ export class AttemptsService {
               case QuestionType.FILL_BLANK: {
                 const correctBlanks = question.options?.filter(opt => opt.isCorrect) || [];
                 questionData.correctAnswer = {
-                  correctBlanks: correctBlanks.map(opt => ({
+                  correctOptions: correctBlanks.map(opt => ({
                     blankIndex: opt.blankIndex,
                     text: opt.text,
                     caseSensitive: opt.caseSensitive || false,
@@ -878,7 +878,7 @@ export class AttemptsService {
               case QuestionType.MATCH: {
                 const correctMatches = question.options?.filter(opt => opt.isCorrect) || [];
                 questionData.correctAnswer = {
-                  correctMatches: correctMatches.map(opt => ({
+                  correctOptions: correctMatches.map(opt => ({
                     questionOptionId: opt.questionOptionId,
                     text: opt.text,
                     matchWith: opt.matchWith,
@@ -889,9 +889,13 @@ export class AttemptsService {
               
               case QuestionType.SUBJECTIVE:
               case QuestionType.ESSAY: {
-                if ((question.params as any)?.sampleAnswer) {
+                const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
+                if (correctOptions.length > 0) {
                   questionData.correctAnswer = {
-                    sampleAnswer: (question.params as any).sampleAnswer,
+                    correctOptions: correctOptions.map(opt => ({
+                      text: opt.text,
+                      marks: opt.marks || 0,
+                    })),
                   };
                 }
                 break;
