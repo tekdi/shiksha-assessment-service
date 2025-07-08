@@ -117,7 +117,7 @@ export class AttemptsService {
   }
 
 
-  async getAttempt(attemptId: string, authContext: AuthContext): Promise<ResumeAttemptDto> {
+  async getAttempt(attemptId: string, authContext: AuthContext): Promise<{ result: any }> {
     // Get attempt with test information
     const attempt = await this.attemptRepository.findOne({
       where: {
@@ -297,46 +297,48 @@ export class AttemptsService {
     }
 
     return {
-      testId: attempt.testId,
-      resolvedTestId: attempt.resolvedTestId,
-      title: test.title,
-      description: test.description,
-      totalMarks: test.totalMarks,
-      timeDuration: test.timeDuration,
-      showTime: test.showTime,
-      type: test.type,
-      passingMarks: test.passingMarks,
-      showCorrectAnswer: test.showCorrectAnswer,
-      showQuestionsOverview: test.showQuestionsOverview,
-      questionsShuffle: test.questionsShuffle,
-      answersShuffle: test.answersShuffle,
-      paginationLimit: test.paginationLimit,
-      showThankyouPage: test.showThankyouPage,
-      showAllQuestions: test.showAllQuestions,
-      answerSheet: test.answerSheet,
-      printAnswersheet: test.printAnswersheet,
-      attempt: {
-        attemptId: attempt.attemptId,
-        userId: attempt.userId,
-        attempt: attempt.attempt,
-        status: attempt.status,
-        reviewStatus: attempt.reviewStatus,
-        submissionType: attempt.submissionType,
-        result: attempt.result,
-        score: attempt.score,
-        currentPosition,
-        timeSpent: attempt.timeSpent,
-        startedAt: attempt.startedAt,
-        submittedAt: attempt.submittedAt,
-        progress: {
-          totalQuestions,
-          answeredQuestions,
-          progressPercentage,
-          remainingQuestions: totalQuestions - answeredQuestions,
+      result: {
+        testId: attempt.testId,
+        resolvedTestId: attempt.resolvedTestId,
+        title: test.title,
+        description: test.description,
+        totalMarks: test.totalMarks,
+        timeDuration: test.timeDuration,
+        showTime: test.showTime,
+        type: test.type,
+        passingMarks: test.passingMarks,
+        showCorrectAnswer: test.showCorrectAnswer,
+        showQuestionsOverview: test.showQuestionsOverview,
+        questionsShuffle: test.questionsShuffle,
+        answersShuffle: test.answersShuffle,
+        paginationLimit: test.paginationLimit,
+        showThankyouPage: test.showThankyouPage,
+        showAllQuestions: test.showAllQuestions,
+        answerSheet: test.answerSheet,
+        printAnswersheet: test.printAnswersheet,
+        attempt: {
+          attemptId: attempt.attemptId,
+          userId: attempt.userId,
+          attempt: attempt.attempt,
+          status: attempt.status,
+          reviewStatus: attempt.reviewStatus,
+          submissionType: attempt.submissionType,
+          result: attempt.result,
+          score: attempt.score,
+          currentPosition,
+          timeSpent: attempt.timeSpent,
+          startedAt: attempt.startedAt,
+          submittedAt: attempt.submittedAt,
+          progress: {
+            totalQuestions,
+            answeredQuestions,
+            progressPercentage,
+            remainingQuestions: totalQuestions - answeredQuestions,
+          },
+          timeRemaining: test.timeDuration ? Math.max(0, test.timeDuration - (attempt.timeSpent || 0)) : null,
         },
-        timeRemaining: test.timeDuration ? Math.max(0, test.timeDuration - (attempt.timeSpent || 0)) : null,
+        sections: sectionsWithQuestions,
       },
-      sections: sectionsWithQuestions,
     };
   }
 
