@@ -10,6 +10,8 @@ import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionDto } from './dto/query-question.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { TestsService } from '../tests/tests.service';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class QuestionsService {
@@ -20,47 +22,110 @@ export class QuestionsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    private readonly testsService: TestsService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
-    const { options, ...questionData } = createQuestionDto;
-    
+    const { options, testId, sectionId, isCompulsory, ...questionData } = createQuestionDto;
     // Validate question data
     this.validateQuestionData(createQuestionDto);
-    
-    // Validate question options
     this.validateQuestionOptions(createQuestionDto);
-    
-    // Validate question parameters
     this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
-    
-    const question = this.questionRepository.create({
-      ...questionData,
-      tenantId: authContext.tenantId,
-      organisationId: authContext.organisationId,
-      createdBy: authContext.userId,
-    });
-
-    const savedQuestion = await this.questionRepository.save(question);
-
-    // Create options if provided
-    if (options && options.length > 0) {
-      const questionOptions = options.map(optionData => 
-        this.questionOptionRepository.create({
-          ...optionData,
-          questionId: savedQuestion.questionId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        })
-      );
-      
-      await this.questionOptionRepository.save(questionOptions);
+    if (testId && !sectionId) {
+      throw new BadRequestException('sectionId is required when testId is provided');
+    }
+    if (!testId && sectionId) {
+      throw new BadRequestException('testId is required when sectionId is provided');
     }
 
-    // Invalidate cache
-    await this.invalidateQuestionCache(authContext.tenantId);
-    
-    return this.findOne(savedQuestion.questionId, authContext);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      // Create question
+      const question = this.questionRepository.create({
+        ...questionData,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        createdBy: authContext.userId,
+      });
+      const savedQuestion = await queryRunner.manager.save(Question, question);
+      // Create options if provided
+      if (options && options.length > 0) {
+        const questionOptions = options.map(optionData =>
+          this.questionOptionRepository.create({
+            ...optionData,
+            questionId: savedQuestion.questionId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          })
+        );
+        await queryRunner.manager.save(QuestionOption, questionOptions);
+      }
+      // Add question to test if testId and sectionId are provided
+      if (testId && sectionId) {
+        // Inline the validation and addition logic from TestsService
+        // Validate test type and question addition
+        const testRepo = queryRunner.manager.getRepository('Test');
+        const test = await testRepo.findOne({
+          where: {
+            testId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        });
+        if (!test) {
+          throw new NotFoundException('Test not found');
+        }
+        if (test.status === 'published') {
+          throw new BadRequestException('Cannot modify questions of a published test');
+        }
+        // Check for duplicate questions in the test (by questionId or question text)
+        const testQuestionRepo = queryRunner.manager.getRepository('TestQuestion');
+        const existingQuestions = await testQuestionRepo
+          .createQueryBuilder('tq')
+          .innerJoin('Question', 'q', 'q.questionId = tq.questionId')
+          .where('tq.testId = :testId', { testId })
+          .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+          .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+          .andWhere('(tq.questionId = :questionId OR q.text = :questionText)', { 
+            questionId: savedQuestion.questionId, 
+            questionText: questionData.text 
+          })
+          .getMany();
+
+        if (existingQuestions.length > 0) {
+          const existingQuestion = existingQuestions[0];
+          if (existingQuestion.questionId === savedQuestion.questionId) {
+            throw new BadRequestException('Question is already added to this test');
+          } else {
+            throw new BadRequestException('A question with the same text already exists in this test');
+          }
+        }
+        // Add question to test
+        const testQuestion = testQuestionRepo.create({
+          testId,
+          sectionId,
+          questionId: savedQuestion.questionId,
+          ordering: 0, // You may want to set ordering properly
+          isCompulsory: isCompulsory || false,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        });
+        await testQuestionRepo.save(testQuestion);
+      }
+      await queryRunner.commitTransaction();
+      // Invalidate cache
+      await this.invalidateQuestionCache(authContext.tenantId);
+      // Return the created question (with options)
+      return this.findOne(savedQuestion.questionId, authContext);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async findAll(queryDto: QueryQuestionDto, authContext: AuthContext) {

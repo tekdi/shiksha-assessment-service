@@ -225,4 +225,29 @@ export class CreateQuestionDto {
   @ValidateNested({ each: true })
   @Type(() => CreateQuestionOptionDto)
   options?: CreateQuestionOptionDto[];
+
+  @ApiPropertyOptional({
+    description: 'ID of the test to add this question to (optional)',
+    example: 'test-123e4567-e89b-12d3-a456-426614174000'
+  })
+  @IsOptional()
+  @IsUUID()
+  testId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID of the section within the test to add this question to (optional)',
+    example: 'section-123e4567-e89b-12d3-a456-426614174000'
+  })
+  @IsOptional()
+  @IsUUID()
+  sectionId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Whether this question is compulsory in the test (optional)',
+    example: false,
+    required: false
+  })
+  @IsOptional()
+  @IsBoolean()
+  isCompulsory?: boolean;
 } 

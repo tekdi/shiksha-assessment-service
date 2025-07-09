@@ -28,7 +28,10 @@ export class QuestionsController {
   constructor(private readonly questionsService: QuestionsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a new question' })
+  @ApiOperation({ 
+    summary: 'Create a new question',
+    description: 'Create a new question. Optionally add it to a test section if testId and sectionId are provided.'
+  })
   @ApiResponse({
     status: 201,
     description: 'Question created successfully',
@@ -37,7 +40,19 @@ export class QuestionsController {
   async create(@Body() createQuestionDto: CreateQuestionDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const question = await this.questionsService.create(createQuestionDto, authContext);
-    return { questionId: question.questionId };
+    
+    const response: any = { questionId: question.questionId };
+    
+    // Add information about test assignment if provided
+    if (createQuestionDto.testId && createQuestionDto.sectionId) {
+      response.addedToTest = {
+        testId: createQuestionDto.testId,
+        sectionId: createQuestionDto.sectionId,
+        isCompulsory: createQuestionDto.isCompulsory || false
+      };
+    }
+    
+    return response;
   }
 
   @Get()
