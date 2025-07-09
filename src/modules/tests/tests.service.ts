@@ -486,14 +486,7 @@ export class TestsService {
         throw new NotFoundException('Test not found');
       }
 
-      // Check if any users have started taking the test
-      const hasAttempts = await queryRunner.manager.findOne(TestAttempt, {
-        where: {
-          testId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
+
 
       // Get existing sections and questions for validation
       const existingSections = await queryRunner.manager.find(TestSection, {

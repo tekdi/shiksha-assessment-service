@@ -7,6 +7,5 @@ export const RESPONSE_MESSAGES = {
     `Missing questions in structure update: ${missingQuestions.join(', ')}`,
   SOME_SECTIONS_NOT_FOUND: 'Some sections not found or do not belong to the specified test',
   QUESTIONS_NOT_FOUND_IN_STRUCTURE: 'Some questions not found or do not belong to the specified sections',
-  
-  // Add other response messages here as needed
+
 } as const; 
