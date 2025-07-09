@@ -1,27 +1,33 @@
-## 📝 Product Requirements Document (PRD) - TMT Microservice
+## 📝 Product Requirements Document (PRD) - Assessment Microservice
 
 ---
-# 🧾 Product Requirements Document (PRD)
-
-**Product Name**: Assessment Management Service  
-**Version**: 1.0  
----
-
 ## 1. 🎯 Objectives and Goals
 
-This tool is designed to make it easy for instructors to create and manage online assessments and for learners to take them effectively. It should:
-
+To provide a robust, configurable, and scalable service for creating and managing quizzes/tests.
+It should: 
 - Allow creation of simple and dynamic (rule-based) tests.
 - Support multiple question types including multimedia-based.
 - Make the test experience flexible (resume, shuffle, review, etc.).
-- Provide insights into learner performance at the section level.
+- Provide insights into learner performance by tracking his progress for attempts.
 - Work across organizations (multi-tenancy).
 - Support multiple languages for UI and test content (multilingual).
 - Be scalable and secure for mass use in learning systems.
 
 ---
+## 2. 🎯 Scope
+### 2.1 In scope 
+- Quiz/Test creation with advanced configuration
+- Question bank management
+- Multimedia support for questions/answers
+- User test-taking flows with progress/resume
+- Result evaluation and summary
+- Performance tracking
+### 2.2 Out of scope 
+- Certificate issuance (handled by certificate service)
+- Authentication & user management
 
-## 2. 👥 Target Users
+
+## 3. 👥 Target Users
 
 | Role         | Description |
 |--------------|-------------|
@@ -31,7 +37,7 @@ This tool is designed to make it easy for instructors to create and manage onlin
 
 ---
 
-## 3. ✨ Key Features
+## 4. ✨ Key Features
 
 ### 3.1 Test Types
 - **Simple Test**: Instructor manually creates sections and assigns questions to them.
@@ -58,6 +64,7 @@ This tool is designed to make it easy for instructors to create and manage onlin
 ---
 
 ### 3.3 Test Features and Settings
+Fine-grained control over test behavior
 - Resume Test
 - Review Answer Sheet
 - Show Correct Answers (if review is enabled)
@@ -79,6 +86,16 @@ This tool is designed to make it easy for instructors to create and manage onlin
 
 ---
 
+### 3.5 Question Management
+ Create and manage questions manually or from a question bank. Supports multimedia (image/audio/video) in questions and answers.
+
+---
+
+### 3.6 Question Pools & Auto-Pick
+ Generate quizzes using dynamic rules from large question banks or pools. Supports rule-based question selection.
+
+---
+
 ### 3.5 Add Questions Section
 - Total Marks / Passing Marks
 - Pick Questions from Bank
@@ -87,6 +104,21 @@ This tool is designed to make it easy for instructors to create and manage onlin
 - Question Pool Creation and Dynamic Pull
 - Section-wise Analytics on Thank You Page
 
+---
+### 3.6 Attempt Management
+-  Users can start, resume, and submit attempts. Incomplete attempts can be resumed if allowed.Total Marks / Passing Marks
+  
+---
+### 3.7 Answer Sheet & Review
+- After submission, users may review answer sheets, see correct answers, and print responses if permitted.
+
+---
+### 3.8 Dynamic Scoring and Passing Logic
+- Automatic total and passing mark calculations based on question weights and section configurations.
+
+---
+### 3.8 Scalability and API-First
+-  Built as a scalable NestJS microservice with TypeORM, PostgreSQL, and OpenAPI (Swagger) documentation.
 ---
 
 ## 4. 📖 User Stories / Use Cases
