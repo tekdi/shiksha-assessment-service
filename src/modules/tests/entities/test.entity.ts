@@ -207,9 +207,12 @@ export class Test {
   @OneToMany(() => TestAttempt, attempt => attempt.test)
   testAttempts: TestAttempt[];
 
-  @ManyToOne(() => Test, test => test.sections)
+  @ManyToOne(() => Test, test => test.children)
   @JoinColumn({ name: 'parentId' })
   parent: Test;
+
+  @OneToMany(() => Test, test => test.parent)
+  children: Test[];
 
   // Alias for compatibility with existing code
   get id(): string {
