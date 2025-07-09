@@ -7,6 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
+import { QuestionOption } from './question-option.entity';
 
 export enum QuestionType {
   MCQ = 'mcq',
@@ -162,8 +163,8 @@ export class Question {
   updatedAt: Date;
 
   // Relations
-  @OneToMany('QuestionOption', 'question')
-  options: any[];
+  @OneToMany(() => QuestionOption, option => option.question)
+  options: QuestionOption[];
 
   // Alias for compatibility with existing code
   get id(): string {
