@@ -176,9 +176,9 @@ export class TestsService {
       order: {
         sections: {
           ordering: 'ASC',
-        },
-        questions: {
-          ordering: 'ASC',
+          questions: {
+            ordering: 'ASC',
+          },
         },
       },
     });
@@ -580,33 +580,6 @@ export class TestsService {
 
         if (foundQuestions.length !== allQuestionIds.length) {
           throw new BadRequestException(RESPONSE_MESSAGES.QUESTIONS_NOT_FOUND_IN_STRUCTURE);
-        }
-      }
-
-      // If test tracking has started, validate that questions are not moved between sections
-      if (hasAttempts) {
-        const questionSectionMap = new Map();
-        
-        // Build current question-section mapping
-        existingQuestions.forEach(question => {
-          questionSectionMap.set(question.questionId, question.sectionId);
-        });
-
-        // Check if any questions are being moved between sections
-        let hasCrossSectionMovement = false;
-        testStructureDto.sections.forEach(section => {
-          if (section.questions) {
-            section.questions.forEach(question => {
-              const currentSectionId = questionSectionMap.get(question.questionId);
-              if (currentSectionId && currentSectionId !== section.sectionId) {
-                hasCrossSectionMovement = true;
-              }
-            });
-          }
-        });
-
-        if (hasCrossSectionMovement) {
-          throw new BadRequestException(RESPONSE_MESSAGES.TEST_TRACKING_STARTED_QUESTION_MOVEMENT_NOT_ALLOWED);
         }
       }
 

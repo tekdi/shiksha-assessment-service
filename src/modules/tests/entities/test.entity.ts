@@ -198,16 +198,16 @@ export class Test {
   updatedAt: Date;
 
   // Relations
-  @OneToMany(() => TestSection, (section: TestSection) => section.test)
+  @OneToMany(() => TestSection, section => section.test)
   sections: TestSection[];
 
-  @OneToMany(() => TestQuestion, (question: TestQuestion) => question.test)
+  @OneToMany(() => TestQuestion, question => question.test)
   questions: TestQuestion[];
 
-  @OneToMany(() => TestAttempt, (attempt: TestAttempt) => attempt.test)
+  @OneToMany(() => TestAttempt, attempt => attempt.test)
   testAttempts: TestAttempt[];
 
-  @ManyToOne(() => Test, test => test.testId)
+  @ManyToOne(() => Test, test => test.sections)
   @JoinColumn({ name: 'parentId' })
   parent: Test;
 

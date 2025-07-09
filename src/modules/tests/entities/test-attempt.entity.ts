@@ -107,7 +107,7 @@ export class TestAttempt {
   updatedAt: Date;
 
   // Relations
-  @ManyToOne(() => Test, test => test.attempts)
+  @ManyToOne(() => Test, test => test.testId)
   @JoinColumn({ name: 'testId' })
   test: Test;
 } 

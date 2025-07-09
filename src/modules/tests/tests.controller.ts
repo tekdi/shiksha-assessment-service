@@ -245,7 +245,7 @@ export class TestsController {
   @Put(':testId/structure')
   @ApiOperation({ 
     summary: 'Update test structure',
-    description: 'Update the entire test structure including section ordering and question placement within sections. If users have started taking the test, only reordering within sections is allowed.'
+    description: 'Update the entire test structure including section ordering and question placement within sections. All structure changes are allowed regardless of whether users have started taking the test.'
   })
   @ApiParam({
     name: 'testId',
