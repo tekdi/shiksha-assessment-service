@@ -8,7 +8,6 @@ import { Test } from './entities/test.entity';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
-import { TestStructureDto } from './dto/test-structure.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
@@ -16,7 +15,6 @@ import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
-import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
 import { OrderingService } from '@/common/services/ordering.service';
 
 @Injectable()

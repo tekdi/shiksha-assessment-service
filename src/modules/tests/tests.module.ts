@@ -26,6 +26,8 @@ import { OrderingService } from '@/common/services/ordering.service';
       TestRule,
       TestUserAnswer,
       Question,
+      TestSection,
+      TestQuestion,
     ]),
   ],
   controllers: [TestsController, SectionsController, RulesController],
