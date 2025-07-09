@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, QueryRunner } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
-import { Question, QuestionType } from './entities/question.entity';
+import { Question, QuestionStatus, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -12,6 +12,8 @@ import { QueryQuestionDto } from './dto/query-question.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestsService } from '../tests/tests.service';
 import { DataSource } from 'typeorm';
+import { TestQuestion } from '../tests/entities/test-question.entity';
+import { Test, TestStatus } from '../tests/entities/test.entity';
 
 @Injectable()
 export class QuestionsService {
@@ -67,7 +69,7 @@ export class QuestionsService {
       if (testId && sectionId) {
         // Inline the validation and addition logic from TestsService
         // Validate test type and question addition
-        const testRepo = queryRunner.manager.getRepository('Test');
+        const testRepo = queryRunner.manager.getRepository(Test);
         const test = await testRepo.findOne({
           where: {
             testId,
@@ -78,11 +80,11 @@ export class QuestionsService {
         if (!test) {
           throw new NotFoundException('Test not found');
         }
-        if (test.status === 'published') {
+        if (test.status === TestStatus.PUBLISHED) {
           throw new BadRequestException('Cannot modify questions of a published test');
         }
         // Check for duplicate questions in the test (by questionId or question text)
-        const testQuestionRepo = queryRunner.manager.getRepository('TestQuestion');
+        const testQuestionRepo = queryRunner.manager.getRepository(TestQuestion);
         const existingQuestions = await testQuestionRepo
           .createQueryBuilder('tq')
           .innerJoin('Question', 'q', 'q.questionId = tq.questionId')
@@ -108,7 +110,7 @@ export class QuestionsService {
           testId,
           sectionId,
           questionId: savedQuestion.questionId,
-          ordering: 0, // You may want to set ordering properly
+          ordering: await this.getNextQuestionOrder(queryRunner, testId, sectionId, authContext),
           isCompulsory: isCompulsory || false,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
@@ -254,7 +256,7 @@ export class QuestionsService {
 
     // Rule preview mode - only show published questions
     if (rulePreview === 'true') {
-      queryBuilder.andWhere('question.status = :publishedStatus', { publishedStatus: 'published' });
+      queryBuilder.andWhere('question.status = :publishedStatus', { publishedStatus: QuestionStatus.PUBLISHED });
     }
 
     const total = await queryBuilder.getCount();
@@ -399,7 +401,7 @@ export class QuestionsService {
       .leftJoinAndSelect('question.options', 'options')
       .where('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.status = :status', { status: 'published' });
+      .andWhere('question.status = :status', { status: QuestionStatus.PUBLISHED });
 
     // Apply rule criteria
     if (ruleCriteria.categories && ruleCriteria.categories.length > 0) {
@@ -668,5 +670,23 @@ export class QuestionsService {
         throw new BadRequestException(`Sum of blank marks (${totalBlankMarks}) must equal question marks (${createQuestionDto.marks}) when partial scoring is enabled.`);
       }
     }
+  }
+
+  private async getNextQuestionOrder(
+    queryRunner: QueryRunner,
+    testId: string,
+    sectionId: string,
+    authContext: AuthContext
+  ): Promise<number> {
+    const result = await queryRunner.manager
+      .createQueryBuilder(TestQuestion, 'tq')
+      .where('tq.testId = :testId', { testId })
+      .andWhere('tq.sectionId = :sectionId', { sectionId })
+      .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .select('MAX(tq.ordering)', 'maxOrdering')
+      .getRawOne();
+    
+    return (result?.maxOrdering || 0) + 1;
   }
 } 
