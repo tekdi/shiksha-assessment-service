@@ -14,6 +14,7 @@ import { TestsService } from '../tests/tests.service';
 import { DataSource } from 'typeorm';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { Test, TestStatus } from '../tests/entities/test.entity';
+import { OrderingService } from '@/common/services/ordering.service';
 
 @Injectable()
 export class QuestionsService {
@@ -26,6 +27,7 @@ export class QuestionsService {
     private readonly cacheManager: Cache,
     private readonly testsService: TestsService,
     private readonly dataSource: DataSource,
+    private readonly orderingService: OrderingService,
   ) {}
 
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
@@ -110,7 +112,7 @@ export class QuestionsService {
           testId,
           sectionId,
           questionId: savedQuestion.questionId,
-          ordering: await this.getNextQuestionOrder(queryRunner, testId, sectionId, authContext),
+          ordering: await this.orderingService.getNextQuestionOrderWithRunner(queryRunner, testId, sectionId, authContext),
           isCompulsory: isCompulsory || false,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
@@ -672,21 +674,5 @@ export class QuestionsService {
     }
   }
 
-  private async getNextQuestionOrder(
-    queryRunner: QueryRunner,
-    testId: string,
-    sectionId: string,
-    authContext: AuthContext
-  ): Promise<number> {
-    const result = await queryRunner.manager
-      .createQueryBuilder(TestQuestion, 'tq')
-      .where('tq.testId = :testId', { testId })
-      .andWhere('tq.sectionId = :sectionId', { sectionId })
-      .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .select('MAX(tq.ordering)', 'maxOrdering')
-      .getRawOne();
-    
-    return (result?.maxOrdering || 0) + 1;
-  }
+
 } 

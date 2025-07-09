@@ -14,6 +14,7 @@ import { TestAttempt } from './entities/test-attempt.entity';
 import { TestRule } from './entities/test-rule.entity';
 import { TestUserAnswer } from './entities/test-user-answer.entity';
 import { Question } from '../questions/entities/question.entity';
+import { OrderingService } from '@/common/services/ordering.service';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { Question } from '../questions/entities/question.entity';
     ]),
   ],
   controllers: [TestsController, SectionsController, RulesController],
-  providers: [TestsService, SectionsService, RulesService, QuestionPoolService],
+  providers: [TestsService, SectionsService, RulesService, QuestionPoolService, OrderingService],
   exports: [TestsService, SectionsService, RulesService, QuestionPoolService],
 })
 export class TestsModule {} 

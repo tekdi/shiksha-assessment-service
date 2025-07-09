@@ -5,6 +5,7 @@ import { QuestionsService } from './questions.service';
 import { Question } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
 import { TestsModule } from '../tests/tests.module';
+import { OrderingService } from '@/common/services/ordering.service';
 
 @Module({
   imports: [
@@ -12,7 +13,7 @@ import { TestsModule } from '../tests/tests.module';
     TestsModule,
   ],
   controllers: [QuestionsController],
-  providers: [QuestionsService],
+  providers: [QuestionsService, OrderingService],
   exports: [QuestionsService],
 })
 export class QuestionsModule {} 

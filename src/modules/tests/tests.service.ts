@@ -17,6 +17,7 @@ import { Question } from '../questions/entities/question.entity';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
 import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
+import { OrderingService } from '@/common/services/ordering.service';
 
 @Injectable()
 export class TestsService {
@@ -32,6 +33,7 @@ export class TestsService {
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly dataSource: DataSource,
+    private readonly orderingService: OrderingService,
   ) {}
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
@@ -208,12 +210,15 @@ export class TestsService {
       throw new BadRequestException('Question is already added to this test');
     }
 
+    // Get the next available ordering number
+    const ordering = await this.orderingService.getNextQuestionOrder(testId, sectionId, authContext);
+
     // Add question to test
     const testQuestion = this.testQuestionRepository.create({
       testId,
       sectionId,
       questionId,
-      ordering: 0, // Will be set based on existing questions
+      ordering,
       isCompulsory,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
@@ -292,16 +297,7 @@ export class TestsService {
       let ordering = questionData.ordering;
       if (ordering === undefined) {
         // Get the next available ordering number
-        const maxOrdering = await this.testQuestionRepository
-          .createQueryBuilder('tq')
-          .where('tq.testId = :testId', { testId })
-          .andWhere('tq.sectionId = :sectionId', { sectionId })
-          .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
-          .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
-          .select('MAX(tq.ordering)', 'maxOrdering')
-          .getRawOne();
-
-        ordering = (maxOrdering?.maxOrdering || 0) + 1;
+        ordering = await this.orderingService.getNextQuestionOrder(testId, sectionId, authContext);
       }
 
       questionsToAdd.push({
