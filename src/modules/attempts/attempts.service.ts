@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
-import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
-import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
+import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
+import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
@@ -95,35 +95,17 @@ export class AttemptsService {
     }
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_STARTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        attemptNumber: savedAttempt.attempt,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_STARTED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      attemptNumber: savedAttempt.attempt,
+    });
 
     return savedAttempt;
   }
 
   async getAttemptQuestions(attemptId: string, authContext: AuthContext): Promise<Question[]> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Get questions from the resolved test (generated test for rule-based)
     const testId = attempt.resolvedTestId || attempt.testId;
@@ -172,17 +154,7 @@ export class AttemptsService {
     }
 
     // Get question to validate answer format
-    const question = await this.questionRepository.findOne({
-      where: {
-        questionId: submitAnswerDto.questionId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!question) {
-      throw new NotFoundException('Question not found');
-    }
+    const question = await this.findQuestionById(submitAnswerDto.questionId, authContext);
 
     // Validate answer based on question type
     this.validateAnswer(submitAnswerDto.answer, question);
@@ -223,87 +195,62 @@ export class AttemptsService {
     }
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ANSWER_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        timeSpent: submitAnswerDto.timeSpent,
-        answer: submitAnswerDto.answer,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ANSWER_SUBMITTED, authContext, {
+      attemptId,
+      questionId: submitAnswerDto.questionId,
+      timeSpent: submitAnswerDto.timeSpent,
+      answer: submitAnswerDto.answer,
+    });
   }
 
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+    // Check if attempt is already submitted
+    if (attempt.status === AttemptStatus.SUBMITTED) {
+      throw new Error('Attempt is already submitted');
     }
 
+    // Get test information
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.findTestById(testId, authContext);
+
+    // Calculate total marks for this attempt
+    const totalMarks = await this.calculateTotalMarks(attemptId, authContext);
+
+    // Get all answers and questions for this attempt
+    const { userAnswers, questionMap } = await this.getAttemptAnswersAndQuestions(attemptId, authContext);
+
+    // Determine evaluation strategy based on test.isObjective flag
+    if (test.isObjective) {
+      await this.handleObjectiveTestSubmission(attempt, test, userAnswers, questionMap, authContext);
+    } else {
+      await this.handleMixedTestSubmission(attempt, test, userAnswers, questionMap, authContext);
+    }
+
+    // Update attempt status
     attempt.status = AttemptStatus.SUBMITTED;
     attempt.submittedAt = new Date();
     attempt.submissionType = SubmissionType.SELF;
 
-    // Check if test has subjective questions that need review
-    const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attemptId, authContext);
-    
-    if (hasSubjectiveQuestions) {
-      // Set review status to pending for manual review
-      attempt.reviewStatus = ReviewStatus.PENDING;
-    } else {
-      // Auto-calculate score for objective questions
-      const score = await this.calculateObjectiveScore(attemptId, authContext);
-      attempt.score = score;
-      attempt.result = score >= 60 ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
-    }
-
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        score: savedAttempt.score,
-        result: savedAttempt.result,
-        timeSpent: savedAttempt.timeSpent,
-        reviewStatus: savedAttempt.reviewStatus,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_SUBMITTED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      score: savedAttempt.score,
+      result: savedAttempt.result,
+      timeSpent: savedAttempt.timeSpent,
+      reviewStatus: savedAttempt.reviewStatus,
+      isObjective: test.isObjective,
+    });
 
-    return savedAttempt;
+    return { ...savedAttempt, totalMarks };
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Update scores for reviewed answers
     for (const answerReview of reviewDto.answers) {
@@ -335,22 +282,14 @@ export class AttemptsService {
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_REVIEWED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        score: savedAttempt.score,
-        result: savedAttempt.result,
-        reviewedBy: authContext.userId,
-        answersReviewed: reviewDto.answers.length,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_REVIEWED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      score: savedAttempt.score,
+      result: savedAttempt.result,
+      reviewedBy: authContext.userId,
+      answersReviewed: reviewDto.answers.length,
+    });
 
     return savedAttempt;
   }
@@ -380,6 +319,21 @@ export class AttemptsService {
       .getMany();
   }
 
+  /**
+   * Generates questions for a rule-based test attempt by creating a new generated test
+   * and populating it with questions based on the test rules.
+   * 
+   * This function:
+   * 1. Creates a new generated test instance for the specific attempt
+   * 2. Links the attempt to the generated test via resolvedTestId
+   * 3. Retrieves all active rules for the original test
+   * 4. For each rule, selects questions either from pre-selected pool or dynamic criteria
+   * 5. Adds selected questions to the generated test with proper ordering
+   * 
+   * @param attempt - The test attempt that needs questions generated
+   * @param originalTest - The original rule-based test
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
   private async generateRuleBasedTestQuestions(attempt: TestAttempt, originalTest: Test, authContext: AuthContext): Promise<void> {
     // Create a new generated test for this specific attempt
     const generatedTest = this.testRepository.create({
@@ -475,6 +429,14 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Selects a specified number of questions from a pool of question IDs based on the given strategy.
+   *    * 
+   * @param questionIds - Array of question IDs to select from
+   * @param count - Number of questions to select
+   * @param strategy - Selection strategy ('random', 'sequential', 'weighted')
+   * @returns Array of selected question IDs
+   */
   private selectQuestionsFromPool(questionIds: string[], count: number, strategy: string): string[] {
     switch (strategy) {
       case 'random':
@@ -490,6 +452,14 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Selects a specified number of questions from pre-selected questions in a rule based on the given strategy.
+   * 
+   * @param availableQuestions - Array of TestQuestion entities to select from
+   * @param count - Number of questions to select
+   * @param strategy - Selection strategy ('random', 'sequential', 'weighted')
+   * @returns Array of selected TestQuestion entities
+   */
   private selectQuestionsFromRule(availableQuestions: TestQuestion[], count: number, strategy: string): TestQuestion[] {
     switch (strategy) {
       case 'random':
@@ -505,6 +475,22 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Validates a user's answer against the question's expected format and constraints.
+   * 
+   * This function performs type-specific validation:
+   * - MCQ/True-False: Ensures exactly one option is selected
+   * - Multiple Answer: Ensures at least one option is selected
+   * - Subjective/Essay: Ensures text is provided and meets length constraints
+   * - Fill-in-the-blank: Ensures blank answers are provided
+   * - Matching: Ensures match answers are provided
+   * 
+   * Throws descriptive error messages for validation failures.
+   * 
+   * @param answer - The user's answer object
+   * @param question - The question entity with type and constraints
+   * @throws Error when validation fails
+   */
   private validateAnswer(answer: any, question: Question): void {
     switch (question.type) {
       case QuestionType.MCQ:
@@ -543,6 +529,16 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Checks if an attempt contains any subjective questions that require manual review.
+   * 
+   * This function queries the database to count questions in the attempt that have
+   * grading type 'EXERCISE' (subjective questions that need manual scoring).
+   * 
+   * @param attemptId - The ID of the test attempt to check
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<boolean> - True if the attempt has subjective questions, false otherwise
+   */
   private async hasSubjectiveQuestions(attemptId: string, authContext: AuthContext): Promise<boolean> {
     const subjectiveQuestions = await this.questionRepository
       .createQueryBuilder('question')
@@ -556,6 +552,20 @@ export class AttemptsService {
     return subjectiveQuestions > 0;
   }
 
+  /**
+   * Calculates the objective score for an attempt by auto-evaluating all objective questions.
+   * 
+   * This function:
+   * 1. Retrieves all answers for the attempt that have grading type 'QUIZ' (objective questions)
+   * 2. For each answer, calculates the score based on the question type and user's response
+   * 3. Sums up all scores and calculates the percentage based on total possible marks
+   * 
+   * Only processes questions with grading type 'QUIZ' (objective questions that can be auto-scored).
+   * 
+   * @param attemptId - The ID of the test attempt to score
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<number> - The calculated objective score as a percentage
+   */
   private async calculateObjectiveScore(attemptId: string, authContext: AuthContext): Promise<number> {
     const answers = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
@@ -588,6 +598,16 @@ export class AttemptsService {
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
   }
 
+  /**
+   * Calculates the score for a single question based on the user's answer and question type.
+   *
+   * Note: This is a simplified scoring implementation. For production use, you would need
+   * to implement proper answer validation against correct answers stored in the question.
+   * 
+   * @param answerData - The parsed user answer data
+   * @param question - The question entity with type and marks
+   * @returns number - The calculated score for this question
+   */
   private calculateQuestionScore(answerData: any, question: Question): number {
     // This is a simplified scoring logic - you might want to enhance it
     switch (question.type) {
@@ -603,7 +623,54 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Calculates the final score for an attempt after manual review of subjective questions.
+   * 
+   * This is used after manual review when all subjective questions have been scored.
+   * 
+   * @param attemptId - The ID of the test attempt to calculate final score for
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<number> - The final score as a percentage
+   */
   private async calculateFinalScore(attemptId: string, authContext: AuthContext): Promise<number> {
+    const { answers, totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
+    
+    let totalScore = 0;
+    for (const answer of answers) {
+      totalScore += answer.score || 0;
+    }
+
+    return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
+  }
+
+  /**
+   * Calculates the total possible marks for an attempt by summing up marks from all questions.
+   * 
+   * This function retrieves all questions in the attempt and sums their individual marks
+   * to determine the maximum possible score for the attempt.
+   * 
+   * @param attemptId - The ID of the test attempt to calculate total marks for
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<number> - The total possible marks for the attempt
+   */
+  private async calculateTotalMarks(attemptId: string, authContext: AuthContext): Promise<number> {
+    const { totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
+    return totalMarks;
+  }
+
+  /**
+   * Retrieves all answers for an attempt along with the total possible marks.
+   * 
+   * This function:
+   * 1. Fetches all user answers for the specified attempt
+   * 2. For each answer, retrieves the associated question to get its marks
+   * 3. Calculates the total possible marks by summing all question marks
+   * 
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{answers: TestUserAnswer[], totalMarks: number}> - Object containing answers and total marks
+   */
+  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: TestUserAnswer[], totalMarks: number }> {
     const answers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
@@ -612,9 +679,7 @@ export class AttemptsService {
       },
     });
 
-    let totalScore = 0;
     let totalMarks = 0;
-
     for (const answer of answers) {
       const question = await this.questionRepository.findOne({
         where: { questionId: answer.questionId },
@@ -622,13 +687,21 @@ export class AttemptsService {
 
       if (question) {
         totalMarks += question.marks;
-        totalScore += answer.score || 0;
       }
     }
 
-    return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
+    return { answers, totalMarks };
   }
 
+  /**
+   * Shuffles an array using the Fisher-Yates shuffle algorithm.
+   * 
+   * This function creates a copy of the input array and randomly reorders its elements
+   * using the Fisher-Yates (Knuth) shuffle algorithm for unbiased randomization.
+   * 
+   * @param array - The array to shuffle
+   * @returns T[] - A new array with the same elements in random order
+   */
   private shuffleArray<T>(array: T[]): T[] {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
@@ -638,4 +711,332 @@ export class AttemptsService {
     return shuffled;
   }
 
+  /**
+   * Retrieves all answers for an attempt along with their associated questions.
+   * 
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{userAnswers: TestUserAnswer[], questionMap: Map<string, Question>}> - Object containing answers and question lookup map
+   */
+  private async getAttemptAnswersAndQuestions(attemptId: string, authContext: AuthContext): Promise<{ userAnswers: TestUserAnswer[], questionMap: Map<string, Question> }> {
+    // Get all answers for this attempt
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Get questions for the answers
+    const questionIds = userAnswers.map(answer => answer.questionId);
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+
+    return { userAnswers, questionMap };
+  }
+
+  /**
+   * Updates the score and review status for a specific answer in an attempt.
+   * 
+   * Used during both auto-scoring of objective questions and manual review of subjective questions.
+   * 
+   * @param attemptId - The ID of the test attempt
+   * @param questionId - The ID of the question being scored
+   * @param score - The calculated score for the answer (can be null for pending review)
+   * @param reviewStatus - The review status for the answer
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async updateAnswerScore(
+    attemptId: string, 
+    questionId: string, 
+    score: number | null, 
+    reviewStatus: AnswerReviewStatus, 
+    authContext: AuthContext
+  ): Promise<void> {
+    await this.testUserAnswerRepository.update(
+      {
+        attemptId,
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      {
+        reviewStatus,
+        score,
+      }
+    );
+  }
+
+  /**
+   * Handles submission of an objective test by auto-evaluating all questions.
+   * 
+   * Used when the test is marked as isObjective = true, meaning all questions can be auto-scored.
+   * 
+   * @param attempt - The test attempt being submitted
+   * @param test - The test configuration with passing marks
+   * @param userAnswers - All user answers for the attempt
+   * @param questionMap - Map of questions for efficient lookup
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async handleObjectiveTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
+    // Auto-evaluate all questions (objective test)
+    const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
+    const validatedScore = Number(score) || 0;
+    attempt.score = validatedScore;
+    attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+    attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
+
+    // Process all answers as objective questions
+    await this.processAnswersAsObjective(userAnswers, questionMap, attempt.attemptId, authContext);
+  }
+
+  /**
+   * Handles submission of a mixed test containing both objective and subjective questions.
+   * 
+   * This function:
+   * 1. Checks if the test contains subjective questions requiring manual review
+   * 2. If subjective questions exist:
+   *    - Calculates objective score for auto-scorable questions
+   *    - Sets review status to PENDING for manual review
+   *    - Processes answers based on question type (objective vs subjective)
+   * 3. If no subjective questions:
+   *    - Treats as objective test with full auto-scoring
+   *    - Sets review status to NOT_APPLICABLE
+   * 
+   * Used when the test is marked as isObjective = false, meaning it may contain subjective questions.
+   * 
+   * @param attempt - The test attempt being submitted
+   * @param test - The test configuration with passing marks
+   * @param userAnswers - All user answers for the attempt
+   * @param questionMap - Map of questions for efficient lookup
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async handleMixedTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
+    // Check if test has subjective questions
+    const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attempt.attemptId, authContext);
+    
+    if (hasSubjectiveQuestions) {
+      // Auto-evaluate objective questions and mark subjective for review
+      const objectiveScore = await this.calculateObjectiveScore(attempt.attemptId, authContext);
+      const validatedObjectiveScore = Number(objectiveScore) || 0;
+      attempt.score = validatedObjectiveScore;
+      attempt.result = null;
+      attempt.reviewStatus = ReviewStatus.PENDING;
+
+      // Process answers based on question type
+      await this.processMixedAnswers(userAnswers, questionMap, attempt.attemptId, authContext);
+    } else {
+      // All questions are objective, auto-evaluate
+      const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
+      const validatedScore = Number(score) || 0;
+      attempt.score = validatedScore;
+      attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+      attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
+
+      // Process all answers as objective questions
+      await this.processAnswersAsObjective(userAnswers, questionMap, attempt.attemptId, authContext);
+    }
+  }
+
+  /**
+   * Processes all answers in an attempt as objective questions with auto-scoring.
+   * 
+   * Used for objective tests where all questions can be automatically scored.
+   * 
+   * @param userAnswers - Array of all user answers for the attempt
+   * @param questionMap - Map of questions for efficient lookup
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async processAnswersAsObjective(userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, attemptId: string, authContext: AuthContext): Promise<void> {
+    for (const answer of userAnswers) {
+      const question = questionMap.get(answer.questionId);
+      if (!question) continue;
+
+      const needsUpdate = this.needsScoreUpdate(answer);
+      if (needsUpdate) {
+        const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+        const validatedQuestionScore = Number(questionScore) || 0;
+        
+        await this.updateAnswerScore(
+          attemptId,
+          answer.questionId,
+          validatedQuestionScore,
+          AnswerReviewStatus.NOT_APPLICABLE,
+          authContext
+        );
+      }
+    }
+  }
+
+  /**
+   * Processes answers in a mixed test by handling objective and subjective questions differently.
+   * 
+   * Used for mixed tests that contain both auto-scorable and manually reviewable questions.
+   * 
+   * @param userAnswers - Array of all user answers for the attempt
+   * @param questionMap - Map of questions for efficient lookup
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async processMixedAnswers(userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, attemptId: string, authContext: AuthContext): Promise<void> {
+    for (const answer of userAnswers) {
+      const question = questionMap.get(answer.questionId);
+      if (!question) continue;
+
+      const isSubjective = this.isSubjectiveQuestion(question);
+      
+      if (isSubjective) {
+        await this.markAnswerForReview(answer, attemptId, authContext);
+      } else {
+        await this.processObjectiveAnswer(answer, question, attemptId, authContext);
+      }
+    }
+  }
+
+  /**
+   * Determines if an answer needs its score to be updated.
+   * 
+   * This function checks if:
+   * - The answer has no score (null or undefined)
+   * - The answer's review status is not NOT_APPLICABLE
+   * 
+   * Used to avoid unnecessary database updates when an answer has already been processed.
+   * 
+   * @param answer - The user answer to check
+   * @returns boolean - True if the answer needs score update, false otherwise
+   */
+  private needsScoreUpdate(answer: TestUserAnswer): boolean {
+    return answer.score === null || 
+           answer.score === undefined || 
+           answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
+  }
+
+  /**
+   * Determines if a question is subjective and requires manual review.
+   * 
+   * This function checks if the question type is either SUBJECTIVE or ESSAY,
+   * which are question types that cannot be auto-scored and need manual evaluation.
+   * 
+   * @param question - The question entity to check
+   * @returns boolean - True if the question is subjective, false otherwise
+   */
+  private isSubjectiveQuestion(question: Question): boolean {
+    return question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY;
+  }
+
+  /**
+   * Marks an answer for manual review by setting its review status to PENDING.
+   * 
+   * Used for subjective questions that cannot be auto-scored and require human review.
+   * 
+   * @param answer - The user answer to mark for review
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async markAnswerForReview(answer: TestUserAnswer, attemptId: string, authContext: AuthContext): Promise<void> {
+    if (answer.reviewStatus !== AnswerReviewStatus.PENDING) {
+      await this.updateAnswerScore(
+        attemptId,
+        answer.questionId,
+        null,
+        AnswerReviewStatus.PENDING,
+        authContext
+      );
+    }
+  }
+
+  /**
+   * Processes a single objective answer by calculating its score and updating the database.
+   * 
+   * Used for individual objective questions that can be auto-scored without manual review.
+   * 
+   * @param answer - The user answer to process
+   * @param question - The question entity with type and marks
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+  private async processObjectiveAnswer(answer: TestUserAnswer, question: Question, attemptId: string, authContext: AuthContext): Promise<void> {
+    const needsUpdate = this.needsScoreUpdate(answer);
+    if (needsUpdate) {
+      const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
+      const validatedQuestionScore = Number(questionScore) || 0;
+      
+      await this.updateAnswerScore(
+        attemptId,
+        answer.questionId,
+        validatedQuestionScore,
+        AnswerReviewStatus.NOT_APPLICABLE,
+        authContext
+      );
+    }
+  }
+
+  private async findAttemptById(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    return attempt;
+  }
+
+  private async findTestById(testId: string, authContext: AuthContext): Promise<Test> {
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    return test;
+  }
+
+  private async findQuestionById(questionId: string, authContext: AuthContext): Promise<Question> {
+    const question = await this.questionRepository.findOne({
+      where: {
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    return question;
+  }
+
+  private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
+    await this.pluginManager.triggerEvent(
+      eventName,
+      {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        userId: authContext.userId,
+      },
+      eventData
+    );
+  }
 } 
