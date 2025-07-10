@@ -1,17 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
-import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
+import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
-import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
+import { Question, QuestionType, GradingType, QuestionStatus } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
+import { SectionStatus } from '../tests/dto/create-section.dto';
 
 @Injectable()
 export class AttemptsService {
@@ -638,4 +639,322 @@ export class AttemptsService {
     return shuffled;
   }
 
+  async getAttemptAnswersheet(attemptId: string, authContext: AuthContext): Promise<any> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    
+    // Only return results if attempt is submitted
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new Error('Attempt results are only available for submitted attempts');
+    }
+
+    // Don't return results if attempt is under review
+    if (attempt.reviewStatus === ReviewStatus.PENDING) {
+      throw new Error('Attempt results are not available while under review');
+    }
+
+    // Get test information with sections and questions (similar to getTestHierarchy)
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: TestStatus.PUBLISHED,
+      },
+      relations: [
+        'sections'
+      ],
+      order: {
+        sections: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Get all answers for this attempt
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    // Get all test questions for this test
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { ordering: 'ASC' },
+    });
+
+    console.log('Debug - Test questions found:', testQuestions.length);
+    
+    // Get all question IDs from test questions
+    const questionIds = testQuestions.map(testQuestion => testQuestion.questionId);
+
+    console.log('Debug - Question IDs found:', questionIds.length);
+    console.log('Debug - Question IDs:', questionIds);
+
+    // Load all questions with their options (only published questions)
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: QuestionStatus.PUBLISHED, // Only published questions
+      },
+      relations: ['options'],
+    });
+
+    console.log('Debug - Questions loaded:', questions.length);
+
+    // Create maps for quick lookup
+    const questionMap = new Map<string, Question>(questions.map(q => [q.questionId, q]));
+    const userAnswerMap = new Map<string, any>();
+    userAnswers.forEach(answer => {
+      userAnswerMap.set(answer.questionId, answer);
+    });
+
+    // Build hierarchical structure: Test -> Sections -> Questions (only published sections and questions)
+    const sections = test.sections
+      .filter(section => section.status === SectionStatus.PUBLISHED)
+      .map(section => {
+      const sectionQuestions = testQuestions
+        .filter(testQuestion => testQuestion.sectionId === section.sectionId)
+        .map(testQuestion => {
+          const question = questionMap.get(testQuestion.questionId);
+          const userAnswer = userAnswerMap.get(testQuestion.questionId);
+          
+          if (!question) {
+            return null; // Skip if question not found (this shouldn't happen since we filtered in DB)
+          }
+          
+          // Parse user's actual answer
+          let userAnswerData = null;
+          if (userAnswer) {
+            try {
+              userAnswerData = JSON.parse(userAnswer.answer);
+            } catch (error) {
+              userAnswerData = { error: 'Failed to parse answer' };
+            }
+          }
+
+          // Calculate individual question score if not already set
+          let questionScore = userAnswer?.score || 0;
+          if (questionScore === null || questionScore === undefined) {
+            try {
+              if (userAnswerData && !userAnswerData.error) {
+                questionScore = this.calculateQuestionScore(userAnswerData, question);
+              }
+            } catch (error) {
+              questionScore = 0;
+            }
+          }
+
+          // Build question data with options
+          const questionData: any = {
+            testQuestionId: testQuestion.testQuestionId,
+            questionId: question.questionId,
+            text: question.text,
+            type: question.type,
+            marks: question.marks,
+            score: questionScore || 0,
+            reviewStatus: userAnswer?.reviewStatus || null,
+            remarks: userAnswer?.remarks || null,
+            reviewedBy: userAnswer?.reviewedBy || null,
+            reviewedAt: userAnswer?.reviewedAt || null,
+            options: question.options?.map(option => ({
+              questionOptionId: option.questionOptionId,
+              text: option.text,
+              isCorrect: option.isCorrect,
+              marks: option.marks,
+              ordering: option.ordering,
+              blankIndex: option.blankIndex,
+              caseSensitive: option.caseSensitive,
+              matchWith: option.matchWith,
+              media: option.media,
+              matchWithMedia: option.matchWithMedia,
+            })) || [],
+          };
+
+          // Add user's selected options/answers
+          if (userAnswerData && !userAnswerData.error) {
+            switch (question.type) {
+              case QuestionType.MCQ:
+              case QuestionType.TRUE_FALSE:
+              case QuestionType.MULTIPLE_ANSWER:
+                if (userAnswerData.selectedOptionIds && userAnswerData.selectedOptionIds.length > 0) {
+                  const selectedOptions = question.options?.filter(opt => 
+                    userAnswerData.selectedOptionIds.includes(opt.questionOptionId)
+                  ) || [];
+                  questionData.selectedOptions = selectedOptions.map(opt => ({
+                    questionOptionId: opt.questionOptionId,
+                    text: opt.text,
+                  }));
+                }
+                break;
+              
+              case QuestionType.FILL_BLANK:
+                if (userAnswerData.selectedOptionIds || userAnswerData.blanks) {
+                  const fillBlankAnswers = userAnswerData.selectedOptionIds || userAnswerData.blanks;
+                  questionData.selectedOptions = fillBlankAnswers.map((blank: any) => {
+                    const option = question.options?.find(opt => opt.blankIndex === blank.blankIndex);
+                    return {
+                      blankIndex: blank.blankIndex,
+                      text: blank.text || blank.answer || '',
+                      correctText: option?.text || '',
+                      caseSensitive: option?.caseSensitive || false,
+                    };
+                  });
+                }
+                break;
+              
+              case QuestionType.MATCH:
+                if (userAnswerData.matches) {
+                  const matchAnswers = userAnswerData.matches;
+                  questionData.selectedOptions = matchAnswers.map((match: any) => {
+                    const option = question.options?.find(opt => opt.questionOptionId === match.optionId);
+                    const matchWithOption = question.options?.find(opt => opt.questionOptionId === match.matchWith);
+                    return {
+                      questionOptionId: match.optionId,
+                      text: option?.text || '',
+                      matchWith: match.matchWith,
+                      matchWithText: matchWithOption?.text || '',
+                    };
+                  });
+                }
+                break;
+              
+              case QuestionType.SUBJECTIVE:
+              case QuestionType.ESSAY:
+                if (userAnswerData.text) {
+                  questionData.selectedOptions = {text: userAnswerData.text};
+                }
+                break;
+            }
+          }
+
+          // Add correct answer information if showCorrectAnswer is enabled
+          if (test.showCorrectAnswer) {
+            switch (question.type) {
+              case QuestionType.MCQ:
+              case QuestionType.TRUE_FALSE:
+              case QuestionType.MULTIPLE_ANSWER: {
+                const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
+                questionData.correctOptions = correctOptions.map(opt => ({
+                  questionOptionId: opt.questionOptionId,
+                  text: opt.text,
+                  marks: opt.marks || 0,
+                }));
+                break;
+              }
+              
+              case QuestionType.FILL_BLANK: {
+                const correctBlanks = question.options?.filter(opt => opt.isCorrect) || [];
+                questionData.correctOptions = correctBlanks.map(opt => ({
+                  blankIndex: opt.blankIndex,
+                  text: opt.text,
+                  caseSensitive: opt.caseSensitive || false,
+                }));
+                break;
+              }
+              
+              case QuestionType.MATCH: {
+                const correctMatches = question.options?.filter(opt => opt.isCorrect) || [];
+                questionData.correctOptions = correctMatches.map(opt => ({
+                  questionOptionId: opt.questionOptionId,
+                  text: opt.text,
+                  matchWith: opt.matchWith,
+                }));
+                break;
+              }
+              
+              case QuestionType.SUBJECTIVE:
+              case QuestionType.ESSAY: {
+                const correctOptions = question.options?.filter(opt => opt.isCorrect) || [];
+                if (correctOptions.length > 0) {
+                  questionData.correctOptions = correctOptions.map(opt => ({
+                    text: opt.text,
+                    marks: opt.marks || 0,
+                  }));
+                }
+                break;
+              }
+            }
+          }
+
+          return questionData;
+        }).filter(Boolean); // Remove null values
+
+      return {
+        sectionId: section.sectionId,
+        title: section.title,
+        description: section.description,
+        ordering: section.ordering,
+        status: section.status,
+        minQuestions: section.minQuestions,
+        maxQuestions: section.maxQuestions,
+        questions: sectionQuestions,
+      };
+    });
+
+
+
+    return {
+      result: {
+        testId: test.testId,
+        resolvedTestId: attempt.resolvedTestId,
+        title: test.title,
+        description: test.description,
+        totalMarks: test.totalMarks,
+        timeDuration: test.timeDuration,
+        showTime: test.showTime,
+        type: test.type,
+        passingMarks: test.passingMarks,
+        showCorrectAnswer: test.showCorrectAnswer,
+        showQuestionsOverview: test.showQuestionsOverview,
+        questionsShuffle: test.questionsShuffle,
+        answersShuffle: test.answersShuffle,
+        paginationLimit: test.paginationLimit,
+        showThankyouPage: test.showThankyouPage,
+        showAllQuestions: test.showAllQuestions,
+        answerSheet: test.answerSheet,
+        printAnswersheet: test.printAnswersheet,
+        attempt: {
+          attemptId: attempt.attemptId,
+          userId: attempt.userId,
+          attempt: attempt.attempt,
+          status: attempt.status,
+          reviewStatus: attempt.reviewStatus,
+          submissionType: attempt.submissionType,
+          result: attempt.result,
+          score: attempt.score,
+          currentPosition: attempt.currentPosition,
+          timeSpent: attempt.timeSpent,
+          startedAt: attempt.startedAt,
+          submittedAt: attempt.submittedAt,
+        },
+        sections: sections,
+      },
+    };
+  }
 } 

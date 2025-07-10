@@ -219,7 +219,10 @@ export class CreateQuestionDto {
   @Type(() => QuestionParamsDto)
   params?: QuestionParamsDto;
 
-  @ApiPropertyOptional({ type: [CreateQuestionOptionDto] })
+  @ApiPropertyOptional({ 
+    type: [CreateQuestionOptionDto],
+    description: 'Question options. Required for MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, MATCH. Optional for SUBJECTIVE and ESSAY (for reference correct answers - shown in answersheet but not used for auto-evaluation).'
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

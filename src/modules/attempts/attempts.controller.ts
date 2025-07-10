@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
@@ -12,10 +13,12 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
 @Controller('attempts')
+@UseInterceptors(AuthContextInterceptor)
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
@@ -89,5 +92,24 @@ export class AttemptsController {
   async getPendingReviews(@Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
+  }
+
+  @Get(':attemptId/answersheet')
+  @ApiOperation({ 
+    summary: 'Get attempt answersheet',
+    description: 'Retrieve the complete answersheet of a submitted attempt including scores, answers, and review status'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Attempt answersheet retrieved successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attempt not found',
+  })
+  async getAttemptAnswersheet(@Param('attemptId') attemptId: string, @Req() req: any): Promise<any> {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.getAttemptAnswersheet(attemptId, authContext);
+    return result;
   }
 } 
