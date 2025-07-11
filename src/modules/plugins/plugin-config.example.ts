@@ -1,165 +1,124 @@
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
-import { NotificationPlugin } from './examples/notification-plugin';
-import { AnalyticsPlugin } from './examples/analytics-plugin';
-import { WebhookPlugin } from './examples/webhook-plugin';
+import { ExternalServiceWebhookPlugin, MultiServiceWebhookPlugin } from './examples/external-service-webhook';
 
 /**
- * Example configuration for registering plugins
- * This demonstrates both internal and external plugin registration
+ * Plugin Configuration Example
+ * 
+ * This file demonstrates how to configure and register plugins
+ * for calling external services when events occur in the assessment service.
+ * 
+ * To use this configuration:
+ * 1. Copy this file to plugin-config.ts
+ * 2. Update the environment variables in your .env file
+ * 3. Import and call configurePlugins() in your app.module.ts
  */
-export class PluginConfiguration {
-  
-  /**
-   * Register all plugins for the application
-   */
-  static async registerPlugins(pluginManager: PluginManagerService): Promise<void> {
-    
-    // Phase 1: Internal Plugins (for development/testing)
-    if (this.shouldUseInternalPlugins()) {
-      await this.registerInternalPlugins(pluginManager);
-    }
-    
-    // Phase 2: External Services (for production)
-    if (this.shouldUseExternalServices()) {
-      await this.registerExternalServices(pluginManager);
-    }
-    
-    // Phase 3: Hybrid Approach (both internal and external)
-    if (this.shouldUseHybridApproach()) {
-      await this.registerHybridPlugins(pluginManager);
-    }
+
+export function configurePlugins(pluginManager: PluginManagerService): void {
+  // Register the external service webhook plugin
+  const externalServicePlugin = new ExternalServiceWebhookPlugin();
+  pluginManager.registerPlugin(externalServicePlugin);
+
+  // Register the multi-service webhook plugin (optional)
+  const multiServicePlugin = new MultiServiceWebhookPlugin();
+  pluginManager.registerPlugin(multiServicePlugin);
+
+  console.log('External service plugins configured successfully');
+}
+
+/**
+ * Alternative configuration with conditional plugin registration
+ * based on environment variables
+ */
+export function configurePluginsConditionally(pluginManager: PluginManagerService): void {
+  // Only register external service plugin if webhook URL is configured
+  if (process.env.EXTERNAL_SERVICE_WEBHOOK_URL) {
+    const externalServicePlugin = new ExternalServiceWebhookPlugin();
+    pluginManager.registerPlugin(externalServicePlugin);
+    console.log('External service webhook plugin registered');
+  } else {
+    console.log('External service webhook plugin not configured - missing EXTERNAL_SERVICE_WEBHOOK_URL');
   }
 
-  /**
-   * Register internal plugins (Phase 1)
-   */
-  private static async registerInternalPlugins(pluginManager: PluginManagerService): Promise<void> {
-    console.log('🔌 Registering internal plugins...');
-    
-    // Notification plugin for development
-    const notificationPlugin = new NotificationPlugin();
-    pluginManager.registerPlugin(notificationPlugin);
-    
-    // Analytics plugin for development
-    const analyticsPlugin = new AnalyticsPlugin();
-    pluginManager.registerPlugin(analyticsPlugin);
-    
-    console.log(`✅ Registered ${pluginManager.getPluginCount()} internal plugins`);
-  }
-
-  /**
-   * Register external services (Phase 2)
-   */
-  private static async registerExternalServices(pluginManager: PluginManagerService): Promise<void> {
-    console.log('🌐 Registering external services...');
-    
-    // Webhook integration
-    const webhookPlugin = new WebhookPlugin();
-    pluginManager.registerPlugin(webhookPlugin);
-    
-    // You can also register external services directly
-    pluginManager.registerExternalService({
-      type: 'webhook',
-      webhook: {
-        url: 'https://lms-service.com/webhooks/assessment-events',
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer LMS_API_KEY',
-          'Content-Type': 'application/json'
-        },
-        timeout: 15000,
-        retries: 5,
-        events: ['attempt.submitted', 'attempt.reviewed']
-      }
-    });
-    
-    console.log(`✅ Registered ${pluginManager.getExternalServiceCount()} external services`);
-  }
-
-  /**
-   * Register hybrid approach (Phase 3)
-   */
-  private static async registerHybridPlugins(pluginManager: PluginManagerService): Promise<void> {
-    console.log('🔄 Registering hybrid plugins...');
-    
-    // Internal plugins for critical functionality
-    const notificationPlugin = new NotificationPlugin();
-    pluginManager.registerPlugin(notificationPlugin);
-    
-    // External services for scalability
-    const webhookPlugin = new WebhookPlugin();
-    pluginManager.registerPlugin(webhookPlugin);
-    
-    // Direct external service registration
-    pluginManager.registerExternalService({
-      type: 'webhook',
-      webhook: {
-        url: 'https://analytics-service.com/events',
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ANALYTICS_API_KEY'
-        },
-        timeout: 10000,
-        retries: 3,
-        events: ['attempt.started', 'attempt.submitted', 'answer.submitted']
-      }
-    });
-    
-    console.log(`✅ Registered hybrid setup: ${pluginManager.getPluginCount()} plugins + ${pluginManager.getExternalServiceCount()} external services`);
-  }
-
-  /**
-   * Environment-based configuration
-   */
-  private static shouldUseInternalPlugins(): boolean {
-    return process.env.NODE_ENV === 'development' || process.env.USE_INTERNAL_PLUGINS === 'true';
-  }
-
-  private static shouldUseExternalServices(): boolean {
-    return process.env.NODE_ENV === 'production' || process.env.USE_EXTERNAL_SERVICES === 'true';
-  }
-
-  private static shouldUseHybridApproach(): boolean {
-    return process.env.USE_HYBRID_PLUGINS === 'true';
-  }
-
-  /**
-   * Get plugin statistics
-   */
-  static getPluginStats(pluginManager: PluginManagerService): any {
-    return {
-      totalPlugins: pluginManager.getPluginCount(),
-      totalHooks: pluginManager.getHookCount(),
-      externalServices: pluginManager.getExternalServiceCount(),
-      registeredEvents: pluginManager.getRegisteredEvents(),
-      activePlugins: pluginManager.getActivePlugins().map(p => ({
-        id: p.id,
-        name: p.name,
-        type: p.type,
-        hookCount: p.hooks.length
-      }))
-    };
+  // Only register analytics plugin if analytics URL is configured
+  if (process.env.ANALYTICS_SERVICE_WEBHOOK_URL) {
+    const multiServicePlugin = new MultiServiceWebhookPlugin();
+    pluginManager.registerPlugin(multiServicePlugin);
+    console.log('Multi-service webhook plugin registered');
+  } else {
+    console.log('Multi-service webhook plugin not configured - missing ANALYTICS_SERVICE_WEBHOOK_URL');
   }
 }
 
 /**
- * Example usage in main.ts or app.module.ts:
+ * Plugin configuration for different environments
+ */
+export function configurePluginsByEnvironment(pluginManager: PluginManagerService): void {
+  const environment = process.env.NODE_ENV || 'development';
+
+  switch (environment) {
+    case 'production':
+      // Production: Register all plugins with proper error handling
+      try {
+        const externalServicePlugin = new ExternalServiceWebhookPlugin();
+        pluginManager.registerPlugin(externalServicePlugin);
+        console.log('Production: External service webhook plugin registered');
+      } catch (error) {
+        console.error('Failed to register external service plugin:', error);
+      }
+
+      try {
+        const multiServicePlugin = new MultiServiceWebhookPlugin();
+        pluginManager.registerPlugin(multiServicePlugin);
+        console.log('Production: Multi-service webhook plugin registered');
+      } catch (error) {
+        console.error('Failed to register multi-service plugin:', error);
+      }
+      break;
+
+    case 'development':
+      // Development: Register plugins only if URLs are configured
+      if (process.env.EXTERNAL_SERVICE_WEBHOOK_URL) {
+        const externalServicePlugin = new ExternalServiceWebhookPlugin();
+        pluginManager.registerPlugin(externalServicePlugin);
+        console.log('Development: External service webhook plugin registered');
+      }
+
+      if (process.env.ANALYTICS_SERVICE_WEBHOOK_URL) {
+        const multiServicePlugin = new MultiServiceWebhookPlugin();
+        pluginManager.registerPlugin(multiServicePlugin);
+        console.log('Development: Multi-service webhook plugin registered');
+      }
+      break;
+
+    case 'test':
+      // Test: Don't register external plugins to avoid external calls during testing
+      console.log('Test environment: External plugins not registered');
+      break;
+
+    default:
+      console.log(`Unknown environment: ${environment}, no plugins registered`);
+  }
+}
+
+/**
+ * Example of how to use this in app.module.ts:
  * 
- * ```typescript
- * // In main.ts
- * async function bootstrap() {
- *   const app = await NestFactory.create(AppModule);
- *   
- *   // Get plugin manager from the app
- *   const pluginManager = app.get(PluginManagerService);
- *   
- *   // Register plugins based on configuration
- *   await PluginConfiguration.registerPlugins(pluginManager);
- *   
- *   // Log plugin statistics
- *   console.log('Plugin Stats:', PluginConfiguration.getPluginStats(pluginManager));
- *   
- *   await app.listen(3000);
+ * import { configurePlugins } from './modules/plugins/plugin-config';
+ * 
+ * @Module({
+ *   imports: [...],
+ *   providers: [
+ *     PluginManagerService,
+ *     {
+ *       provide: APP_INTERCEPTOR,
+ *       useClass: PluginInitializationInterceptor,
+ *     },
+ *   ],
+ * })
+ * export class AppModule {
+ *   constructor(private pluginManager: PluginManagerService) {
+ *     // Configure plugins on module initialization
+ *     configurePlugins(this.pluginManager);
+ *   }
  * }
- * ```
  */ 
