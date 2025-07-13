@@ -228,9 +228,9 @@ GET    /reviews/pending          # Get pending reviews
 POST   /reviews/:attemptId       # Review attempt
 ```
 
-## 🎯 Question Types
+## 🎯 Question Types & Grading Types
 
-### **Supported Types**
+### **Supported Question Types**
 1. **MCQ** - Single choice with auto-scoring
 2. **Multiple Answer** - Multiple choice with partial scoring
 3. **True/False** - Auto-scored
@@ -239,16 +239,27 @@ POST   /reviews/:attemptId       # Review attempt
 6. **Subjective** - Manual review with rubric-based scoring
 7. **Essay** - Manual review with comprehensive rubric
 
+### **Supported Grading Types**
+1. **QUIZ** - Auto-scored objective questions (MCQ, True/False, etc.)
+2. **ASSIGNMENT** - Manually reviewed subjective questions (Essay, Subjective)
+3. **FEEDBACK** - Unscored feedback tests (all questions in the test are treated as feedback, not included in final score)
+
 ### **Answer Format (JSON)**
 ```json
 {
   "selectedOptionIds": ["opt-1"],           // MCQ/True-False
   "selectedOptionIds": ["opt-1", "opt-3"],  // Multiple Answer
-  "text": "Answer text...",                 // Subjective/Essay
+  "text": "Answer text...",                 // Subjective/Essay/Feedback
   "blanks": ["answer1", "answer2"],         // Fill-in-Blank
   "matches": ["A-1", "B-3"]                 // Matching
 }
 ```
+
+### **FEEDBACK Test Behavior**
+- When a test has `gradingType: 'feedback'`, all questions in that test are treated as feedback questions
+- Feedback questions are validated for response length but are not scored
+- Attempts on feedback tests have `score: null` and `result: 'FEEDBACK'`
+- Feedback responses are stored but do not contribute to the final grade
 
 ## 🔄 Rule-Based Tests
 

@@ -6,7 +6,8 @@ import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
-import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
+import { Question, QuestionType } from '../questions/entities/question.entity';
+import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
@@ -161,6 +162,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
+      relations: ['test'],
     });
 
     if (!attempt) {
@@ -246,6 +248,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
+      relations: ['test'],
     });
 
     if (!attempt) {
@@ -256,17 +259,24 @@ export class AttemptsService {
     attempt.submittedAt = new Date();
     attempt.submissionType = SubmissionType.SELF;
 
-    // Check if test has subjective questions that need review
-    const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attemptId, authContext);
-    
-    if (hasSubjectiveQuestions) {
-      // Set review status to pending for manual review
-      attempt.reviewStatus = ReviewStatus.PENDING;
+    // Check if the test itself is a FEEDBACK type test
+    if (attempt.test?.gradingType === GradingType.FEEDBACK) {
+      // For feedback tests, set score to null and result to FEEDBACK
+      attempt.score = null;
+      attempt.result = 'FEEDBACK' as any; // Custom result type for feedback
     } else {
-      // Auto-calculate score for objective questions
-      const score = await this.calculateObjectiveScore(attemptId, authContext);
-      attempt.score = score;
-      attempt.result = score >= 60 ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
+      // Check if test has questions that need review (ASSIGNMENT type questions)
+      const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attemptId, authContext);
+      
+      if (hasSubjectiveQuestions) {
+        // Set review status to pending for manual review
+        attempt.reviewStatus = ReviewStatus.PENDING;
+      } else {
+        // Auto-calculate score for objective questions (QUIZ type)
+        const score = await this.calculateObjectiveScore(attemptId, authContext);
+        attempt.score = score;
+        attempt.result = score >= 60 ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
+      }
     }
 
     const savedAttempt = await this.attemptRepository.save(attempt);
@@ -363,7 +373,7 @@ export class AttemptsService {
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
       .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.PENDING })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.EXERCISE })
+      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSIGNMENT })
       .andWhere('answers.reviewStatus = :answerReviewStatus', { answerReviewStatus: 'P' })
       .select([
         'attempt.attemptId',
@@ -550,7 +560,7 @@ export class AttemptsService {
       .where('answers.attemptId = :attemptId', { attemptId })
       .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.EXERCISE })
+      .andWhere('question.gradingType IN (:...gradingTypes)', { gradingTypes: [GradingType.ASSIGNMENT] })
       .getCount();
 
     return subjectiveQuestions > 0;
