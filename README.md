@@ -60,7 +60,7 @@ questions (1) ←→ (N) questionOptions
 ### **Setup**
 ```bash
 # Clone the repository
-git clone https://github.com/vaivk369/shiksha-assessment-service.git
+git clone https://github.com/tekdi/shiksha-assessment-service.git
 cd shiksha-assessment-service
 
 # Install dependencies
