@@ -263,7 +263,7 @@ export class AttemptsService {
     if (attempt.test?.gradingType === GradingType.FEEDBACK) {
       // For feedback tests, set score to null and result to FEEDBACK
       attempt.score = null;
-      attempt.result = 'FEEDBACK' as any; // Custom result type for feedback
+      attempt.result = null;
     } else {
       // Check if test has questions that need review (ASSIGNMENT type questions)
       const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attemptId, authContext);
