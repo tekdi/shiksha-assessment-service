@@ -5,7 +5,6 @@ import {
   Body,
   Param,
   Req,
-  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
@@ -13,12 +12,10 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
-import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Attempts')
 @ApiBearerAuth()
 @Controller('attempts')
-@UseInterceptors(AuthContextInterceptor)
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
