@@ -62,6 +62,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | description       | TEXT                     | Section description                              |
 | ordering          | INTEGER                  | Section order                                    |
 | isActive          | BOOLEAN                  | Is section active                                |
+| minQuestions      | INTEGER                  | Minimum questions to include                     |
+| maxQuestions      | INTEGER                  | Maximum questions to include                     |
 | createdBy         | UUID                     | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
 | updatedBy         | UUID                     | Last modified by                                 |
@@ -118,12 +120,28 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | status            | TEXT                     | I=in_progress, S=submitted                       |
 | reviewStatus      | TEXT                     | P=pending, U=under_review, R=reviewed, N=not_applicable |
 | score             | DECIMAL(5,2)             | Final score                                      |
-| submissionType    | VARCHAR                  | self, auto                                       |
+| submissionType    | VARCHAR                  |'self'=> self-submitted,'auto'=> auto-submitted on timeout |
 | result            | TEXT                     | P=pass, F=fail                                   |
 | currentPosition   | INTEGER                  | Current question position                        |
 | timeSpent         | INTEGER                  | Time spent in seconds                            |
 | updatedBy         | UUID                     | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
+
+## 🧾 `testAttemptsReval`
+
+| Column          | Type                     | Description                                                     |
+| ----------------| ------------------------ | --------------------------------------------------------------- |
+| attemptRevalId  | UUID                     | Primary key                                                     |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
+| attemptId       | INTEGER                  | Attempt number                                                  |
+| oldScore        | DECIMAL(5,2)             | score                                                           |
+| newScore        | DECIMAL(5,2)             | score                                                           |
+| oldResult       | VARCHAR                  | `P=pass`, `F=fail`                                              |
+| newResult       | VARCHAR                  |`P=pass`, `F=fail`                                               |
+| remarks         | TEXT                     |                                                                 |
+| updatedBy       | UUID                     | Last updated by                                                 |
+| updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
 
 ### 🧾 `testUserAnswers`
 | Column            | Type                     | Description                                      |
@@ -143,6 +161,25 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
 | updatedBy         | UUID                     | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
+---
+
+## 🧾 `testUserStatus`
+
+| Column             | Type                     | Description                                   |
+|--------------------|--------------------------|-----------------------------------------------|
+| stausId            | UUID                     | Primary key                                   |
+| tenantId             | UUID                     | Tenant reference                           |
+| organisationId       | UUID                     | org reference                              |
+| userId             | UUID                     | FK to user                                    |
+| testId             | UUID                     | FK to test                                    |
+| allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
+| completedAttempts  | INTEGER                  | No. of completed attempts by user             |
+| lastAttemptId      | UUID                     | FK to last attempt made                       |
+| lastAttemptStatus  | TEXT                     | Status of last attempt (in-progress, submitted, passed, failed)|
+| attemptsGrading    | TEXT                     | Grading logic (first, last, avg, best)        |
+| score              | DECIMAL(5,2)             | Latest score (based on grading logic)         |
+| result             | TEXT                     | Result of last or computed attempt (P/F)      |
+| updatedAt          | TIMESTAMP WITH TIME ZONE | Last update                                   |
 
 ### 🧾 `questions`
 | Column            | Type                     | Description                                      |

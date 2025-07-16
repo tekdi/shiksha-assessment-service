@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { QuestionType, QuestionLevel, QuestionStatus, GradingType, QuestionParams, QuestionMedia } from '../entities/question.entity';
+import { QuestionType, QuestionLevel, QuestionStatus } from '../entities/question.entity';
+import { GradingType } from '../../tests/entities/test.entity';
 
 export class QuestionMediaDto {
   @ApiPropertyOptional()

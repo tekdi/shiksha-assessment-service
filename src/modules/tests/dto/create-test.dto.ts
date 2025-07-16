@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, IsNotEmpty } from 'class-validator';
 import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
+import { NoNeedToReleaseEntityManagerError } from 'typeorm';
 
 export class CreateTestDto {
   @ApiPropertyOptional()
@@ -107,7 +108,7 @@ export class CreateTestDto {
   answersShuffle?: boolean;
 
   @ApiPropertyOptional({ enum: GradingType })
-  @IsOptional()
+  @IsNotEmpty()
   @IsEnum(GradingType)
   gradingType?: GradingType;
 

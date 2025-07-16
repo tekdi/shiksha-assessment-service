@@ -7,7 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
-
+import { GradingType } from '../../tests/entities/test.entity';
 export enum QuestionType {
   MCQ = 'mcq',
   MULTIPLE_ANSWER = 'multiple_answer',
@@ -28,11 +28,6 @@ export enum QuestionStatus {
   DRAFT = 'draft',
   PUBLISHED = 'published',
   ARCHIVED = 'archived',
-}
-
-export enum GradingType {
-  QUIZ = 'quiz',
-  EXERCISE = 'exercise',
 }
 
 export interface QuestionMedia {
@@ -57,6 +52,8 @@ export interface QuestionParams {
     }>;
   };
 }
+
+
 
 @Entity('questions')
 export class Question {
