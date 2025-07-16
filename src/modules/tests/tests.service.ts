@@ -442,7 +442,7 @@ export class TestsService {
       }
 
       case AttemptsGradeMethod.LAST_ATTEMPT: {
-        gradedAttemptData = await this.getLastAttemptCompleted(testId, userId, authContext);
+        gradedAttemptData = await this.getLastCompletedAttempt(testId, userId, authContext);
         if (gradedAttemptData) {
           finalScore = gradedAttemptData.score || 0;
           finalResult = gradedAttemptData.result || null;
@@ -468,7 +468,7 @@ export class TestsService {
           finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
           
           // Get the last submitted attempt for attemptId reference
-          const lastSubmittedAttempt = await this.getLastAttemptCompleted(testId, userId, authContext);
+          const lastSubmittedAttempt = await this.getLastCompletedAttempt(testId, userId, authContext);
           if (lastSubmittedAttempt) {
             finalAttemptId = lastSubmittedAttempt.attemptId;
             gradedAttemptData = lastSubmittedAttempt; // Use for graded attempt object
@@ -548,7 +548,7 @@ export class TestsService {
    * @param authContext - Authentication context containing tenant and organization IDs
    * @returns Promise<TestAttempt | null> - The last submitted attempt or null if none exists
    */
-  private async getLastAttemptCompleted(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+  private async getLastCompletedAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
     return await this.testRepository.manager.findOne(TestAttempt, {
       where: {
         testId,
@@ -619,26 +619,6 @@ export class TestsService {
       attemptCount: parseInt(result.attemptCount) || 0,
       lastAttemptDate: result.lastAttemptDate ? new Date(result.lastAttemptDate) : null,
     };
-  }
-
-  /**
-   * Checks if any attempts for a user and test are currently under review.
-   * @param testId - The unique identifier of the test
-   * @param userId - The unique identifier of the user
-   * @param authContext - Authentication context containing tenant and organization IDs
-   * @returns Promise<boolean> - True if any attempts have pending review status
-   */
-  private async hasPendingReview(testId: string, userId: string, authContext: AuthContext): Promise<boolean> {
-    const count = await this.testRepository.manager.count(TestAttempt, {
-      where: {
-        testId,
-        userId,
-        reviewStatus: ReviewStatus.PENDING,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-    return count > 0;
   }
 
   /**
