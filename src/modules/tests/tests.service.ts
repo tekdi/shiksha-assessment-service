@@ -473,18 +473,19 @@ export class TestsService {
         }
 
         case AttemptsGradeMethod.AVERAGE: {
-          const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
-          finalScore = totalScore / submittedAttempts.length;
-          finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
-          finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId; // Use last attempt as reference
+          // Ensure we have submitted attempts before calculating average
+          if (submittedAttempts.length > 0) {
+            const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
+            finalScore = totalScore / submittedAttempts.length;
+            
+            // Derive result consistently with other cases by using the test's passing marks
+            // and the ResultType enum values instead of hardcoded strings
+            finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
+            
+            // Use the last submitted attempt as reference for attemptId
+            finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId;
+          }
           break;
-        }
-
-        default: {
-          const defaultAttempt = submittedAttempts[submittedAttempts.length - 1];
-          finalScore = defaultAttempt.score || 0;
-          finalResult = defaultAttempt.result || null;
-          finalAttemptId = defaultAttempt.attemptId;
         }
       }
     }
