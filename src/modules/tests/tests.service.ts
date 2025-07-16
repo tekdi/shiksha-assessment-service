@@ -419,29 +419,12 @@ export class TestsService {
       throw new NotFoundException('Test not found');
     }
 
-    // Get total attempts count (lightweight query)
-    const totalAttempts = await this.getTotalAttempts(testId, userId, authContext);
     const maxAttempts = test.attempts;
 
-    // Handle case where user has no attempts yet
-    if (totalAttempts === 0) {
-      return {
-        testId,
-        totalAttemptsAllowed: maxAttempts,
-        attemptsMade: 0,
-        canAttempt: true, // User can start their first attempt
-        canResume: false, // No attempts to resume
-        attemptGrading: test.attemptsGrading,
-        gradedAttempt: null, // No graded attempt yet
-        lastAttempt: null, // No last attempt
-        showCorrectAnswers: test.showCorrectAnswer,
-      };
-    }
-
-    // Check if there are any attempts under review (lightweight query)
-    const hasPendingReview = await this.hasPendingReview(testId, userId, authContext);
-
-    // Get graded attempt based on grading method (optimized query)
+    // Get total attempts count
+    const totalAttempts = await this.getTotalAttempts(testId, userId, authContext);
+   
+    // Get graded attempt based on grading method
     let finalScore: number = 0;
     let finalResult: string | null = null;
     let finalAttemptId: string | null = null;
@@ -459,7 +442,7 @@ export class TestsService {
       }
 
       case AttemptsGradeMethod.LAST_ATTEMPT: {
-        gradedAttemptData = await this.getLastAttempt(testId, userId, authContext);
+        gradedAttemptData = await this.getLastAttemptCompleted(testId, userId, authContext);
         if (gradedAttemptData) {
           finalScore = gradedAttemptData.score || 0;
           finalResult = gradedAttemptData.result || null;
@@ -485,7 +468,7 @@ export class TestsService {
           finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
           
           // Get the last submitted attempt for attemptId reference
-          const lastSubmittedAttempt = await this.getLastAttempt(testId, userId, authContext);
+          const lastSubmittedAttempt = await this.getLastAttemptCompleted(testId, userId, authContext);
           if (lastSubmittedAttempt) {
             finalAttemptId = lastSubmittedAttempt.attemptId;
             gradedAttemptData = lastSubmittedAttempt; // Use for graded attempt object
@@ -493,11 +476,6 @@ export class TestsService {
         }
         break;
       }
-    }
-
-    // If there are any attempts under review, set finalResult to null
-    if (hasPendingReview) {
-      finalResult = null;
     }
 
     // Check if user can attempt (hasn't reached max attempts)
@@ -525,7 +503,7 @@ export class TestsService {
       lastAttemptInfo = {
         attemptId: lastAttempt.attemptId,
         status: lastAttempt.status,
-        resumeAllowed: lastAttempt.status === AttemptStatus.IN_PROGRESS,
+        resumeAllowed: canResume,
       };
     }
 
@@ -555,6 +533,7 @@ export class TestsService {
         testId,
         userId,
         status: AttemptStatus.SUBMITTED,
+        reviewStatus: ReviewStatus.REVIEWED,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -569,12 +548,13 @@ export class TestsService {
    * @param authContext - Authentication context containing tenant and organization IDs
    * @returns Promise<TestAttempt | null> - The last submitted attempt or null if none exists
    */
-  private async getLastAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+  private async getLastAttemptCompleted(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
     return await this.testRepository.manager.findOne(TestAttempt, {
       where: {
         testId,
         userId,
         status: AttemptStatus.SUBMITTED,
+        reviewStatus: ReviewStatus.REVIEWED,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -595,6 +575,7 @@ export class TestsService {
         testId,
         userId,
         status: AttemptStatus.SUBMITTED,
+        reviewStatus: ReviewStatus.REVIEWED,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
@@ -623,6 +604,7 @@ export class TestsService {
       ])
       .where('attempt.testId = :testId', { testId })
       .andWhere('attempt.userId = :userId', { userId })
+      .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.REVIEWED })
       .andWhere('attempt.status = :status', { status: AttemptStatus.SUBMITTED })
       .andWhere('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
