@@ -19,7 +19,6 @@ export enum ReviewStatus {
   PENDING = 'P',
   UNDER_REVIEW = 'U',
   REVIEWED = 'R',
-  NOT_APPLICABLE = 'N',
 }
 
 export enum SubmissionType {
@@ -75,7 +74,7 @@ export class TestAttempt {
   status: AttemptStatus;
 
   @ApiProperty({ enum: ReviewStatus })
-  @Column({ type: 'text', default: ReviewStatus.NOT_APPLICABLE })
+  @Column({ type: 'text', default: ReviewStatus.PENDING })
   reviewStatus: ReviewStatus;
 
   @ApiProperty({ required: false })

@@ -275,6 +275,7 @@ export class AttemptsService {
         // Auto-calculate score for objective questions (QUIZ type)
         const score = await this.calculateObjectiveScore(attemptId, authContext);
         attempt.score = score;
+        attempt.reviewStatus = ReviewStatus.REVIEWED;
         attempt.result = score >= 60 ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
       }
     }
