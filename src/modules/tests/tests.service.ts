@@ -9,12 +9,12 @@ import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
-import { TestStatus, TestType } from './entities/test.entity';
+import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
-import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
+import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
 
 @Injectable()
 export class TestsService {
@@ -420,46 +420,122 @@ export class TestsService {
     }
 
     // Get all attempts for this user and test
-    const attempts = await this.testRepository.manager.find(TestAttempt, {
+    const allAttempts = await this.testRepository.manager.find(TestAttempt, {
       where: {
         testId,
         userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { startedAt: 'DESC' },
+      order: { startedAt: 'ASC' },
     });
 
-    const totalAttempts = attempts.length;
+    const totalAttempts = allAttempts.length;
     const maxAttempts = test.attempts;
 
-    if (attempts.length === 0) {
-      // No attempts yet - user can start a new attempt
-      return {
-        canResume: false,
-        canReattempt: true,
-        lastAttemptStatus: null,
-        lastAttemptId: null,
-        maxAttempts,
-        totalAttempts,
+    // Check if there are any attempts under review
+    const hasPendingReview = allAttempts.some(attempt => 
+      attempt.reviewStatus === ReviewStatus.PENDING
+    );
+
+    // Calculate final result based on grading method
+    const submittedAttempts = allAttempts.filter(a => a.status === AttemptStatus.SUBMITTED);
+    let finalScore: number = 0;
+    let finalResult: string | null = null;
+    let finalAttemptId: string | null = null;
+
+    if (submittedAttempts.length > 0) {
+      switch (test.attemptsGrading) {
+        case AttemptsGradeMethod.FIRST_ATTEMPT: {
+          const firstAttempt = submittedAttempts[0]; // First by start time
+          finalScore = firstAttempt.score || 0;
+          finalResult = firstAttempt.result || null;
+          finalAttemptId = firstAttempt.attemptId;
+          break;
+        }
+
+        case AttemptsGradeMethod.LAST_ATTEMPT: {
+          const lastAttempt = submittedAttempts[submittedAttempts.length - 1]; // Last by start time
+          finalScore = lastAttempt.score || 0;
+          finalResult = lastAttempt.result || null;
+          finalAttemptId = lastAttempt.attemptId;
+          break;
+        }
+
+        case AttemptsGradeMethod.HIGHEST: {
+          const highestAttempt = submittedAttempts.reduce((prev, current) => 
+            (current.score || 0) > (prev.score || 0) ? current : prev
+          );
+          finalScore = highestAttempt.score || 0;
+          finalResult = highestAttempt.result || null;
+          finalAttemptId = highestAttempt.attemptId;
+          break;
+        }
+
+        case AttemptsGradeMethod.AVERAGE: {
+          const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
+          finalScore = totalScore / submittedAttempts.length;
+          finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
+          finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId; // Use last attempt as reference
+          break;
+        }
+
+        default: {
+          const defaultAttempt = submittedAttempts[submittedAttempts.length - 1];
+          finalScore = defaultAttempt.score || 0;
+          finalResult = defaultAttempt.result || null;
+          finalAttemptId = defaultAttempt.attemptId;
+        }
+      }
+    }
+
+    // If there are any attempts under review, set finalResult to null
+    if (hasPendingReview) {
+      finalResult = null;
+    }
+
+    // Check if user can attempt (hasn't reached max attempts)
+    const canAttempt = totalAttempts < maxAttempts;
+
+    // Check if user can resume (has an in-progress attempt)
+    const lastAttempt = allAttempts[allAttempts.length - 1]; // Most recent attempt
+    const canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
+
+    // Build graded attempt object
+    let gradedAttempt = null;
+    if (finalAttemptId && submittedAttempts.length > 0) {
+      const gradedAttemptData = allAttempts.find(a => a.attemptId === finalAttemptId);
+      if (gradedAttemptData) {
+        gradedAttempt = {
+          attemptId: gradedAttemptData.attemptId,
+          status: gradedAttemptData.status,
+          score: finalScore,
+          result: finalResult,
+          submittedAt: gradedAttemptData.submittedAt,
+        };
+      }
+    }
+
+    // Build last attempt object
+    let lastAttemptInfo = null;
+    if (lastAttempt) {
+      lastAttemptInfo = {
+        attemptId: lastAttempt.attemptId,
+        status: lastAttempt.status,
+        resumeAllowed: lastAttempt.status === AttemptStatus.IN_PROGRESS,
       };
     }
 
-    const lastAttempt = attempts[0];
-
-    // Check if user can resume (has an in-progress attempt)
-    const canResume = lastAttempt.status === AttemptStatus.IN_PROGRESS; 
-
-    // Check if user can reattempt (hasn't reached max attempts)
-    const canReattempt = totalAttempts < maxAttempts;
-
     return {
+      testId,
+      totalAttemptsAllowed: maxAttempts,
+      attemptsMade: totalAttempts,
+      canAttempt,
       canResume,
-      canReattempt,
-      lastAttemptStatus: lastAttempt.status,
-      lastAttemptId: lastAttempt.attemptId,
-      maxAttempts,
-      totalAttempts,
+      attemptGrading: test.attemptsGrading,
+      gradedAttempt,
+      lastAttempt: lastAttemptInfo,
+      showCorrectAnswers: test.showCorrectAnswer,
     };
   }
 
