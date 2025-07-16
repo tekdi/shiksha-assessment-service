@@ -432,7 +432,7 @@ export class TestsService {
 
     switch (test.attemptsGrading) {
       case AttemptsGradeMethod.FIRST_ATTEMPT: {
-        gradedAttemptData = await this.getFirstAttempt(testId, userId, authContext);
+        gradedAttemptData = await this.getFirstAttempt(testId, userId, authContext, test);
         if (gradedAttemptData) {
           finalScore = gradedAttemptData.score || 0;
           finalResult = gradedAttemptData.result || null;
@@ -442,7 +442,7 @@ export class TestsService {
       }
 
       case AttemptsGradeMethod.LAST_ATTEMPT: {
-        gradedAttemptData = await this.getLastCompletedAttempt(testId, userId, authContext);
+        gradedAttemptData = await this.getLastCompletedAttempt(testId, userId, authContext, test);
         if (gradedAttemptData) {
           finalScore = gradedAttemptData.score || 0;
           finalResult = gradedAttemptData.result || null;
@@ -452,7 +452,7 @@ export class TestsService {
       }
 
       case AttemptsGradeMethod.HIGHEST: {
-        gradedAttemptData = await this.getHighestAttempt(testId, userId, authContext);
+        gradedAttemptData = await this.getHighestAttempt(testId, userId, authContext, test);
         if (gradedAttemptData) {
           finalScore = gradedAttemptData.score || 0;
           finalResult = gradedAttemptData.result || null;
@@ -462,13 +462,13 @@ export class TestsService {
       }
 
       case AttemptsGradeMethod.AVERAGE: {
-        const averageData = await this.getAverageScore(testId, userId, authContext);
+        const averageData = await this.getAverageScore(testId, userId, authContext, test);
         if (averageData) {
           finalScore = averageData.averageScore;
           finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
           
           // Get the last submitted attempt for attemptId reference
-          const lastSubmittedAttempt = await this.getLastCompletedAttempt(testId, userId, authContext);
+          const lastSubmittedAttempt = await this.getLastCompletedAttempt(testId, userId, authContext, test);
           if (lastSubmittedAttempt) {
             finalAttemptId = lastSubmittedAttempt.attemptId;
             gradedAttemptData = lastSubmittedAttempt; // Use for graded attempt object
@@ -525,18 +525,24 @@ export class TestsService {
    * @param testId - The unique identifier of the test
    * @param userId - The unique identifier of the user
    * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
    * @returns Promise<TestAttempt | null> - The first submitted attempt or null if none exists
    */
-  private async getFirstAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+  private async getFirstAttempt(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<TestAttempt | null> {
+    const where: any = {
+      testId,
+      userId,
+      status: AttemptStatus.SUBMITTED,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    };
+
+    if (!test.isObjective) {
+      where.reviewStatus = ReviewStatus.REVIEWED;
+    }
+
     return await this.testRepository.manager.findOne(TestAttempt, {
-      where: {
-        testId,
-        userId,
-        status: AttemptStatus.SUBMITTED,
-        reviewStatus: ReviewStatus.REVIEWED,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
+      where,
       order: { startedAt: 'ASC' },
     });
   }
@@ -546,18 +552,24 @@ export class TestsService {
    * @param testId - The unique identifier of the test
    * @param userId - The unique identifier of the user
    * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
    * @returns Promise<TestAttempt | null> - The last submitted attempt or null if none exists
    */
-  private async getLastCompletedAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+  private async getLastCompletedAttempt(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<TestAttempt | null> {
+    const where: any = {
+      testId,
+      userId,
+      status: AttemptStatus.SUBMITTED,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    };
+
+    if (!test.isObjective) {
+      where.reviewStatus = ReviewStatus.REVIEWED;
+    }
+
     return await this.testRepository.manager.findOne(TestAttempt, {
-      where: {
-        testId,
-        userId,
-        status: AttemptStatus.SUBMITTED,
-        reviewStatus: ReviewStatus.REVIEWED,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
+      where,
       order: { startedAt: 'DESC' },
     });
   }
@@ -567,18 +579,24 @@ export class TestsService {
    * @param testId - The unique identifier of the test
    * @param userId - The unique identifier of the user
    * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
    * @returns Promise<TestAttempt | null> - The highest scoring attempt or null if none exists
    */
-  private async getHighestAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+  private async getHighestAttempt(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<TestAttempt | null> {
+    const where: any = {
+      testId,
+      userId,
+      status: AttemptStatus.SUBMITTED,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    };
+
+    if (!test.isObjective) {
+      where.reviewStatus = ReviewStatus.REVIEWED;
+    }
+
     return await this.testRepository.manager.findOne(TestAttempt, {
-      where: {
-        testId,
-        userId,
-        status: AttemptStatus.SUBMITTED,
-        reviewStatus: ReviewStatus.REVIEWED,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
+      where,
       order: { score: 'DESC' },
     });
   }
@@ -591,11 +609,12 @@ export class TestsService {
    * @param testId - The unique identifier of the test
    * @param userId - The unique identifier of the user
    * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
    * @returns Promise<{averageScore: number, attemptCount: number, lastAttemptDate: Date | null} | null> - 
    *          Aggregated score data or null if no submitted attempts exist
    */
-  private async getAverageScore(testId: string, userId: string, authContext: AuthContext): Promise<{ averageScore: number; attemptCount: number; lastAttemptDate: Date | null } | null> {
-    const result = await this.testRepository.manager
+  private async getAverageScore(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<{ averageScore: number; attemptCount: number; lastAttemptDate: Date | null } | null> {
+    const queryBuilder = this.testRepository.manager
       .createQueryBuilder(TestAttempt, 'attempt')
       .select([
         'AVG(COALESCE(attempt.score, 0)) as averageScore',
@@ -604,11 +623,15 @@ export class TestsService {
       ])
       .where('attempt.testId = :testId', { testId })
       .andWhere('attempt.userId = :userId', { userId })
-      .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.REVIEWED })
       .andWhere('attempt.status = :status', { status: AttemptStatus.SUBMITTED })
       .andWhere('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .getRawOne();
+      .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId });
+
+    if (!test.isObjective) {
+      queryBuilder.andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.REVIEWED });
+    }
+
+    const result = await queryBuilder.getRawOne();
 
     if (!result || result.attemptCount === '0') {
       return null;
