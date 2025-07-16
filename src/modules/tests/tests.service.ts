@@ -433,8 +433,23 @@ export class TestsService {
     const totalAttempts = allAttempts.length;
     const maxAttempts = test.attempts;
 
-    // Check if there are any attempts under review
-    const hasPendingReview = allAttempts.some(attempt => 
+    // Handle case where user has no attempts yet
+    if (totalAttempts === 0) {
+      return {
+        testId,
+        totalAttemptsAllowed: maxAttempts,
+        attemptsMade: 0,
+        canAttempt: true, // User can start their first attempt
+        canResume: false, // No attempts to resume
+        attemptGrading: test.attemptsGrading,
+        gradedAttempt: null, // No graded attempt yet
+        lastAttempt: null, // No last attempt
+        showCorrectAnswers: test.showCorrectAnswer,
+      };
+    }
+
+    // Check if there are any attempts under review (only if attempts exist)
+    const hasPendingReview = allAttempts.length > 0 && allAttempts.some(attempt => 
       attempt.reviewStatus === ReviewStatus.PENDING
     );
 
@@ -499,7 +514,7 @@ export class TestsService {
     const canAttempt = totalAttempts < maxAttempts;
 
     // Check if user can resume (has an in-progress attempt)
-    const lastAttempt = allAttempts[allAttempts.length - 1]; // Most recent attempt
+    const lastAttempt = allAttempts.length > 0 ? allAttempts[allAttempts.length - 1] : null; // Most recent attempt
     const canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
 
     // Build graded attempt object
