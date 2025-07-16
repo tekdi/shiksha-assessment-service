@@ -419,18 +419,8 @@ export class TestsService {
       throw new NotFoundException('Test not found');
     }
 
-    // Get all attempts for this user and test
-    const allAttempts = await this.testRepository.manager.find(TestAttempt, {
-      where: {
-        testId,
-        userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      order: { startedAt: 'ASC' },
-    });
-
-    const totalAttempts = allAttempts.length;
+    // Get total attempts count (lightweight query)
+    const totalAttempts = await this.getTotalAttempts(testId, userId, authContext);
     const maxAttempts = test.attempts;
 
     // Handle case where user has no attempts yet
@@ -448,60 +438,60 @@ export class TestsService {
       };
     }
 
-    // Check if there are any attempts under review (only if attempts exist)
-    const hasPendingReview = allAttempts.length > 0 && allAttempts.some(attempt => 
-      attempt.reviewStatus === ReviewStatus.PENDING
-    );
+    // Check if there are any attempts under review (lightweight query)
+    const hasPendingReview = await this.hasPendingReview(testId, userId, authContext);
 
-    // Calculate final result based on grading method
-    const submittedAttempts = allAttempts.filter(a => a.status === AttemptStatus.SUBMITTED);
+    // Get graded attempt based on grading method (optimized query)
     let finalScore: number = 0;
     let finalResult: string | null = null;
     let finalAttemptId: string | null = null;
+    let gradedAttemptData: TestAttempt | null = null;
 
-    if (submittedAttempts.length > 0) {
-      switch (test.attemptsGrading) {
-        case AttemptsGradeMethod.FIRST_ATTEMPT: {
-          const firstAttempt = submittedAttempts[0]; // First by start time
-          finalScore = firstAttempt.score || 0;
-          finalResult = firstAttempt.result || null;
-          finalAttemptId = firstAttempt.attemptId;
-          break;
+    switch (test.attemptsGrading) {
+      case AttemptsGradeMethod.FIRST_ATTEMPT: {
+        gradedAttemptData = await this.getFirstAttempt(testId, userId, authContext);
+        if (gradedAttemptData) {
+          finalScore = gradedAttemptData.score || 0;
+          finalResult = gradedAttemptData.result || null;
+          finalAttemptId = gradedAttemptData.attemptId;
         }
+        break;
+      }
 
-        case AttemptsGradeMethod.LAST_ATTEMPT: {
-          const lastAttempt = submittedAttempts[submittedAttempts.length - 1]; // Last by start time
-          finalScore = lastAttempt.score || 0;
-          finalResult = lastAttempt.result || null;
-          finalAttemptId = lastAttempt.attemptId;
-          break;
+      case AttemptsGradeMethod.LAST_ATTEMPT: {
+        gradedAttemptData = await this.getLastAttempt(testId, userId, authContext);
+        if (gradedAttemptData) {
+          finalScore = gradedAttemptData.score || 0;
+          finalResult = gradedAttemptData.result || null;
+          finalAttemptId = gradedAttemptData.attemptId;
         }
+        break;
+      }
 
-        case AttemptsGradeMethod.HIGHEST: {
-          const highestAttempt = submittedAttempts.reduce((prev, current) => 
-            (current.score || 0) > (prev.score || 0) ? current : prev
-          );
-          finalScore = highestAttempt.score || 0;
-          finalResult = highestAttempt.result || null;
-          finalAttemptId = highestAttempt.attemptId;
-          break;
+      case AttemptsGradeMethod.HIGHEST: {
+        gradedAttemptData = await this.getHighestAttempt(testId, userId, authContext);
+        if (gradedAttemptData) {
+          finalScore = gradedAttemptData.score || 0;
+          finalResult = gradedAttemptData.result || null;
+          finalAttemptId = gradedAttemptData.attemptId;
         }
+        break;
+      }
 
-        case AttemptsGradeMethod.AVERAGE: {
-          // Ensure we have submitted attempts before calculating average
-          if (submittedAttempts.length > 0) {
-            const totalScore = submittedAttempts.reduce((sum, attempt) => sum + (attempt.score || 0), 0);
-            finalScore = totalScore / submittedAttempts.length;
-            
-            // Derive result consistently with other cases by using the test's passing marks
-            // and the ResultType enum values instead of hardcoded strings
-            finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
-            
-            // Use the last submitted attempt as reference for attemptId
-            finalAttemptId = submittedAttempts[submittedAttempts.length - 1].attemptId;
+      case AttemptsGradeMethod.AVERAGE: {
+        const averageData = await this.getAverageScore(testId, userId, authContext);
+        if (averageData) {
+          finalScore = averageData.averageScore;
+          finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
+          
+          // Get the last submitted attempt for attemptId reference
+          const lastSubmittedAttempt = await this.getLastAttempt(testId, userId, authContext);
+          if (lastSubmittedAttempt) {
+            finalAttemptId = lastSubmittedAttempt.attemptId;
+            gradedAttemptData = lastSubmittedAttempt; // Use for graded attempt object
           }
-          break;
         }
+        break;
       }
     }
 
@@ -513,23 +503,20 @@ export class TestsService {
     // Check if user can attempt (hasn't reached max attempts)
     const canAttempt = totalAttempts < maxAttempts;
 
-    // Check if user can resume (has an in-progress attempt)
-    const lastAttempt = allAttempts.length > 0 ? allAttempts[allAttempts.length - 1] : null; // Most recent attempt
+    // Get last attempt for resume check (lightweight query)
+    const lastAttempt = await this.getLastAttemptForResume(testId, userId, authContext);
     const canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
 
     // Build graded attempt object
     let gradedAttempt = null;
-    if (finalAttemptId && submittedAttempts.length > 0) {
-      const gradedAttemptData = allAttempts.find(a => a.attemptId === finalAttemptId);
-      if (gradedAttemptData) {
-        gradedAttempt = {
-          attemptId: gradedAttemptData.attemptId,
-          status: gradedAttemptData.status,
-          score: finalScore,
-          result: finalResult,
-          submittedAt: gradedAttemptData.submittedAt,
-        };
-      }
+    if (gradedAttemptData && finalAttemptId) {
+      gradedAttempt = {
+        attemptId: gradedAttemptData.attemptId,
+        status: gradedAttemptData.status,
+        score: finalScore,
+        result: finalResult,
+        submittedAt: gradedAttemptData.submittedAt,
+      };
     }
 
     // Build last attempt object
@@ -554,5 +541,162 @@ export class TestsService {
       showCorrectAnswers: test.showCorrectAnswer,
     };
   }
+
+  /**
+   * Retrieves the first submitted attempt for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<TestAttempt | null> - The first submitted attempt or null if none exists
+   */
+  private async getFirstAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        status: AttemptStatus.SUBMITTED,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Retrieves the last submitted attempt for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<TestAttempt | null> - The last submitted attempt or null if none exists
+   */
+  private async getLastAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        status: AttemptStatus.SUBMITTED,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Retrieves the attempt with the highest score for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<TestAttempt | null> - The highest scoring attempt or null if none exists
+   */
+  private async getHighestAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        status: AttemptStatus.SUBMITTED,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { score: 'DESC' },
+    });
+  }
+
+  /**
+   * Calculates the average score across all submitted attempts for a user and test.
+   * Uses database aggregation for optimal performance instead of fetching all attempts.
+   * Handles null scores by treating them as 0 using COALESCE.
+   * 
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<{averageScore: number, attemptCount: number, lastAttemptDate: Date | null} | null> - 
+   *          Aggregated score data or null if no submitted attempts exist
+   */
+  private async getAverageScore(testId: string, userId: string, authContext: AuthContext): Promise<{ averageScore: number; attemptCount: number; lastAttemptDate: Date | null } | null> {
+    const result = await this.testRepository.manager
+      .createQueryBuilder(TestAttempt, 'attempt')
+      .select([
+        'AVG(COALESCE(attempt.score, 0)) as averageScore',
+        'COUNT(*) as attemptCount',
+        'MAX(attempt.startedAt) as lastAttemptDate'
+      ])
+      .where('attempt.testId = :testId', { testId })
+      .andWhere('attempt.userId = :userId', { userId })
+      .andWhere('attempt.status = :status', { status: AttemptStatus.SUBMITTED })
+      .andWhere('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .getRawOne();
+
+    if (!result || result.attemptCount === '0') {
+      return null;
+    }
+
+    return {
+      averageScore: parseFloat(result.averageScore) || 0,
+      attemptCount: parseInt(result.attemptCount) || 0,
+      lastAttemptDate: result.lastAttemptDate ? new Date(result.lastAttemptDate) : null,
+    };
+  }
+
+  /**
+   * Checks if any attempts for a user and test are currently under review.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<boolean> - True if any attempts have pending review status
+   */
+  private async hasPendingReview(testId: string, userId: string, authContext: AuthContext): Promise<boolean> {
+    const count = await this.testRepository.manager.count(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        reviewStatus: ReviewStatus.PENDING,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Retrieves the most recent attempt (any status) for a user and test.
+   * Used to determine if a user can resume an in-progress attempt.
+   * 
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<TestAttempt | null> - The most recent attempt or null if none exists
+   */
+  private async getLastAttemptForResume(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { startedAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Counts the total number of attempts (any status) for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<number> - The total number of attempts made by the user
+   */
+  private async getTotalAttempts(testId: string, userId: string, authContext: AuthContext): Promise<number> {
+    return await this.testRepository.manager.count(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+  }
+
 
 } 
