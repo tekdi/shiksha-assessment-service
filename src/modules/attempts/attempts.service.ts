@@ -245,9 +245,9 @@ export class AttemptsService {
         const score = await this.calculateObjectiveScore(attemptId, authContext);
         attempt.score = score;
         attempt.reviewStatus = ReviewStatus.REVIEWED;
-        attempt.result = score >= test.passingMarks ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
+        attempt.result = score >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
       }
-    }
+    } 
 
     // Update attempt status
     attempt.status = AttemptStatus.SUBMITTED;
@@ -590,12 +590,53 @@ export class AttemptsService {
         
         // Calculate score based on question type
         const score = await this.calculateQuestionScore(answerData, question);
+        //update answer score
+        await this.updateAnswerScore(
+          attemptId,
+          answer.questionId,
+          score,
+          AnswerReviewStatus.REVIEWED,
+          authContext
+        );
         totalScore += score;
       }
     }
 
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
   }
+
+   /**
+   * Updates the score and review status for a specific answer in an attempt.
+   * 
+   * Used during both auto-scoring of objective questions and manual review of subjective questions.
+   * 
+   * @param attemptId - The ID of the test attempt
+   * @param questionId - The ID of the question being scored
+   * @param score - The calculated score for the answer (can be null for pending review)
+   * @param reviewStatus - The review status for the answer
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
+   private async updateAnswerScore(
+    attemptId: string, 
+    questionId: string, 
+    score: number | null, 
+    reviewStatus: AnswerReviewStatus, 
+    authContext: AuthContext
+  ): Promise<void> {
+    await this.testUserAnswerRepository.update(
+      {
+        attemptId,
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      {
+        reviewStatus,
+        score,
+      }
+    );
+  }
+  
 
   /**
    * Calculates the score for a single question based on the user's answer and question type.
@@ -664,7 +705,6 @@ export class AttemptsService {
   private calculateMultipleAnswerScore(answerData: any, question: Question, options: QuestionOption[]): number {
     const selectedOptionIds = answerData.selectedOptionIds || [];
     const correctOptions = options.filter(opt => opt.isCorrect);
-    const incorrectOptions = options.filter(opt => !opt.isCorrect);
     
     if (correctOptions.length === 0) return 0;
     
@@ -676,16 +716,15 @@ export class AttemptsService {
         totalScore += correctOption.marks;
       }
     }
-
     // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
       return totalScore;
     } else {
       // Full marks only if all correct options selected and no incorrect ones
-     const allCorrect = totalScore === question.marks;
-     return allCorrect ? totalScore : 0;
+      return totalScore === question.marks ? question.marks : 0;
     }
   }
+
   /**
    * Calculates score for FILL_BLANK questions.
    * Supports case sensitivity and exact matching with configurable partial scoring.
@@ -711,6 +750,7 @@ export class AttemptsService {
         : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
       
       if (isCorrect) {
+        // Use individual option marks instead of equal distribution
         totalScore += correctOptions[i]?.marks || 0;
       }
     }
@@ -721,8 +761,7 @@ export class AttemptsService {
       return totalScore;
     } else {
       // All-or-nothing: full marks only if all blanks are correct
-      const allCorrect = totalScore === question.marks;
-      return allCorrect ? question.marks : 0;
+      return totalScore === question.marks ? question.marks : 0;
     }
   }
 
@@ -743,6 +782,7 @@ export class AttemptsService {
       const correctMatch = correctOptions[i]?.matchWith;
       
       if (userMatch === correctMatch) {
+        // Use individual option marks instead of equal distribution
         totalScore += correctOptions[i]?.marks || 0;
       }
     }
@@ -753,8 +793,7 @@ export class AttemptsService {
       return totalScore;
     } else {
       // All-or-nothing: full marks only if all matches are correct
-      const allCorrect = totalScore === question.marks;
-      return allCorrect ? question.marks : 0;
+      return totalScore === question.marks ? question.marks : 0;
     }
   }
 
