@@ -234,18 +234,18 @@ export class AttemptsService {
       attempt.result = null;
     } else {
       
-      if (!test.isObjective) {  
-        // Auto-calculate score for objective questions (if any) 
-        const score = await this.calculateObjectiveScore(attemptId, authContext);
-        attempt.score = score;
-        // Set review status to pending for manual review
-        attempt.reviewStatus = ReviewStatus.PENDING;
-      } else {
+      if (test.isObjective) {
         // Auto-calculate score for objective questions
         const score = await this.calculateObjectiveScore(attemptId, authContext);
         attempt.score = score;
         attempt.reviewStatus = ReviewStatus.REVIEWED;
         attempt.result = score >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+      } else {
+        // Auto-calculate score for objective questions (if any) 
+        const score = await this.calculateObjectiveScore(attemptId, authContext);
+        attempt.score = score;
+        // Set review status to pending for manual review
+        attempt.reviewStatus = ReviewStatus.PENDING;
       }
     } 
 
