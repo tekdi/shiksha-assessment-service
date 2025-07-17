@@ -13,7 +13,6 @@ import { TestAttempt } from './test-attempt.entity';
 export enum ReviewStatus {
   PENDING = 'P',
   REVIEWED = 'R',
-  NOT_APPLICABLE = 'N',
 }
 
 @Entity('testUserAnswers')
