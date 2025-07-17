@@ -28,14 +28,11 @@ export class QuestionsService {
     // Validate question data
     this.validateQuestionData(createQuestionDto);
     
-    // Validate question options
+    // Validate question options (includes duplicate validation)
     this.validateQuestionOptions(createQuestionDto);
     
     // Validate question parameters
     this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
-    
-    // Validate for duplicate options
-    this.validateDuplicateOptions(createQuestionDto);
     
     const question = this.questionRepository.create({
       ...questionData,
@@ -268,9 +265,6 @@ export class QuestionsService {
     // Validate question parameters
     this.validateQuestionParams(mergedDto.type, mergedDto.params, mergedDto.marks);
 
-    // Validate for duplicate options
-    this.validateDuplicateOptions(mergedDto);
-
     Object.assign(question, {
       ...questionData,
       updatedBy: authContext.userId,
@@ -317,6 +311,11 @@ export class QuestionsService {
     await this.invalidateQuestionCache(authContext.tenantId);
   }
 
+  /**
+   * Invalidates the question cache for a specific tenant
+   * Sets a cache invalidation timestamp that can be checked by cache consumers
+   * @param tenantId - The tenant ID for which to invalidate the cache
+   */
   private async invalidateQuestionCache(tenantId: string): Promise<void> {
     try {
       // Set a cache invalidation timestamp that can be checked
@@ -418,6 +417,12 @@ export class QuestionsService {
     return result;
   }
 
+  /**
+   * Validates question options based on the question type
+   * Ensures options meet the requirements for the specific question type
+   * Also validates duplicates and partial scoring
+   * @param questionDto - The question DTO containing type, options, and marks
+   */
   private validateQuestionOptions(questionDto: CreateQuestionDto): void {
     const { type, options, marks: questionMarks } = questionDto;
 
@@ -429,6 +434,9 @@ export class QuestionsService {
       
       // Validate that all options have required fields
       this.validateOptionFields(options, questionMarks);
+      
+      // Validate for duplicate options
+      this.validateDuplicateOptionsInternal(questionDto);
       
       // Additional validation for specific question types
       switch (type) {
@@ -454,8 +462,27 @@ export class QuestionsService {
         }
       }
     }
+
+    // Validate partial scoring
+    if (questionDto.allowPartialScoring && options) {
+      if (type === QuestionType.MULTIPLE_ANSWER) {
+        this.validateMultipleAnswerPartialScoring(options, questionMarks);
+      } else if (type === QuestionType.FILL_BLANK) {
+        // For fill blank, we need to group options by blankIndex first
+        const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
+        const optionsByBlankIndex = this.groupOptionsByBlankIndex(optionsWithBlankIndex);
+        this.validateFillBlankPartialScoring(optionsByBlankIndex, questionMarks);
+      }
+    }
   }
 
+  /**
+   * Validates question parameters for specific question types
+   * Checks parameter constraints like maxLength > minLength and wordLimit > 0
+   * @param type - The question type
+   * @param params - Optional parameters object containing validation rules
+   * @param marks - Optional question marks for validation
+   */
   private validateQuestionParams(type: QuestionType, params?: any, marks?: number): void {
     if (!params) return;
 
@@ -474,24 +501,17 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates basic question data including marks and text
+   * Performs basic validation of question properties
+   * @param createQuestionDto - The question DTO to validate
+   */
   private validateQuestionData(createQuestionDto: CreateQuestionDto): void {
-    const { type, options, marks: questionMarks, allowPartialScoring } = createQuestionDto;
+    const { marks: questionMarks } = createQuestionDto;
 
     // Validate question marks are positive if specified
     if (questionMarks !== undefined && questionMarks <= 0) {
       throw new BadRequestException('Question marks must be greater than 0.');
-    }
-
-    // Validate partial scoring scenarios
-    if (allowPartialScoring && options) {
-      if (type === QuestionType.MULTIPLE_ANSWER) {
-        this.validateMultipleAnswerPartialScoring(options, questionMarks);
-      } else if (type === QuestionType.FILL_BLANK) {
-        // For fill blank, we need to group options by blankIndex first
-        const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
-        const optionsByBlankIndex = this.groupOptionsByBlankIndex(optionsWithBlankIndex);
-        this.validateFillBlankPartialScoring(optionsByBlankIndex, questionMarks);
-      }
     }
 
     // Validate question text length
@@ -500,8 +520,13 @@ export class QuestionsService {
     }
   }
 
-  private validateDuplicateOptions(createQuestionDto: CreateQuestionDto): void {
-    const { options, type } = createQuestionDto;
+  /**
+   * Internal method to validate for duplicate options in the question
+   * Checks for duplicate option texts and matchWith values for matching questions
+   * @param questionDto - The question DTO to validate for duplicates
+   */
+  private validateDuplicateOptionsInternal(questionDto: CreateQuestionDto): void {
+    const { options, type } = questionDto;
 
     if (!options || options.length === 0) {
       return;
@@ -517,6 +542,12 @@ export class QuestionsService {
   }
 
   // Helper methods to reduce duplication
+  /**
+   * Validates individual option fields for completeness and correctness
+   * Ensures each option has required fields and valid values
+   * @param options - Array of option objects to validate
+   * @param questionMarks - Optional question marks to validate against option marks
+   */
   private validateOptionFields(options: any[], questionMarks?: number): void {
     options.forEach((option, index) => {
       if (!option.text || option.text.trim().length === 0) {
@@ -540,6 +571,12 @@ export class QuestionsService {
     });
   }
 
+  /**
+   * Validates that single-answer questions have exactly one correct option
+   * Applies to MCQ and TRUE_FALSE question types
+   * @param options - Array of option objects to validate
+   * @param type - The question type for error messaging
+   */
   private validateSingleCorrectAnswer(options: any[], type: QuestionType): void {
     const correctOptions = options.filter(option => option.isCorrect);
     if (correctOptions.length !== 1) {
@@ -547,6 +584,12 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates multiple answer questions have at least one correct option
+   * Also validates partial scoring consistency if enabled
+   * @param options - Array of option objects to validate
+   * @param questionDto - The complete question DTO for validation context
+   */
   private validateMultipleAnswerOptions(options: any[], questionDto: CreateQuestionDto): void {
     const correctOptions = options.filter(option => option.isCorrect);
     if (correctOptions.length === 0) {
@@ -559,6 +602,12 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates partial scoring consistency for multiple answer questions
+   * Ensures all correct options have marks and total marks equal question marks
+   * @param options - Array of option objects to validate
+   * @param questionMarks - The total question marks to validate against
+   */
   private validateMultipleAnswerPartialScoring(options: any[], questionMarks?: number): void {
     const correctOptions = options.filter(option => option.isCorrect);
     const optionsWithMarks = correctOptions.filter(option => option.marks !== undefined);
@@ -573,6 +622,12 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates fill-in-the-blank question options
+   * Ensures proper blankIndex structure and correct answer distribution
+   * @param options - Array of option objects to validate
+   * @param questionDto - The complete question DTO for validation context
+   */
   private validateFillBlankOptions(options: any[], questionDto: CreateQuestionDto): void {
     // Fill in the blank questions should have options with blankIndex
     const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
@@ -593,6 +648,12 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates partial scoring consistency for fill-in-the-blank questions
+   * Ensures each blank has consistent marks for correct answers and total equals question marks
+   * @param optionsByBlankIndex - Map of blank indices to their options
+   * @param questionMarks - The total question marks to validate against
+   */
   private validateFillBlankPartialScoring(optionsByBlankIndex: Map<number, any[]>, questionMarks?: number): void {
     // Validate each blank has marks specified for correct answers
     for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
@@ -625,6 +686,11 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates that blank indices are sequential starting from 0
+   * Ensures no gaps in the blankIndex sequence for fill-in-the-blank questions
+   * @param optionsWithBlankIndex - Array of options that have blankIndex defined
+   */
   private validateSequentialBlankIndices(optionsWithBlankIndex: any[]): void {
     const blankIndices = optionsWithBlankIndex.map(option => option.blankIndex).sort((a, b) => a - b);
     for (let i = 0; i < blankIndices.length; i++) {
@@ -634,6 +700,12 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Groups options by their blankIndex for fill-in-the-blank questions
+   * Creates a map where keys are blank indices and values are arrays of options
+   * @param optionsWithBlankIndex - Array of options that have blankIndex defined
+   * @returns Map of blank indices to their corresponding options
+   */
   private groupOptionsByBlankIndex(optionsWithBlankIndex: any[]): Map<number, any[]> {
     const optionsByBlankIndex = new Map<number, any[]>();
     optionsWithBlankIndex.forEach(option => {
@@ -645,6 +717,11 @@ export class QuestionsService {
     return optionsByBlankIndex;
   }
 
+  /**
+   * Validates that each blank has at least one correct answer
+   * Ensures fill-in-the-blank questions have valid answer options for each blank
+   * @param optionsByBlankIndex - Map of blank indices to their options
+   */
   private validateEachBlankHasCorrectAnswer(optionsByBlankIndex: Map<number, any[]>): void {
     for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
       const correctOptions = blankOptions.filter(option => option.isCorrect);
@@ -654,6 +731,12 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Calculates the total marks from all blanks in a fill-in-the-blank question
+   * Sums up the marks from the first correct option of each blank
+   * @param optionsByBlankIndex - Map of blank indices to their options
+   * @returns Total marks from all blanks
+   */
   private calculateTotalBlankMarks(optionsByBlankIndex: Map<number, any[]>): number {
     let totalBlankMarks = 0;
     for (const [blankIndex, blankOptions] of optionsByBlankIndex) {
@@ -665,6 +748,11 @@ export class QuestionsService {
     return totalBlankMarks;
   }
 
+  /**
+   * Validates matching question options
+   * Ensures options have matchWith values and all matchWith options are marked correct
+   * @param options - Array of option objects to validate
+   */
   private validateMatchOptions(options: any[]): void {
     // Matching questions should have options with matchWith
     const optionsWithMatch = options.filter(option => 
@@ -682,6 +770,11 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates that option texts are unique across all options
+   * Checks for duplicate option texts (case-insensitive) and throws error if found
+   * @param options - Array of option objects to validate for duplicate texts
+   */
   private validateDuplicateTexts(options: any[]): void {
     const optionTexts = new Set<string>();
     const duplicateTexts: string[] = [];
@@ -702,6 +795,11 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Validates that matchWith values are unique for matching questions
+   * Checks for duplicate matchWith values (case-insensitive) and throws error if found
+   * @param options - Array of option objects to validate for duplicate matchWith values
+   */
   private validateDuplicateMatchWith(options: any[]): void {
     const matchWithValues = new Set<string>();
     const duplicateMatchWith: string[] = [];
