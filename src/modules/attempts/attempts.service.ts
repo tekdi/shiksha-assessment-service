@@ -208,7 +208,7 @@ export class AttemptsService {
     });
   }
 
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -267,7 +267,7 @@ export class AttemptsService {
       isObjective: test.isObjective,
     });
 
-    return savedAttempt;
+    return { ...savedAttempt, totalMarks: test.totalMarks };
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
