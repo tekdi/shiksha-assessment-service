@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: shiksha-assessment-service
+  name: shiksha-assessment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shiksha-assessment-service
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: shiksha-assessment-service
+    spec:
+      containers:
+      - image: ${ECR_REPOSITORY}:${IMAGE_TAG}
+        imagePullPolicy: "Always"
+        name: shiksha-assessment-service
+        ports:
+        - containerPort: 6000
+        envFrom:
+        - configMapRef:
+            name: shiksha-assessment-service-config
+        resources: {}
+      restartPolicy: Always
+status: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shiksha-assessment-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6000
+    protocol: TCP
+  selector:
+    app: shiksha-assessment-service

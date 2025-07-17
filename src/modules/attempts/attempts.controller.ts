@@ -13,7 +13,6 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
-import { ResumeAttemptDto } from './dto/resume-attempt.dto';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 
 @ApiTags('Test Attempts')
