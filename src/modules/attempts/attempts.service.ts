@@ -6,7 +6,9 @@ import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/ent
 import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
-import { Question, QuestionType, GradingType } from '../questions/entities/question.entity';
+import { Question, QuestionType } from '../questions/entities/question.entity';
+import { QuestionOption } from '../questions/entities/question-option.entity';
+import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
@@ -28,6 +30,8 @@ export class AttemptsService {
     private readonly testRuleRepository: Repository<TestRule>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
+    @InjectRepository(QuestionOption)
+    private readonly questionOptionRepository: Repository<QuestionOption>,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
   ) {}
@@ -143,6 +147,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
+      relations: ['test'],
     });
 
     if (!attempt) {
@@ -203,8 +208,15 @@ export class AttemptsService {
     });
   }
 
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
-    const attempt = await this.findAttemptById(attemptId, authContext);
+  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      relations: ['test'],
+    });
 
     // Check if attempt is already submitted
     if (attempt.status === AttemptStatus.SUBMITTED) {
@@ -215,17 +227,26 @@ export class AttemptsService {
     const testId = attempt.resolvedTestId || attempt.testId;
     const test = await this.findTestById(testId, authContext);
 
-    // Calculate total marks for this attempt
-    const totalMarks = await this.calculateTotalMarks(attemptId, authContext);
-
-    // Get all answers and questions for this attempt
-    const { userAnswers, questionMap } = await this.getAttemptAnswersAndQuestions(attemptId, authContext);
-
-    // Determine evaluation strategy based on test.isObjective flag
-    if (test.isObjective) {
-      await this.handleObjectiveTestSubmission(attempt, test, userAnswers, questionMap, authContext);
+    // Check if the test itself is a FEEDBACK type test
+    if (attempt.test?.gradingType === GradingType.FEEDBACK) {
+      // For feedback tests, set score to null and result to FEEDBACK
+      attempt.score = null;
+      attempt.result = null;
     } else {
-      await this.handleMixedTestSubmission(attempt, test, userAnswers, questionMap, authContext);
+      
+      if (!test.isObjective) {  
+        // Auto-calculate score for objective questions (if any) 
+        const score = await this.calculateObjectiveScore(attemptId, authContext);
+        attempt.score = score;
+        // Set review status to pending for manual review
+        attempt.reviewStatus = ReviewStatus.PENDING;
+      } else {
+        // Auto-calculate score for objective questions
+        const score = await this.calculateObjectiveScore(attemptId, authContext);
+        attempt.score = score;
+        attempt.reviewStatus = ReviewStatus.REVIEWED;
+        attempt.result = score >= test.passingMarks ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
+      }
     }
 
     // Update attempt status
@@ -246,7 +267,7 @@ export class AttemptsService {
       isObjective: test.isObjective,
     });
 
-    return { ...savedAttempt, totalMarks };
+    return savedAttempt;
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
@@ -302,7 +323,7 @@ export class AttemptsService {
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
       .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.PENDING })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.EXERCISE })
+      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSIGNMENT })
       .andWhere('answers.reviewStatus = :answerReviewStatus', { answerReviewStatus: 'P' })
       .select([
         'attempt.attemptId',
@@ -529,28 +550,6 @@ export class AttemptsService {
     }
   }
 
-  /**
-   * Checks if an attempt contains any subjective questions that require manual review.
-   * 
-   * This function queries the database to count questions in the attempt that have
-   * grading type 'EXERCISE' (subjective questions that need manual scoring).
-   * 
-   * @param attemptId - The ID of the test attempt to check
-   * @param authContext - Authentication context for tenant/organization filtering
-   * @returns Promise<boolean> - True if the attempt has subjective questions, false otherwise
-   */
-  private async hasSubjectiveQuestions(attemptId: string, authContext: AuthContext): Promise<boolean> {
-    const subjectiveQuestions = await this.questionRepository
-      .createQueryBuilder('question')
-      .innerJoin('testUserAnswers', 'answers', 'answers.questionId = question.questionId')
-      .where('answers.attemptId = :attemptId', { attemptId })
-      .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.EXERCISE })
-      .getCount();
-
-    return subjectiveQuestions > 0;
-  }
 
   /**
    * Calculates the objective score for an attempt by auto-evaluating all objective questions.
@@ -573,7 +572,7 @@ export class AttemptsService {
       .where('answer.attemptId = :attemptId', { attemptId })
       .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.QUIZ })
+      .andWhere('question.type NOT IN (:...types)', { types: [QuestionType.SUBJECTIVE, QuestionType.ESSAY] })
       .select(['answer.answer', 'question.marks', 'question.type'])
       .getMany();
 
@@ -590,7 +589,7 @@ export class AttemptsService {
         const answerData = JSON.parse(answer.answer);
         
         // Calculate score based on question type
-        const score = this.calculateQuestionScore(answerData, question);
+        const score = await this.calculateQuestionScore(answerData, question);
         totalScore += score;
       }
     }
@@ -601,26 +600,172 @@ export class AttemptsService {
   /**
    * Calculates the score for a single question based on the user's answer and question type.
    *
-   * Note: This is a simplified scoring implementation. For production use, you would need
-   * to implement proper answer validation against correct answers stored in the question.
+   * This method implements comprehensive scoring logic for each question type:
+   * - MCQ/TRUE_FALSE: Full marks if correct option selected, 0 otherwise
+   * - MULTIPLE_ANSWER: Partial scoring based on correct/incorrect selections (configurable)
+   * - FILL_BLANK: Configurable partial scoring for each correct blank with case sensitivity
+   * - MATCH: Configurable partial scoring for each correct match
+   * - SUBJECTIVE/ESSAY: Returns 0 (scored manually)
    * 
    * @param answerData - The parsed user answer data
    * @param question - The question entity with type and marks
    * @returns number - The calculated score for this question
    */
-  private calculateQuestionScore(answerData: any, question: Question): number {
-    // This is a simplified scoring logic - you might want to enhance it
+  private async calculateQuestionScore(answerData: any, question: Question): Promise<number> {
+    // Get question options for validation
+    const options = await this.getQuestionOptions(question.questionId);
+    
     switch (question.type) {
       case QuestionType.MCQ:
       case QuestionType.TRUE_FALSE:
-        // Check if selected option is correct
-        return answerData.selectedOptionIds?.length > 0 ? question.marks : 0;
+        return this.calculateMCQScore(answerData, question, options);
+        
       case QuestionType.MULTIPLE_ANSWER:
-        // Partial scoring for multiple answer questions
-        return question.marks; // Simplified - you'd need to check each option
+        return this.calculateMultipleAnswerScore(answerData, question, options);
+        
+      case QuestionType.FILL_BLANK:
+        return this.calculateFillBlankScore(answerData, question, options);
+        
+      case QuestionType.MATCH:
+        return this.calculateMatchScore(answerData, question, options);
+        
+      case QuestionType.SUBJECTIVE:
+      case QuestionType.ESSAY:
+        // Subjective questions are scored manually
+        return 0;
+        
       default:
-        return 0; // Subjective questions are scored manually
+        return 0;
     }
+  }
+
+  /**
+   * Calculates score for MCQ and TRUE_FALSE questions.
+   * Full marks if correct option selected, 0 otherwise.
+   */
+  private calculateMCQScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const selectedOptionIds = answerData.selectedOptionIds || [];
+    
+    // MCQ should have exactly one correct option
+    const correctOption = options.find(opt => opt.isCorrect);
+    if (!correctOption) return 0;
+    
+    // Check if the selected option is correct
+    const isCorrect = selectedOptionIds.length === 1 && 
+                     selectedOptionIds[0] === correctOption.questionOptionId;
+    
+    return isCorrect ? question.marks : 0;
+  }
+
+  /**
+   * Calculates score for MULTIPLE_ANSWER questions with partial scoring.
+   * Supports both full marks for all correct or partial scoring per option.
+   */
+  private calculateMultipleAnswerScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const selectedOptionIds = answerData.selectedOptionIds || [];
+    const correctOptions = options.filter(opt => opt.isCorrect);
+    const incorrectOptions = options.filter(opt => !opt.isCorrect);
+    
+    if (correctOptions.length === 0) return 0;
+    
+    let totalScore = 0;
+    
+    // Award marks for correct selections
+    for (const correctOption of correctOptions) {
+      if (selectedOptionIds.includes(correctOption.questionOptionId)) {
+        totalScore += correctOption.marks;
+      }
+    }
+
+    // Check if partial scoring is enabled
+    if (question.allowPartialScoring) {
+      return totalScore;
+    } else {
+      // Full marks only if all correct options selected and no incorrect ones
+     const allCorrect = totalScore === question.marks;
+     return allCorrect ? totalScore : 0;
+    }
+  }
+  /**
+   * Calculates score for FILL_BLANK questions.
+   * Supports case sensitivity and exact matching with configurable partial scoring.
+   */
+  private calculateFillBlankScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const userBlanks = answerData.blanks || [];
+    const correctOptions = options.filter(opt => opt.isCorrect);
+    
+    if (correctOptions.length === 0 || userBlanks.length === 0) return 0;
+    
+    let totalScore = 0;
+    
+    for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+      const userAnswer = userBlanks[i]?.trim();
+      const correctAnswer = correctOptions[i]?.text?.trim();
+      
+      if (!userAnswer || !correctAnswer) continue;
+      
+      // Check case sensitivity
+      const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
+      const isCorrect = isCaseSensitive 
+        ? userAnswer === correctAnswer
+        : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+      
+      if (isCorrect) {
+        totalScore += correctOptions[i]?.marks || 0;
+      }
+    }
+    
+    // Check if partial scoring is enabled
+    if (question.allowPartialScoring) {
+      // Partial scoring: award marks for each correct blank using option marks
+      return totalScore;
+    } else {
+      // All-or-nothing: full marks only if all blanks are correct
+      const allCorrect = totalScore === question.marks;
+      return allCorrect ? question.marks : 0;
+    }
+  }
+
+  /**
+   * Calculates score for MATCH questions.
+   * Configurable partial scoring for each correct match.
+   */
+  private calculateMatchScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const userMatches = answerData.matches || [];
+    const correctOptions = options.filter(opt => opt.isCorrect);
+    
+    if (correctOptions.length === 0 || userMatches.length === 0) return 0;
+    
+    let totalScore = 0;
+    
+    for (let i = 0; i < Math.min(userMatches.length, correctOptions.length); i++) {
+      const userMatch = userMatches[i];
+      const correctMatch = correctOptions[i]?.matchWith;
+      
+      if (userMatch === correctMatch) {
+        totalScore += correctOptions[i]?.marks || 0;
+      }
+    }
+    
+    // Check if partial scoring is enabled
+    if (question.allowPartialScoring) {
+      // Partial scoring: award marks for each correct match using option marks
+      return totalScore;
+    } else {
+      // All-or-nothing: full marks only if all matches are correct
+      const allCorrect = totalScore === question.marks;
+      return allCorrect ? question.marks : 0;
+    }
+  }
+
+  /**
+   * Retrieves question options for scoring validation.
+   */
+  private async getQuestionOptions(questionId: string): Promise<QuestionOption[]> {
+    return this.questionOptionRepository.find({
+      where: { questionId },
+      order: { ordering: 'ASC' },
+    });
   }
 
   /**
@@ -641,21 +786,6 @@ export class AttemptsService {
     }
 
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
-  }
-
-  /**
-   * Calculates the total possible marks for an attempt by summing up marks from all questions.
-   * 
-   * This function retrieves all questions in the attempt and sums their individual marks
-   * to determine the maximum possible score for the attempt.
-   * 
-   * @param attemptId - The ID of the test attempt to calculate total marks for
-   * @param authContext - Authentication context for tenant/organization filtering
-   * @returns Promise<number> - The total possible marks for the attempt
-   */
-  private async calculateTotalMarks(attemptId: string, authContext: AuthContext): Promise<number> {
-    const { totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
-    return totalMarks;
   }
 
   /**
@@ -709,275 +839,6 @@ export class AttemptsService {
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
-  }
-
-  /**
-   * Retrieves all answers for an attempt along with their associated questions.
-   * 
-   * @param attemptId - The ID of the test attempt
-   * @param authContext - Authentication context for tenant/organization filtering
-   * @returns Promise<{userAnswers: TestUserAnswer[], questionMap: Map<string, Question>}> - Object containing answers and question lookup map
-   */
-  private async getAttemptAnswersAndQuestions(attemptId: string, authContext: AuthContext): Promise<{ userAnswers: TestUserAnswer[], questionMap: Map<string, Question> }> {
-    // Get all answers for this attempt
-    const userAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Get questions for the answers
-    const questionIds = userAnswers.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
-      where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    const questionMap = new Map(questions.map(q => [q.questionId, q]));
-
-    return { userAnswers, questionMap };
-  }
-
-  /**
-   * Updates the score and review status for a specific answer in an attempt.
-   * 
-   * Used during both auto-scoring of objective questions and manual review of subjective questions.
-   * 
-   * @param attemptId - The ID of the test attempt
-   * @param questionId - The ID of the question being scored
-   * @param score - The calculated score for the answer (can be null for pending review)
-   * @param reviewStatus - The review status for the answer
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async updateAnswerScore(
-    attemptId: string, 
-    questionId: string, 
-    score: number | null, 
-    reviewStatus: AnswerReviewStatus, 
-    authContext: AuthContext
-  ): Promise<void> {
-    await this.testUserAnswerRepository.update(
-      {
-        attemptId,
-        questionId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      {
-        reviewStatus,
-        score,
-      }
-    );
-  }
-
-  /**
-   * Handles submission of an objective test by auto-evaluating all questions.
-   * 
-   * Used when the test is marked as isObjective = true, meaning all questions can be auto-scored.
-   * 
-   * @param attempt - The test attempt being submitted
-   * @param test - The test configuration with passing marks
-   * @param userAnswers - All user answers for the attempt
-   * @param questionMap - Map of questions for efficient lookup
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async handleObjectiveTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
-    // Auto-evaluate all questions (objective test)
-    const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
-    const validatedScore = Number(score) || 0;
-    attempt.score = validatedScore;
-    attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
-    attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
-
-    // Process all answers as objective questions
-    await this.processAnswersAsObjective(userAnswers, questionMap, attempt.attemptId, authContext);
-  }
-
-  /**
-   * Handles submission of a mixed test containing both objective and subjective questions.
-   * 
-   * This function:
-   * 1. Checks if the test contains subjective questions requiring manual review
-   * 2. If subjective questions exist:
-   *    - Calculates objective score for auto-scorable questions
-   *    - Sets review status to PENDING for manual review
-   *    - Processes answers based on question type (objective vs subjective)
-   * 3. If no subjective questions:
-   *    - Treats as objective test with full auto-scoring
-   *    - Sets review status to NOT_APPLICABLE
-   * 
-   * Used when the test is marked as isObjective = false, meaning it may contain subjective questions.
-   * 
-   * @param attempt - The test attempt being submitted
-   * @param test - The test configuration with passing marks
-   * @param userAnswers - All user answers for the attempt
-   * @param questionMap - Map of questions for efficient lookup
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async handleMixedTestSubmission(attempt: TestAttempt, test: Test, userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, authContext: AuthContext): Promise<void> {
-    // Check if test has subjective questions
-    const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attempt.attemptId, authContext);
-    
-    if (hasSubjectiveQuestions) {
-      // Auto-evaluate objective questions and mark subjective for review
-      const objectiveScore = await this.calculateObjectiveScore(attempt.attemptId, authContext);
-      const validatedObjectiveScore = Number(objectiveScore) || 0;
-      attempt.score = validatedObjectiveScore;
-      attempt.result = null;
-      attempt.reviewStatus = ReviewStatus.PENDING;
-
-      // Process answers based on question type
-      await this.processMixedAnswers(userAnswers, questionMap, attempt.attemptId, authContext);
-    } else {
-      // All questions are objective, auto-evaluate
-      const score = await this.calculateObjectiveScore(attempt.attemptId, authContext);
-      const validatedScore = Number(score) || 0;
-      attempt.score = validatedScore;
-      attempt.result = validatedScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
-      attempt.reviewStatus = ReviewStatus.NOT_APPLICABLE;
-
-      // Process all answers as objective questions
-      await this.processAnswersAsObjective(userAnswers, questionMap, attempt.attemptId, authContext);
-    }
-  }
-
-  /**
-   * Processes all answers in an attempt as objective questions with auto-scoring.
-   * 
-   * Used for objective tests where all questions can be automatically scored.
-   * 
-   * @param userAnswers - Array of all user answers for the attempt
-   * @param questionMap - Map of questions for efficient lookup
-   * @param attemptId - The ID of the test attempt
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async processAnswersAsObjective(userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, attemptId: string, authContext: AuthContext): Promise<void> {
-    for (const answer of userAnswers) {
-      const question = questionMap.get(answer.questionId);
-      if (!question) continue;
-
-      const needsUpdate = this.needsScoreUpdate(answer);
-      if (needsUpdate) {
-        const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-        const validatedQuestionScore = Number(questionScore) || 0;
-        
-        await this.updateAnswerScore(
-          attemptId,
-          answer.questionId,
-          validatedQuestionScore,
-          AnswerReviewStatus.NOT_APPLICABLE,
-          authContext
-        );
-      }
-    }
-  }
-
-  /**
-   * Processes answers in a mixed test by handling objective and subjective questions differently.
-   * 
-   * Used for mixed tests that contain both auto-scorable and manually reviewable questions.
-   * 
-   * @param userAnswers - Array of all user answers for the attempt
-   * @param questionMap - Map of questions for efficient lookup
-   * @param attemptId - The ID of the test attempt
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async processMixedAnswers(userAnswers: TestUserAnswer[], questionMap: Map<string, Question>, attemptId: string, authContext: AuthContext): Promise<void> {
-    for (const answer of userAnswers) {
-      const question = questionMap.get(answer.questionId);
-      if (!question) continue;
-
-      const isSubjective = this.isSubjectiveQuestion(question);
-      
-      if (isSubjective) {
-        await this.markAnswerForReview(answer, attemptId, authContext);
-      } else {
-        await this.processObjectiveAnswer(answer, question, attemptId, authContext);
-      }
-    }
-  }
-
-  /**
-   * Determines if an answer needs its score to be updated.
-   * 
-   * This function checks if:
-   * - The answer has no score (null or undefined)
-   * - The answer's review status is not NOT_APPLICABLE
-   * 
-   * Used to avoid unnecessary database updates when an answer has already been processed.
-   * 
-   * @param answer - The user answer to check
-   * @returns boolean - True if the answer needs score update, false otherwise
-   */
-  private needsScoreUpdate(answer: TestUserAnswer): boolean {
-    return answer.score === null || 
-           answer.score === undefined || 
-           answer.reviewStatus !== AnswerReviewStatus.NOT_APPLICABLE;
-  }
-
-  /**
-   * Determines if a question is subjective and requires manual review.
-   * 
-   * This function checks if the question type is either SUBJECTIVE or ESSAY,
-   * which are question types that cannot be auto-scored and need manual evaluation.
-   * 
-   * @param question - The question entity to check
-   * @returns boolean - True if the question is subjective, false otherwise
-   */
-  private isSubjectiveQuestion(question: Question): boolean {
-    return question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY;
-  }
-
-  /**
-   * Marks an answer for manual review by setting its review status to PENDING.
-   * 
-   * Used for subjective questions that cannot be auto-scored and require human review.
-   * 
-   * @param answer - The user answer to mark for review
-   * @param attemptId - The ID of the test attempt
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async markAnswerForReview(answer: TestUserAnswer, attemptId: string, authContext: AuthContext): Promise<void> {
-    if (answer.reviewStatus !== AnswerReviewStatus.PENDING) {
-      await this.updateAnswerScore(
-        attemptId,
-        answer.questionId,
-        null,
-        AnswerReviewStatus.PENDING,
-        authContext
-      );
-    }
-  }
-
-  /**
-   * Processes a single objective answer by calculating its score and updating the database.
-   * 
-   * Used for individual objective questions that can be auto-scored without manual review.
-   * 
-   * @param answer - The user answer to process
-   * @param question - The question entity with type and marks
-   * @param attemptId - The ID of the test attempt
-   * @param authContext - Authentication context for tenant/organization filtering
-   */
-  private async processObjectiveAnswer(answer: TestUserAnswer, question: Question, attemptId: string, authContext: AuthContext): Promise<void> {
-    const needsUpdate = this.needsScoreUpdate(answer);
-    if (needsUpdate) {
-      const questionScore = this.calculateQuestionScore(JSON.parse(answer.answer), question);
-      const validatedQuestionScore = Number(questionScore) || 0;
-      
-      await this.updateAnswerScore(
-        attemptId,
-        answer.questionId,
-        validatedQuestionScore,
-        AnswerReviewStatus.NOT_APPLICABLE,
-        authContext
-      );
-    }
   }
 
   private async findAttemptById(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
