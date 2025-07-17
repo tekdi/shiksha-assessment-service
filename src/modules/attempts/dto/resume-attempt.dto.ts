@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { AttemptStatus, ReviewStatus, ResultType, SubmissionType } from '../../tests/entities/test-attempt.entity';
-import { QuestionType, GradingType } from '../../questions/entities/question.entity';
+import { QuestionType } from '../../questions/entities/question.entity';
+import { GradingType } from '../../tests/entities/test.entity';
 
 export class QuestionOptionDto {
   @ApiProperty({
