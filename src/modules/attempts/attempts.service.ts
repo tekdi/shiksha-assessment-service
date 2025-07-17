@@ -6,7 +6,7 @@ import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/ent
 import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
-import { Question, QuestionType } from '../questions/entities/question.entity';
+import { Question, QuestionStatus, QuestionType } from '../questions/entities/question.entity';
 import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
@@ -321,9 +321,9 @@ export class AttemptsService {
       throw new BadRequestException('Only submitted attempts can be reviewed');
     }
 
-    // Validate review status
-    if (attempt.reviewStatus !== ReviewStatus.PENDING) {
-      throw new BadRequestException('Only attempts with pending review status can be reviewed');
+    // Validate review status - allow review if status is PENDING or UNDER_REVIEW
+    if (attempt.reviewStatus === ReviewStatus.REVIEWED) {
+      throw new BadRequestException('Attempt has already been fully reviewed');
     }
 
     // Get test information for passing marks
@@ -354,15 +354,15 @@ export class AttemptsService {
       },
     });
 
-    // Get questions for validation
-    const questionIds = attemptAnswers.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
-      where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    // Get questions for validation using testId and testQuestions relationship
+    const questions = await this.questionRepository
+      .createQueryBuilder('question')
+      .innerJoin('testQuestions', 'tq', 'tq.questionId = question.questionId')
+      .where('tq.testId = :testId', { testId: attempt.testId })
+      .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('question.status = :status', { status: QuestionStatus.PUBLISHED })
+      .getMany();
 
     const questionMap = new Map(questions.map(q => [q.questionId, q]));
 
@@ -371,54 +371,40 @@ export class AttemptsService {
     for (const answerReview of reviewDto.answers) {
       // Check for duplicate question reviews
       if (reviewedQuestionIds.has(answerReview.questionId)) {
-        throw new BadRequestException(`Duplicate review for question: ${answerReview.questionId}`);
+        const question = questionMap.get(answerReview.questionId);
+        const questionTitle = question?.text || answerReview.questionId;
+        throw new BadRequestException(`Duplicate review for question: "${questionTitle}"`);
       }
       reviewedQuestionIds.add(answerReview.questionId);
 
       // Validate question exists in this attempt
       const answer = attemptAnswers.find(a => a.questionId === answerReview.questionId);
       if (!answer) {
-        throw new BadRequestException(`Question ${answerReview.questionId} not found in this attempt`);
+        const question = questionMap.get(answerReview.questionId);
+        const questionTitle = question?.text || answerReview.questionId;
+        throw new BadRequestException(`Question "${questionTitle}" not found in this attempt`);
       }
 
       // Validate question exists and is reviewable
       const question = questionMap.get(answerReview.questionId);
       if (!question) {
-        throw new BadRequestException(`Question ${answerReview.questionId} not found`);
+        throw new BadRequestException(`Question with ID "${answerReview.questionId}" not found`);
       }
 
       // Only subjective and essay questions can be reviewed
       if (question.type !== QuestionType.SUBJECTIVE && question.type !== QuestionType.ESSAY) {
-        throw new BadRequestException(`Question ${answerReview.questionId} is not a reviewable question type`);
+        throw new BadRequestException(`Question "${question.text}" is not a reviewable question type`);
       }
 
       // Validate score is within bounds
       const validatedScore = Number(answerReview.score) || 0;
       if (validatedScore < 0 || validatedScore > question.marks) {
-        throw new BadRequestException(`Score for question ${answerReview.questionId} must be between 0 and ${question.marks}. Provided: ${validatedScore}`);
+        throw new BadRequestException(`Score for question "${question.text}" must be between 0 and ${question.marks}. Provided: ${validatedScore}`);
       }
 
-      // Validate answer is pending review
+      // Validate answer is pending review - allow review of questions that are still pending
       if (answer.reviewStatus !== 'P') { // PENDING
-        throw new BadRequestException(`Question ${answerReview.questionId} is not pending review`);
-      }
-    }
-
-    // Check if all pending subjective questions are being reviewed
-    const pendingSubjectiveAnswers = attemptAnswers.filter(answer => {
-      const question = questionMap.get(answer.questionId);
-      return answer.reviewStatus === 'P' && 
-             question && 
-             (question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY);
-    });
-
-    const pendingQuestionIds = new Set(pendingSubjectiveAnswers.map(a => a.questionId));
-    const reviewedQuestionIdsSet = new Set(reviewDto.answers.map(a => a.questionId));
-
-    // Check if all pending questions are being reviewed
-    for (const pendingQuestionId of pendingQuestionIds) {
-      if (!reviewedQuestionIdsSet.has(pendingQuestionId)) {
-        throw new BadRequestException(`All pending subjective questions must be reviewed. Missing: ${pendingQuestionId}`);
+        throw new BadRequestException(`Question "${question.text}" is not pending review`);
       }
     }
 
@@ -442,6 +428,24 @@ export class AttemptsService {
           reviewedAt: new Date(),
         }
       );
+    }
+
+    // Check if all pending subjective questions have been reviewed
+    const pendingSubjectiveAnswers = attemptAnswers.filter(answer => {
+      const question = questionMap.get(answer.questionId);
+      return answer.reviewStatus === 'P' && 
+             question && 
+             (question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY);
+    });
+
+    // Determine attempt review status based on whether all questions are reviewed
+    let attemptReviewStatus: ReviewStatus;
+    if (pendingSubjectiveAnswers.length === 0) {
+      // All subjective questions have been reviewed
+      attemptReviewStatus = ReviewStatus.REVIEWED;
+    } else {
+      // Some questions still pending - mark as under review
+      attemptReviewStatus = ReviewStatus.UNDER_REVIEW;
     }
 
     // Calculate final score by preserving existing auto-graded scores and adding reviewed scores
@@ -482,9 +486,13 @@ export class AttemptsService {
     const validatedFinalScore = Number(finalScore) || 0;
     
     attempt.score = validatedFinalScore;
-    attempt.result = validatedFinalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
-    attempt.reviewStatus = ReviewStatus.REVIEWED;
+    attempt.reviewStatus = attemptReviewStatus;
     attempt.updatedBy = authContext.userId;
+
+    // Only set result when attempt is fully reviewed
+    if (attemptReviewStatus === ReviewStatus.REVIEWED) {
+      attempt.result = validatedFinalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+    }
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
@@ -504,6 +512,7 @@ export class AttemptsService {
         reviewedBy: authContext.userId,
         answersReviewed: reviewDto.answers.length,
         overallRemarks: reviewDto.overallRemarks,
+        reviewStatus: savedAttempt.reviewStatus,
       }
     );
 
@@ -517,7 +526,7 @@ export class AttemptsService {
       .leftJoin('questions', 'question', 'question.questionId = answers.questionId')
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.PENDING })
+      .andWhere('attempt.reviewStatus IN (:...reviewStatuses)', { reviewStatuses: [ReviewStatus.PENDING, ReviewStatus.UNDER_REVIEW] })
       .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSIGNMENT })
       .andWhere('answers.reviewStatus = :answerReviewStatus', { answerReviewStatus: 'P' })
       .select([
@@ -525,6 +534,7 @@ export class AttemptsService {
         'attempt.testId',
         'attempt.userId',
         'attempt.submittedAt',
+        'attempt.reviewStatus',
         'answers.questionId',
         'question.text as title',
         'question.type',
@@ -782,6 +792,67 @@ export class AttemptsService {
     }
 
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
+  }
+
+  async getReviewProgress(attemptId: string, authContext: AuthContext): Promise<any> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    // Get all answers for this attempt
+    const attemptAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Get questions to identify reviewable ones
+    const questionIds = attemptAnswers.map(answer => answer.questionId);
+    const questions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Count reviewable questions and their status
+    let totalReviewable = 0;
+    let reviewed = 0;
+    let pending = 0;
+
+    for (const answer of attemptAnswers) {
+      const question = questionMap.get(answer.questionId);
+      if (question && (question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY)) {
+        totalReviewable++;
+        if (answer.reviewStatus === 'R') {
+          reviewed++;
+        } else if (answer.reviewStatus === 'P') {
+          pending++;
+        }
+      }
+    }
+
+    return {
+      attemptId,
+      reviewStatus: attempt.reviewStatus,
+      totalReviewable,
+      reviewed,
+      pending,
+      progressPercentage: totalReviewable > 0 ? Math.round((reviewed / totalReviewable) * 100) : 0,
+    };
   }
 
   private shuffleArray<T>(array: T[]): T[] {

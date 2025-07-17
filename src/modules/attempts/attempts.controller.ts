@@ -82,7 +82,8 @@ export class AttemptsController {
     return { 
       attemptId: attempt.attemptId, 
       score: attempt.score,
-      result: attempt.result 
+      result: attempt.result,
+      reviewStatus: attempt.reviewStatus 
     };
   }
 
@@ -92,5 +93,13 @@ export class AttemptsController {
   async getPendingReviews(@Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
+  }
+
+  @Get(':attemptId/review-progress')
+  @ApiOperation({ summary: 'Get review progress for an attempt' })
+  @ApiResponse({ status: 200, description: 'Review progress retrieved', type: ApiSuccessResponseDto })
+  async getReviewProgress(@Param('attemptId') attemptId: string, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    return this.attemptsService.getReviewProgress(attemptId, authContext);
   }
 } 
