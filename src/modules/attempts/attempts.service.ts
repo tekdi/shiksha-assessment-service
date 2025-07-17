@@ -224,6 +224,11 @@ export class AttemptsService {
       const question = questionMap.get(answerDto.questionId);
       const existingAnswer = existingAnswersMap.get(answerDto.questionId);
 
+      // Add null check for question object before calculating score
+      if (!question) {
+        throw new NotFoundException(`Question not found`);
+      }
+
       // Calculate score and review status based on question type
       let score = await this.calculateQuestionScore(answerDto.answer, question);
       let reviewStatus = AnswerReviewStatus.PENDING;
@@ -231,9 +236,9 @@ export class AttemptsService {
         reviewStatus = AnswerReviewStatus.REVIEWED
       } 
 
-      // Ensure score is a valid number
+      // Improved score validation: check if score is a finite number and default to 0 if not
       const numericScore = Number(score);
-      const finalScore = isNaN(numericScore) ? 0 : numericScore;
+      const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
 
       if (existingAnswer) {
         existingAnswer.answer = answer;
