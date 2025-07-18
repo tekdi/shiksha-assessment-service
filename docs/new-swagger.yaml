@@ -387,7 +387,7 @@ components:
           type: integer
         gradingType:
           type: string
-          enum: [quiz, exercise]
+          enum: [quiz, assignment, feedback]
         params:
           type: object
           properties:
