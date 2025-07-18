@@ -54,7 +54,7 @@ export class AttemptsController {
   })
   async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any): Promise<{ result: any }> {
     const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.getAttempt(attemptId, authContext);
+    const result = await this.attemptsService.getAttemptAnswers(attemptId, authContext);
     return result;
   }
 

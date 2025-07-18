@@ -136,7 +136,7 @@ export class AttemptsService {
    * @param attemptId - The unique identifier of the attempt to retrieve
    * @param authContext - Authentication context containing user and organization details
    */
-    async getAttempt(attemptId: string, authContext: AuthContext): Promise<any> {
+    async getAttemptAnswers(attemptId: string, authContext: AuthContext): Promise<any> {
       // Step 1: Validate and retrieve the attempt
       const attempt = await this.validateAndRetrieveAttempt(attemptId, authContext);
       // Fetch user's answers for this attempt 
