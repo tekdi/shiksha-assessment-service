@@ -17,7 +17,6 @@ export class AnswerDto {
   @ApiPropertyOptional({ type: [Object] })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
   matches?: Array<{
     optionId: string;
     matchWith: string;

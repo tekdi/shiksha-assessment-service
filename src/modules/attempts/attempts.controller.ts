@@ -34,6 +34,30 @@ export class AttemptsController {
     return { attemptId: attempt.attemptId };
   }
 
+  @Get(':attemptId/resume')
+  @ApiOperation({ 
+    summary: 'Get / Resume an in-progress attempt',
+    description: 'Load an existing in-progress attempt and recover previous answers, state, time, and review statuses. Cannot be used for submitted attempts.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Attempt resumed successfully',
+    type: ApiSuccessResponseDto
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot resume a submitted attempt',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attempt not found',
+  })
+  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any): Promise<{ result: any }> {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.getAttemptAnswers(attemptId, authContext);
+    return result;
+  }
+
   @Get(':attemptId/questions')
   @ApiOperation({ summary: 'Get questions for an attempt' })
   @ApiResponse({ status: 200, description: 'Questions retrieved', type: ApiSuccessResponseDto })
@@ -99,4 +123,5 @@ export class AttemptsController {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
   }
+
 } 
