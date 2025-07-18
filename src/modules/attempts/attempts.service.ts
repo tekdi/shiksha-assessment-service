@@ -150,6 +150,9 @@ export class AttemptsService {
       order: { createdAt: 'ASC' }, 
     });
 
+    // update userattempt with updatedAt
+    await this.attemptRepository.update(attempt.attemptId, { updatedAt: new Date() });
+
     return { 
       attempt : {
         attemptId: attempt.attemptId,
