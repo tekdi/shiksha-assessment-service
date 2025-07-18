@@ -1,12 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
-import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
-import { Test, TestType, TestStatus } from '../tests/entities/test.entity';
+import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
+import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
+import { QuestionOption } from '../questions/entities/question-option.entity';
 import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitAnswerDto } from './dto/submit-answer.dto';
@@ -33,6 +34,8 @@ export class AttemptsService {
     private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
+    @InjectRepository(QuestionOption)
+    private readonly questionOptionRepository: Repository<QuestionOption>,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
   ) {}
@@ -63,6 +66,24 @@ export class AttemptsService {
     }
     if (test.endDate && now > test.endDate) {
       throw new Error('Test is no longer available for attempts');
+    }
+    // check if user has the last attempt which is in progress or submitted but not reviewed
+    const lastAttempt = await this.attemptRepository.findOne({
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId, 
+        status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
+        reviewStatus: ReviewStatus.PENDING
+      },
+    });
+
+    if (lastAttempt?.status === AttemptStatus.IN_PROGRESS) {
+      throw new Error('You have a incomplete attempt. Please complete it before starting a new attempt.');
+    }
+    if (lastAttempt?.status === AttemptStatus.SUBMITTED && lastAttempt?.reviewStatus === ReviewStatus.PENDING) {
+      throw new Error('Your last attempt is currently under review. Please wait for the review to finish before starting a new one.');
     }
 
     // Get all existing attempts for this user and test
@@ -100,24 +121,51 @@ export class AttemptsService {
     }
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_STARTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        attemptNumber: savedAttempt.attempt,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_STARTED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      attemptNumber: savedAttempt.attempt,
+    });
 
     return savedAttempt;
   }
 
+    /**
+   * Retrieves a test attempt with user answers, and progress metrics.
+   * 
+   * @param attemptId - The unique identifier of the attempt to retrieve
+   * @param authContext - Authentication context containing user and organization details
+   */
+    async getAttempt(attemptId: string, authContext: AuthContext): Promise<any> {
+      // Step 1: Validate and retrieve the attempt
+      const attempt = await this.validateAndRetrieveAttempt(attemptId, authContext);
+      // Fetch user's answers for this attempt 
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId: attempt.attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      select: ['questionId', 'answer', 'updatedAt'],
+      order: { createdAt: 'ASC' }, 
+    });
 
+    return { 
+      attempt : {
+        attemptId: attempt.attemptId,
+        testId: attempt.testId,
+        userId: attempt.userId,
+        attempt: attempt.attempt,
+        startedAt: attempt.startedAt,
+        currentPosition: attempt.currentPosition,
+        timeSpent: attempt.timeSpent,
+        updatedAt: attempt.updatedAt
+      },
+      answers: userAnswers,
+    };
+  }
+
+  // This methods is not used , it is used for resuming an in-progress test including hierarchy of questions and sections
   /**
    * Retrieves a test attempt with all associated data for resuming an in-progress test.
    * This method orchestrates the retrieval and transformation of attempt data including
@@ -126,7 +174,7 @@ export class AttemptsService {
    * @param attemptId - The unique identifier of the attempt to retrieve
    * @param authContext - Authentication context containing user and organization details
    */
-  async getAttempt(attemptId: string, authContext: AuthContext): Promise<any> {
+  async getAttempt_NotInUse(attemptId: string, authContext: AuthContext): Promise<any> {
     // Step 1: Validate and retrieve the attempt
     const attempt = await this.validateAndRetrieveAttempt(attemptId, authContext);
     
@@ -626,17 +674,7 @@ export class AttemptsService {
 
 
   async getAttemptQuestions(attemptId: string, authContext: AuthContext): Promise<Question[]> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Get questions from the resolved test (generated test for rule-based)
     const testId = attempt.resolvedTestId || attempt.testId;
@@ -665,8 +703,15 @@ export class AttemptsService {
     });
   }
 
-  async submitAnswer(attemptId: string, submitAnswerDto: SubmitAnswerDto, authContext: AuthContext): Promise<void> {
-    // Verify attempt exists and belongs to user
+  async submitAnswer(attemptId: string, submitAnswerDto: SubmitAnswerDto[], authContext: AuthContext): Promise<void> {
+    // Convert single answer to array for unified processing
+    const answersArray = Array.isArray(submitAnswerDto) ? submitAnswerDto : [submitAnswerDto];
+    
+    if (answersArray.length === 0) {
+      throw new NotFoundException('No answers provided');
+    }
+
+    // Verify attempt exists and belongs to user (only once)
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -681,79 +726,129 @@ export class AttemptsService {
       throw new NotFoundException('Attempt not found');
     }
 
-    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+    if (attempt.status === AttemptStatus.SUBMITTED) {
       throw new Error('Cannot submit answer to completed attempt');
     }
 
-    // Get question to validate answer format
-    const question = await this.questionRepository.findOne({
+    // Get all questions to validate answer formats and determine question types (batch query)
+    const questionIds = answersArray.map(answer => answer.questionId);
+    const questions = await this.questionRepository.find({
       where: {
-        questionId: submitAnswerDto.questionId,
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      relations: ['options'], // Load options for scoring
+    });
+
+    if (questions.length !== questionIds.length) {
+      const foundQuestionIds = questions.map(q => q.questionId);
+      const missingQuestionIds = questionIds.filter(id => !foundQuestionIds.includes(id));
+      throw new NotFoundException(`Questions not found: ${missingQuestionIds.join(', ')}`);
+    }
+
+    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Get existing answers for this attempt (batch query)
+    const existingAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        questionId: In(questionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
     });
 
-    if (!question) {
-      throw new NotFoundException('Question not found');
-    }
+    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
 
-    // Validate answer based on question type
-    this.validateAnswer(submitAnswerDto.answer, question);
+    // Prepare answers to save/update
+    const answersToSave = [];
+    const answersToUpdate = [];
+    let totalTimeSpent = 0;
 
-    // Convert answer to JSON string
-    const answerJson = JSON.stringify(submitAnswerDto.answer);
+    for (const answerDto of answersArray) {
+      const answer = JSON.stringify(answerDto.answer);
+      const question = questionMap.get(answerDto.questionId);
+      const existingAnswer = existingAnswersMap.get(answerDto.questionId);
 
-    // Save or update answer
-    const existingAnswer = await this.testUserAnswerRepository.findOne({
-      where: {
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (existingAnswer) {
-      existingAnswer.answer = answerJson;
-      existingAnswer.updatedAt = new Date();
-      await this.testUserAnswerRepository.save(existingAnswer);
-    } else {
-      const userAnswer = this.testUserAnswerRepository.create({
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        answer: answerJson,
-        anssOrder: '1', // This could be enhanced to track order
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      });
-      await this.testUserAnswerRepository.save(userAnswer);
-    }
-
-    // Update attempt time spent if provided
-    if (submitAnswerDto.timeSpent) {
-      attempt.timeSpent = (attempt.timeSpent || 0) + submitAnswerDto.timeSpent;
-      await this.attemptRepository.save(attempt);
-    }
-
-    // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ANSWER_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId,
-        questionId: submitAnswerDto.questionId,
-        timeSpent: submitAnswerDto.timeSpent,
-        answer: submitAnswerDto.answer,
+      // Add null check for question object before calculating score
+      if (!question) {
+        throw new NotFoundException(`Question not found`);
       }
-    );
+
+      // Calculate score and review status based on question type
+      let score = await this.calculateQuestionScore(answerDto.answer, question);
+      let reviewStatus = AnswerReviewStatus.PENDING;
+      if (attempt.test.isObjective) {
+        reviewStatus = AnswerReviewStatus.REVIEWED
+      } 
+
+      // Improved score validation: check if score is a finite number and default to 0 if not
+      const numericScore = Number(score);
+      const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
+
+      if (existingAnswer) {
+        existingAnswer.answer = answer;
+        existingAnswer.score = finalScore;
+        existingAnswer.reviewStatus = reviewStatus;
+        existingAnswer.updatedAt = new Date();
+        answersToUpdate.push(existingAnswer);
+      } else {
+        const userAnswer = this.testUserAnswerRepository.create({
+          attemptId,
+          questionId: answerDto.questionId,
+          answer: answer,
+          score: finalScore,
+          reviewStatus: reviewStatus,
+          anssOrder: '1', // This could be enhanced to track order
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        });
+        answersToSave.push(userAnswer);
+      }
+
+      // Accumulate time spent
+      if (answerDto.timeSpent) {
+        totalTimeSpent += answerDto.timeSpent;
+      }
+    }
+
+    // Save all answers in batch operations
+    if (answersToSave.length > 0) {
+      await this.testUserAnswerRepository.save(answersToSave);
+    }
+    if (answersToUpdate.length > 0) {
+      await this.testUserAnswerRepository.save(answersToUpdate);
+    }
+
+    // Update attempt time spent
+    if (totalTimeSpent > 0) {
+      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
+    }
+
+    // Update current position based on the last question's ordering
+    if (answersArray.length > 0) {
+      const testId = attempt.resolvedTestId || attempt.testId;
+      const lastQuestionId = answersArray[answersArray.length - 1].questionId;
+      const testQuestion = await this.testQuestionRepository.findOne({
+        where: {
+          testId,
+          questionId: lastQuestionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      if (testQuestion) {
+        attempt.currentPosition = testQuestion.ordering;
+      }
+    }
+
+    await this.attemptRepository.save(attempt);
+
   }
 
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -763,13 +858,14 @@ export class AttemptsService {
       relations: ['test'],
     });
 
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+    // Check if attempt is already submitted
+    if (attempt.status === AttemptStatus.SUBMITTED) {
+      throw new Error('Attempt is already submitted');
     }
 
-    attempt.status = AttemptStatus.SUBMITTED;
-    attempt.submittedAt = new Date();
-    attempt.submissionType = SubmissionType.SELF;
+    // Get test information
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.findTestById(testId, authContext);
 
     // Check if the test itself is a FEEDBACK type test
     if (attempt.test?.gradingType === GradingType.FEEDBACK) {
@@ -777,56 +873,42 @@ export class AttemptsService {
       attempt.score = null;
       attempt.result = null;
     } else {
-      // Check if test has questions that need review (ASSIGNMENT type questions)
-      const hasSubjectiveQuestions = await this.hasSubjectiveQuestions(attemptId, authContext);
       
-      if (hasSubjectiveQuestions) {
+      // Calculate sum of all answers score
+      const totalAnswersScore = await this.calculateTotalAttemptScore(attemptId, authContext);
+      attempt.score = totalAnswersScore;
+      if (test.isObjective) {
+        attempt.reviewStatus = ReviewStatus.REVIEWED;
+        attempt.result = totalAnswersScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+      } else {
         // Set review status to pending for manual review
         attempt.reviewStatus = ReviewStatus.PENDING;
-      } else {
-        // Auto-calculate score for objective questions (QUIZ type)
-        const score = await this.calculateObjectiveScore(attemptId, authContext);
-        attempt.score = score;
-        attempt.reviewStatus = ReviewStatus.REVIEWED;
-        attempt.result = score >= 60 ? ResultType.PASS : ResultType.FAIL; // Assuming 60% is passing
       }
-    }
+    } 
+
+    // Update attempt status
+    attempt.status = AttemptStatus.SUBMITTED;
+    attempt.submittedAt = new Date();
+    attempt.submissionType = SubmissionType.SELF;
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_SUBMITTED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        score: savedAttempt.score,
-        result: savedAttempt.result,
-        timeSpent: savedAttempt.timeSpent,
-        reviewStatus: savedAttempt.reviewStatus,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_SUBMITTED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      score: savedAttempt.score,
+      result: savedAttempt.result,
+      timeSpent: savedAttempt.timeSpent,
+      reviewStatus: savedAttempt.reviewStatus,
+      isObjective: test.isObjective,
+    });
 
-    return savedAttempt;
+    return { ...savedAttempt, totalMarks: test.totalMarks };
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Update scores for reviewed answers
     for (const answerReview of reviewDto.answers) {
@@ -858,22 +940,14 @@ export class AttemptsService {
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.pluginManager.triggerEvent(
-      PluginManagerService.EVENTS.ATTEMPT_REVIEWED,
-      {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        userId: authContext.userId,
-      },
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        score: savedAttempt.score,
-        result: savedAttempt.result,
-        reviewedBy: authContext.userId,
-        answersReviewed: reviewDto.answers.length,
-      }
-    );
+    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_REVIEWED, authContext, {
+      attemptId: savedAttempt.attemptId,
+      testId: savedAttempt.testId,
+      score: savedAttempt.score,
+      result: savedAttempt.result,
+      reviewedBy: authContext.userId,
+      answersReviewed: reviewDto.answers.length,
+    });
 
     return savedAttempt;
   }
@@ -903,6 +977,21 @@ export class AttemptsService {
       .getMany();
   }
 
+  /**
+   * Generates questions for a rule-based test attempt by creating a new generated test
+   * and populating it with questions based on the test rules.
+   * 
+   * This function:
+   * 1. Creates a new generated test instance for the specific attempt
+   * 2. Links the attempt to the generated test via resolvedTestId
+   * 3. Retrieves all active rules for the original test
+   * 4. For each rule, selects questions either from pre-selected pool or dynamic criteria
+   * 5. Adds selected questions to the generated test with proper ordering
+   * 
+   * @param attempt - The test attempt that needs questions generated
+   * @param originalTest - The original rule-based test
+   * @param authContext - Authentication context for tenant/organization filtering
+   */
   private async generateRuleBasedTestQuestions(attempt: TestAttempt, originalTest: Test, authContext: AuthContext): Promise<void> {
     // Create a new generated test for this specific attempt
     const generatedTest = this.testRepository.create({
@@ -998,6 +1087,14 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Selects a specified number of questions from a pool of question IDs based on the given strategy.
+   *    * 
+   * @param questionIds - Array of question IDs to select from
+   * @param count - Number of questions to select
+   * @param strategy - Selection strategy ('random', 'sequential', 'weighted')
+   * @returns Array of selected question IDs
+   */
   private selectQuestionsFromPool(questionIds: string[], count: number, strategy: string): string[] {
     switch (strategy) {
       case 'random':
@@ -1013,6 +1110,14 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Selects a specified number of questions from pre-selected questions in a rule based on the given strategy.
+   * 
+   * @param availableQuestions - Array of TestQuestion entities to select from
+   * @param count - Number of questions to select
+   * @param strategy - Selection strategy ('random', 'sequential', 'weighted')
+   * @returns Array of selected TestQuestion entities
+   */
   private selectQuestionsFromRule(availableQuestions: TestQuestion[], count: number, strategy: string): TestQuestion[] {
     switch (strategy) {
       case 'random':
@@ -1028,111 +1133,257 @@ export class AttemptsService {
     }
   }
 
-  private validateAnswer(answer: any, question: Question): void {
-    switch (question.type) {
-      case QuestionType.MCQ:
-      case QuestionType.TRUE_FALSE:
-        if (!answer.selectedOptionIds || answer.selectedOptionIds.length !== 1) {
-          throw new Error('MCQ/True-False questions require exactly one selected option');
-        }
-        break;
-      case QuestionType.MULTIPLE_ANSWER:
-        if (!answer.selectedOptionIds || answer.selectedOptionIds.length === 0) {
-          throw new Error('Multiple answer questions require at least one selected option');
-        }
-        break;
-      case QuestionType.SUBJECTIVE:
-      case QuestionType.ESSAY:
-        if (!answer.text || answer.text.trim().length === 0) {
-          throw new Error('Subjective/Essay questions require text answer');
-        }
-        if (question.params?.maxLength && answer.text.length > question.params.maxLength) {
-          throw new Error(`Answer exceeds maximum length of ${question.params.maxLength} characters`);
-        }
-        if (question.params?.minLength && answer.text.length < question.params.minLength) {
-          throw new Error(`Answer must be at least ${question.params.minLength} characters`);
-        }
-        break;
-      case QuestionType.FILL_BLANK:
-        if (!answer.blanks || answer.blanks.length === 0) {
-          throw new Error('Fill-in-the-blank questions require blank answers');
-        }
-        break;
-      case QuestionType.MATCH:
-        if (!answer.matches || answer.matches.length === 0) {
-          throw new Error('Matching questions require match answers');
-        }
-        // Validate that each match has optionId and matchWith
-        for (const match of answer.matches) {
-          if (!match.optionId || !match.matchWith) {
-            throw new Error('Each match must have optionId and matchWith');
-          }
-        }
-        break;
-    }
-  }
-
-  private async hasSubjectiveQuestions(attemptId: string, authContext: AuthContext): Promise<boolean> {
-    const subjectiveQuestions = await this.questionRepository
-      .createQueryBuilder('question')
-      .innerJoin('testUserAnswers', 'answers', 'answers.questionId = question.questionId')
-      .where('answers.attemptId = :attemptId', { attemptId })
-      .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.gradingType IN (:...gradingTypes)', { gradingTypes: [GradingType.ASSIGNMENT] })
-      .getCount();
-
-    return subjectiveQuestions > 0;
-  }
-
-  private async calculateObjectiveScore(attemptId: string, authContext: AuthContext): Promise<number> {
-    const answers = await this.testUserAnswerRepository
+  /**
+   * Calculates the total score from all answers for an attempt.
+   * 
+   * This function uses a direct SQL query to sum all scores efficiently.
+   * 
+   * @param attemptId - The ID of the test attempt to calculate total score for
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<number> - The total score from all answers
+   */
+  private async calculateTotalAttemptScore(attemptId: string, authContext: AuthContext): Promise<number> {
+    const result = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
-      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
+      .select('COALESCE(SUM(answer.score), 0)', 'totalScore')
       .where('answer.attemptId = :attemptId', { attemptId })
       .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.QUIZ })
-      .select(['answer.answer', 'question.marks', 'question.type'])
-      .getMany();
+      .getRawOne();
 
-    let totalScore = 0;
-    let totalMarks = 0;
+    return parseFloat(result?.totalScore || '0');
+  }
 
-    for (const answer of answers) {
-      const question = await this.questionRepository.findOne({
-        where: { questionId: answer.questionId },
-      });
-      
-      if (question) {
-        totalMarks += question.marks;
-        const answerData = JSON.parse(answer.answer);
+  /**
+   * Calculates the score for a single question based on the user's answer and question type.
+   *
+   * This method implements comprehensive scoring logic for each question type:
+   * - MCQ/TRUE_FALSE: Full marks if correct option selected, 0 otherwise
+   * - MULTIPLE_ANSWER: Partial scoring based on correct/incorrect selections (configurable)
+   * - FILL_BLANK: Configurable partial scoring for each correct blank with case sensitivity
+   * - MATCH: Configurable partial scoring for each correct match
+   * - SUBJECTIVE/ESSAY: Returns 0 (scored manually)
+   * 
+   * @param answerData - The parsed user answer data
+   * @param question - The question entity with type and marks
+   * @returns number - The calculated score for this question
+   */
+  private async calculateQuestionScore(answerData: any, question: Question): Promise<number> {
+    // Get question options for validation
+    const options = await this.getQuestionOptions(question.questionId);
+    
+    let score: number;
+    
+    switch (question.type) {
+      case QuestionType.MCQ:
+      case QuestionType.TRUE_FALSE:
+        score = this.calculateMCQScore(answerData, question, options);
+        break;
         
-        // Calculate score based on question type
-        const score = this.calculateQuestionScore(answerData, question);
-        totalScore += score;
+      case QuestionType.MULTIPLE_ANSWER:
+        score = this.calculateMultipleAnswerScore(answerData, question, options);
+        break;
+        
+      case QuestionType.FILL_BLANK:
+        score = this.calculateFillBlankScore(answerData, question, options);
+        break;
+        
+      case QuestionType.MATCH:
+        score = this.calculateMatchScore(answerData, question, options);
+        break;
+        
+      case QuestionType.SUBJECTIVE:
+      case QuestionType.ESSAY:
+        // Subjective questions are scored manually
+        score = 0;
+        break;
+        
+      default:
+        score = 0;
+    }
+    
+    // Ensure the score is always a valid number
+    const numericScore = Number(score);
+    return isNaN(numericScore) ? 0 : numericScore;
+  }
+
+  /**
+   * Calculates score for MCQ and TRUE_FALSE questions.
+   * Full marks if correct option selected, 0 otherwise.
+   */
+  private calculateMCQScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const selectedOptionIds = answerData.selectedOptionIds || [];
+    
+    // MCQ should have exactly one correct option
+    const correctOption = options.find(opt => opt.isCorrect);
+    if (!correctOption) return 0;
+    // Check if the selected option is correct
+    const isCorrect = selectedOptionIds.length === 1 && 
+                     selectedOptionIds[0] === correctOption.questionOptionId;
+    
+    // Ensure question marks is a valid number
+    const questionMarks = Number(question.marks);
+    const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
+    
+    return isCorrect ? safeQuestionMarks : 0;
+  }
+
+  /**
+   * Calculates score for MULTIPLE_ANSWER questions with partial scoring.
+   * Supports both full marks for all correct or partial scoring per option.
+   */
+  private calculateMultipleAnswerScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const selectedOptionIds = answerData.selectedOptionIds || [];
+    const correctOptions = options.filter(opt => opt.isCorrect);
+    
+    if (correctOptions.length === 0) return 0;
+    
+    let totalScore = 0;
+    
+    // Award marks for correct selections
+    for (const correctOption of correctOptions) {
+      if (selectedOptionIds.includes(correctOption.questionOptionId)) {
+        totalScore += Number(correctOption.marks);
       }
+    }
+    // Ensure question marks is a valid number
+    const questionMarks = Number(question.marks);
+    const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
+    
+    // Check if partial scoring is enabled
+    if (question.allowPartialScoring) {
+      return totalScore;
+    } else {
+      // Full marks only if all correct options selected and no incorrect ones
+      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+    }
+  }
+
+  /**
+   * Calculates score for FILL_BLANK questions.
+   * Supports case sensitivity and exact matching with configurable partial scoring.
+   */
+  private calculateFillBlankScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const userBlanks = answerData.blanks || [];
+    const correctOptions = options.filter(opt => opt.isCorrect);
+    
+    if (correctOptions.length === 0 || userBlanks.length === 0) return 0;
+    
+    let totalScore = 0;
+    
+    for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+      const userAnswer = userBlanks[i]?.trim();
+      const correctAnswer = correctOptions[i]?.text?.trim();
+      
+      if (!userAnswer || !correctAnswer) continue;
+      
+      // Check case sensitivity
+      const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
+      const isCorrect = isCaseSensitive 
+        ? userAnswer === correctAnswer
+        : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+      
+      if (isCorrect) {
+        // Use individual option marks instead of equal distribution
+        totalScore += Number(correctOptions[i]?.marks || 0);
+      }
+    }
+    
+    // Ensure question marks is a valid number
+    const questionMarks = Number(question.marks);
+    const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
+    
+    // Check if partial scoring is enabled
+    if (question.allowPartialScoring) {
+      // Partial scoring: award marks for each correct blank using option marks
+      return totalScore;
+    } else {
+      // All-or-nothing: full marks only if all blanks are correct
+      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+    }
+  }
+
+  /**
+   * Calculates score for MATCH questions.
+   * Configurable partial scoring for each correct match.
+   */
+  private calculateMatchScore(answerData: any, question: Question, options: QuestionOption[]): number {
+    const userMatches = answerData.matches || [];
+    const correctOptions = options.filter(opt => opt.isCorrect);
+    
+    if (correctOptions.length === 0 || userMatches.length === 0) return 0;
+    
+    let totalScore = 0;
+    
+    // Process each user match
+    for (const userMatch of userMatches) {
+      // Find the correct option that matches this user selection
+      const correctOption = correctOptions.find(opt => 
+        opt.questionOptionId === userMatch.optionId && 
+        opt.matchWith === userMatch.matchWith
+      );
+      if (correctOption) {
+        totalScore += Number(correctOption.marks);
+      }
+    }
+    
+    // Ensure question marks is a valid number
+    const questionMarks = Number(question.marks);
+    const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
+    
+    // Check if partial scoring is enabled
+    if (question.allowPartialScoring) {
+      // Partial scoring: award marks for each correct match using option marks
+      return totalScore;
+    } else {
+      // All-or-nothing: full marks only if all matches are correct
+      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+    }
+  }
+
+  /**
+   * Retrieves question options for scoring validation.
+   */
+  private async getQuestionOptions(questionId: string): Promise<QuestionOption[]> {
+    return this.questionOptionRepository.find({
+      where: { questionId },
+      order: { ordering: 'ASC' },
+    });
+  }
+
+  /**
+   * Calculates the final score for an attempt after manual review of subjective questions.
+   * 
+   * This is used after manual review when all subjective questions have been scored.
+   * 
+   * @param attemptId - The ID of the test attempt to calculate final score for
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<number> - The final score as a percentage
+   */
+  private async calculateFinalScore(attemptId: string, authContext: AuthContext): Promise<number> {
+    const { answers, totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
+    
+    let totalScore = 0;
+    for (const answer of answers) {
+      totalScore += answer.score || 0;
     }
 
     return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
   }
 
-  private calculateQuestionScore(answerData: any, question: Question): number {
-    // This is a simplified scoring logic - you might want to enhance it
-    switch (question.type) {
-      case QuestionType.MCQ:
-      case QuestionType.TRUE_FALSE:
-        // Check if selected option is correct
-        return answerData.selectedOptionIds?.length > 0 ? question.marks : 0;
-      case QuestionType.MULTIPLE_ANSWER:
-        // Partial scoring for multiple answer questions
-        return question.marks; // Simplified - you'd need to check each option
-      default:
-        return 0; // Subjective questions are scored manually
-    }
-  }
-
-  private async calculateFinalScore(attemptId: string, authContext: AuthContext): Promise<number> {
+  /**
+   * Retrieves all answers for an attempt along with the total possible marks.
+   * 
+   * This function:
+   * 1. Fetches all user answers for the specified attempt
+   * 2. For each answer, retrieves the associated question to get its marks
+   * 3. Calculates the total possible marks by summing all question marks
+   * 
+   * @param attemptId - The ID of the test attempt
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{answers: TestUserAnswer[], totalMarks: number}> - Object containing answers and total marks
+   */
+  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: TestUserAnswer[], totalMarks: number }> {
     const answers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
@@ -1141,9 +1392,7 @@ export class AttemptsService {
       },
     });
 
-    let totalScore = 0;
     let totalMarks = 0;
-
     for (const answer of answers) {
       const question = await this.questionRepository.findOne({
         where: { questionId: answer.questionId },
@@ -1151,13 +1400,21 @@ export class AttemptsService {
 
       if (question) {
         totalMarks += question.marks;
-        totalScore += answer.score || 0;
       }
     }
 
-    return totalMarks > 0 ? (totalScore / totalMarks) * 100 : 0;
+    return { answers, totalMarks };
   }
 
+  /**
+   * Shuffles an array using the Fisher-Yates shuffle algorithm.
+   * 
+   * This function creates a copy of the input array and randomly reorders its elements
+   * using the Fisher-Yates (Knuth) shuffle algorithm for unbiased randomization.
+   * 
+   * @param array - The array to shuffle
+   * @returns T[] - A new array with the same elements in random order
+   */
   private shuffleArray<T>(array: T[]): T[] {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
@@ -1167,4 +1424,47 @@ export class AttemptsService {
     return shuffled;
   }
 
+  private async findAttemptById(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+
+    return attempt;
+  }
+
+  private async findTestById(testId: string, authContext: AuthContext): Promise<Test> {
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    return test;
+  }
+
+  private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
+    await this.pluginManager.triggerEvent(
+      eventName,
+      {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        userId: authContext.userId,
+      },
+      eventData
+    );
+  }
 } 
