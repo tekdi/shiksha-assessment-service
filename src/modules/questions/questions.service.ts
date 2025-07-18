@@ -30,10 +30,16 @@ export class QuestionsService {
 
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
     const { options, testId, sectionId, isCompulsory, ...questionData } = createQuestionDto;
+    
     // Validate question data
     this.validateQuestionData(createQuestionDto);
+
+    // Validate question options
     this.validateQuestionOptions(createQuestionDto);
+
+    // Validate question parameters
     this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
+    
     if (testId && !sectionId) {
       throw new BadRequestException('sectionId is required when testId is provided');
     }
