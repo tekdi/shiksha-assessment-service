@@ -752,9 +752,6 @@ export class AttemptsService {
     // Get all question IDs from test questions
     const questionIds = testQuestions.map(testQuestion => testQuestion.questionId);
 
-    console.log('Debug - Question IDs found:', questionIds.length);
-    console.log('Debug - Question IDs:', questionIds);
-
     // Load all questions with their options (only published questions)
     const questions = await this.questionRepository.find({
       where: {
@@ -1034,73 +1031,101 @@ export class AttemptsService {
   async getAttemptAnswersheet(attemptId: string, authContext: AuthContext): Promise<any> {
     // Step 1: Validate attempt and its status
     const attempt = await this.validateAttemptForAnswersheet(attemptId, authContext);
+    const test = await this.testRepository.findOne({
+      where: {
+        testId: attempt.testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
 
-    // Step 2: Fetch test hierarchy with sections
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.fetchTestHierarchy(testId, authContext);
-
-    // Step 3: Retrieve user answers and related data
-    const { userAnswers, testQuestions, questions, questionMap, userAnswerMap } = 
-      await this.fetchAnswersheetData(attemptId, testId, authContext);
-
-    // Step 4: Build hierarchical sections with questions and answers
-    const sections = this.buildSectionsWithQuestions(
-      test,
-      testQuestions,
-      questionMap,
-      userAnswerMap,
-      attemptId
-    );
-
-    // Step 5: Add correct answer information to questions if enabled
-    if (test.showCorrectAnswer) {
-      sections.forEach(section => {
-        section.questions.forEach((questionData: any) => {
-          const question = questionMap.get(questionData.questionId);
-          if (question) {
-            this.addCorrectAnswerInfo(questionData, question, test.showCorrectAnswer);
-          }
-        });
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId: attempt.attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    let answers = [];
+    for (const userAnswer of userAnswers) {
+      const question = await this.questionRepository.findOne({
+        where: {
+          questionId: userAnswer.questionId,
+        },
+        relations: ['options'],
+      });
+      const parsedAnswer = JSON.parse(userAnswer.answer);
+      answers.push({
+        // Include the original userAnswer object with parsed answer
+        userAnswer: {
+          ...userAnswer,
+          answer: parsedAnswer, // Add parsed answer as a separate property
+        },
+        correctOptions: test.showCorrectAnswer ? question.options?.filter(opt => opt.isCorrect) : [],
       });
     }
+    // Step 3: Build the complete answersheet structure
+    const answersheet = {
+      attempt: attempt,     
+      answers: answers,
+    }; 
 
-    // Step 6: Return the complete answersheet structure
-    return {
-      result: {
-        testId: test.testId,
-        resolvedTestId: attempt.resolvedTestId,
-        title: test.title,
-        description: test.description,
-        totalMarks: test.totalMarks,
-        timeDuration: test.timeDuration,
-        showTime: test.showTime,
-        type: test.type,
-        passingMarks: test.passingMarks,
-        showCorrectAnswer: test.showCorrectAnswer,
-        showQuestionsOverview: test.showQuestionsOverview,
-        questionsShuffle: test.questionsShuffle,
-        answersShuffle: test.answersShuffle,
-        paginationLimit: test.paginationLimit,
-        showThankyouPage: test.showThankyouPage,
-        showAllQuestions: test.showAllQuestions,
-        answerSheet: test.answerSheet,
-        printAnswersheet: test.printAnswersheet,
-        attempt: {
-          attemptId: attempt.attemptId,
-          userId: attempt.userId,
-          attempt: attempt.attempt,
-          status: attempt.status,
-          reviewStatus: attempt.reviewStatus,
-          submissionType: attempt.submissionType,
-          result: attempt.result,
-          score: attempt.score,
-          currentPosition: attempt.currentPosition,
-          timeSpent: attempt.timeSpent,
-          startedAt: attempt.startedAt,
-          submittedAt: attempt.submittedAt,
-        },
-        sections: sections,
-      },
-    };
+    return answersheet;
+  }
+ 
+  /**
+   * Gets user answers for an attempt along with correct answers using query builder and joins
+   * @param attempt - The attempt entity
+   * @param authContext - Authentication context for tenant and organization validation
+   * @returns Array of user answers with correct answers
+   */
+  private async getUserAnswersWithCorrectAnswers(attempt: TestAttempt, authContext: AuthContext): Promise<any[]> {
+    
+    const testId = attempt.resolvedTestId || attempt.testId;
+
+    // Use query builder to get user answers with correct answers in a single query
+    const answersWithQuestions = await this.testUserAnswerRepository
+      .createQueryBuilder('userAnswer')
+      .leftJoin('questions', 'question', 'question.questionId = userAnswer.questionId')
+      .leftJoin('questionOptions', 'option', 'option.questionId = question.questionId')
+      .leftJoin('testQuestions', 'testQuestion', 'testQuestion.questionId = question.questionId')
+      .where('userAnswer.attemptId = :attemptId', { attemptId: attempt.attemptId })
+      .andWhere('userAnswer.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('userAnswer.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('testQuestion.testId = :testId', { testId })
+      .andWhere('question.status = :questionStatus', { questionStatus: QuestionStatus.PUBLISHED })
+      // if test.showCorrectAnswer is true, then add correct options to the query
+      .andWhere('option.isCorrect = :isCorrect', { isCorrect: true })
+      .select([
+        // User answer fields
+        'userAnswer.attemptAnsId',
+        'questionId',
+        'answer',
+        'score',
+        'reviewStatus',
+        'remarks',
+        'reviewedBy',
+        'reviewedAt',
+        'createdAt',
+        'updatedAt',
+        // Question fields
+        'question.questionId',
+        // Option fields
+        'option.questionOptionId',
+        'option.text',
+        'option.isCorrect',
+        'option.marks',
+        'option.ordering',
+        'option.blankIndex',
+        'option.caseSensitive',
+        'option.matchWith',
+        'option.media',
+        'option.matchWithMedia',
+      ])
+      .orderBy('testQuestion.ordering', 'ASC')
+      .addOrderBy('option.ordering', 'ASC')
+      .getRawMany();
+
+    return answersWithQuestions;
   }
 } 
