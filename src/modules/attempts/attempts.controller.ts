@@ -112,7 +112,8 @@ export class AttemptsController {
     return { 
       attemptId: attempt.attemptId, 
       score: attempt.score,
-      result: attempt.result 
+      result: attempt.result,
+      reviewStatus: attempt.reviewStatus 
     };
   }
 
