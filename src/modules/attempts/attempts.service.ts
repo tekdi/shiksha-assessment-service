@@ -315,17 +315,7 @@ export class AttemptsService {
     if (!attempt) {
       throw new NotFoundException('Attempt not found');
     }
-
-    // Validate attempt status
-    if (attempt.status !== AttemptStatus.SUBMITTED) {
-      throw new BadRequestException('Only submitted attempts can be reviewed');
-    }
-
-    // Validate review status - allow review if status is PENDING or UNDER_REVIEW
-    if (attempt.reviewStatus === ReviewStatus.REVIEWED) {
-      throw new BadRequestException('Attempt has already been fully reviewed');
-    }
-
+    
     // Get test information for passing marks
     const testId = attempt.resolvedTestId || attempt.testId;
     const test = await this.testRepository.findOne({
@@ -344,69 +334,27 @@ export class AttemptsService {
     if (test.isObjective) {
       throw new BadRequestException('Objective tests do not require manual review');
     }
+    
+    // Validate attempt status
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new BadRequestException('Only submitted attempts can be reviewed');
+    }
+
+    // Validate review status - allow review if status is PENDING or UNDER_REVIEW
+    if (attempt.reviewStatus === ReviewStatus.REVIEWED) {
+      throw new BadRequestException('Attempt has already been fully reviewed');
+    }
+   
 
     // Get all answers for this attempt to validate
-    const attemptAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Get questions for validation using testId and testQuestions relationship
-    const questions = await this.questionRepository
-      .createQueryBuilder('question')
-      .innerJoin('testQuestions', 'tq', 'tq.questionId = question.questionId')
-      .where('tq.testId = :testId', { testId: attempt.testId })
-      .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.status = :status', { status: QuestionStatus.PUBLISHED })
+    const attemptAnswers = await this.testUserAnswerRepository
+      .createQueryBuilder('answer')
+      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
+      .where('answer.attemptId = :attemptId', { attemptId })
+      .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('question.type IN (:...questionTypes)', { questionTypes: [QuestionType.SUBJECTIVE, QuestionType.ESSAY] })
       .getMany();
-
-    const questionMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Validate review data
-    const reviewedQuestionIds = new Set();
-    for (const answerReview of reviewDto.answers) {
-      // Check for duplicate question reviews
-      if (reviewedQuestionIds.has(answerReview.questionId)) {
-        const question = questionMap.get(answerReview.questionId);
-        const questionTitle = question?.text || answerReview.questionId;
-        throw new BadRequestException(`Duplicate review for question: "${questionTitle}"`);
-      }
-      reviewedQuestionIds.add(answerReview.questionId);
-
-      // Validate question exists in this attempt
-      const answer = attemptAnswers.find(a => a.questionId === answerReview.questionId);
-      if (!answer) {
-        const question = questionMap.get(answerReview.questionId);
-        const questionTitle = question?.text || answerReview.questionId;
-        throw new BadRequestException(`Question "${questionTitle}" not found in this attempt`);
-      }
-
-      // Validate question exists and is reviewable
-      const question = questionMap.get(answerReview.questionId);
-      if (!question) {
-        throw new BadRequestException(`Question with ID "${answerReview.questionId}" not found`);
-      }
-
-      // Only subjective and essay questions can be reviewed
-      if (question.type !== QuestionType.SUBJECTIVE && question.type !== QuestionType.ESSAY) {
-        throw new BadRequestException(`Question "${question.text}" is not a reviewable question type`);
-      }
-
-      // Validate score is within bounds
-      const validatedScore = Number(answerReview.score) || 0;
-      if (validatedScore < 0 || validatedScore > question.marks) {
-        throw new BadRequestException(`Score for question "${question.text}" must be between 0 and ${question.marks}. Provided: ${validatedScore}`);
-      }
-
-      // Validate answer is pending review - allow review of questions that are still pending
-      if (answer.reviewStatus !== 'P') { // PENDING
-        throw new BadRequestException(`Question "${question.text}" is not pending review`);
-      }
-    }
 
     // Update scores for reviewed answers
     for (const answerReview of reviewDto.answers) {
@@ -432,10 +380,7 @@ export class AttemptsService {
 
     // Check if all pending subjective questions have been reviewed
     const pendingSubjectiveAnswers = attemptAnswers.filter(answer => {
-      const question = questionMap.get(answer.questionId);
-      return answer.reviewStatus === 'P' && 
-             question && 
-             (question.type === QuestionType.SUBJECTIVE || question.type === QuestionType.ESSAY);
+      return answer.reviewStatus != AnswerReviewStatus.REVIEWED;
     });
 
     // Determine attempt review status based on whether all questions are reviewed
@@ -449,8 +394,6 @@ export class AttemptsService {
     }
 
     // Calculate final score by preserving existing auto-graded scores and adding reviewed scores
-    let autoGradedScore = 0;
-    let reviewedScore = 0;
     let totalScore = 0;
 
     // Get all answers to calculate the total score
@@ -463,20 +406,10 @@ export class AttemptsService {
     });
 
     for (const answer of allAnswers) {
-      const question = questionMap.get(answer.questionId);
-
-      if (question) {
+     
         const score = Number(answer.score) || 0;
         if (!isNaN(score)) {
           totalScore += score;
-          
-          // Categorize scores for debugging
-          if (answer.reviewStatus === 'N' as any) {
-            autoGradedScore += score;
-          } else if (answer.reviewStatus === 'R' as any) {
-            reviewedScore += score;
-          }
-        }
       }
     }
 
