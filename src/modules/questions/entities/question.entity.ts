@@ -14,8 +14,8 @@ export enum QuestionType {
   TRUE_FALSE = 'true_false',
   FILL_BLANK = 'fill_blank',
   MATCH = 'match',
-  SUBJECTIVE = 'subjective', //short answer, can not be evaluate automatically
-  ESSAY = 'essay', //long answer, can not be evaluate automatically
+  SUBJECTIVE = 'subjective', //short answer, requires manual review and scoring
+  ESSAY = 'essay', //long answer, requires manual review and scoring
 }
 
 export enum QuestionLevel {
