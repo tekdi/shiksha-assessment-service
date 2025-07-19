@@ -1483,7 +1483,7 @@ export class AttemptsService {
     }
 
     // Don't return results if attempt is under review
-    if (attempt.reviewStatus === ReviewStatus.PENDING) {
+    if (attempt.reviewStatus != ReviewStatus.REVIEWED) {
       throw new Error('Attempt results are not available while under review');
     }
 
@@ -1506,6 +1506,10 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
       },
     });
+
+    if(!test.answerSheet){
+      throw new Error('Answer sheet is not enabled for this test');
+    }
 
     const userAnswers = await this.testUserAnswerRepository.find({
       where: {
