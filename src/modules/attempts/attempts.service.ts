@@ -947,12 +947,6 @@ export class AttemptsService {
       throw new BadRequestException('Only submitted attempts can be reviewed');
     }
 
-    // Validate review status - allow review if status is PENDING or UNDER_REVIEW
-    if (attempt.reviewStatus === ReviewStatus.REVIEWED) {
-      throw new BadRequestException('Attempt has already been fully reviewed');
-    }
-   
-
     // Get all answers for this attempt to validate
     const attemptAnswers = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
