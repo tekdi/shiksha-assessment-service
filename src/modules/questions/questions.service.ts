@@ -51,6 +51,8 @@ export class QuestionsService {
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
+      // Add question to test if testId and sectionId are provided
+      if (testId && sectionId) {
       // Create question
       const question = this.questionRepository.create({
         ...questionData,
@@ -71,8 +73,6 @@ export class QuestionsService {
         );
         await queryRunner.manager.save(QuestionOption, questionOptions);
       }
-      // Add question to test if testId and sectionId are provided
-      if (testId && sectionId) {
         // Inline the validation and addition logic from TestsService
         // Validate test type and question addition
         const testRepo = queryRunner.manager.getRepository(Test);
@@ -122,12 +122,15 @@ export class QuestionsService {
           organisationId: authContext.organisationId,
         });
         await testQuestionRepo.save(testQuestion);
-      }
       await queryRunner.commitTransaction();
       // Invalidate cache
       await this.invalidateQuestionCache(authContext.tenantId);
       // Return the created question (with options)
       return this.findOne(savedQuestion.questionId, authContext);
+    }else
+    {
+      throw new BadRequestException('testId and sectionId are required');
+    }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
