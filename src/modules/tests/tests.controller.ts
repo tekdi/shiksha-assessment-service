@@ -239,7 +239,7 @@ export class TestsController {
   ) {
     const authContext: AuthContext = req.user;
     const status = await this.testsService.getUserTestStatus(testId, userId, authContext);
-    return { result: status };
+    return status;
   }
 
   @Put(':testId/structure')
