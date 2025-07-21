@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, In, DataSource } from 'typeorm';
+import { Repository, Like, Between, In, Not, FindOptionsWhere } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -9,12 +9,13 @@ import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
-import { TestStatus, TestType } from './entities/test.entity';
+import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
+import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
-import { TestAttempt, AttemptStatus } from './entities/test-attempt.entity';
+import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
 import { OrderingService } from '@/common/services/ordering.service';
 
 @Injectable()
@@ -37,6 +38,37 @@ export class TestsService {
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
     // Validate test configuration based on type
     await this.validateTestConfiguration(createTestDto);
+
+
+     // Generate a simple alias from the title if none provided
+     if (!createTestDto.alias) {
+      createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
+        createTestDto.title,
+        this.testRepository,
+        authContext.tenantId,
+        authContext.organisationId,
+      );
+    } else {
+      // Check if the alias already exists
+      const existingTest = await this.testRepository.findOne({
+        where: { 
+          alias: createTestDto.alias, 
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: Not(TestStatus.ARCHIVED)
+        } as FindOptionsWhere<Test>,
+      });
+
+      if (existingTest) {
+        const originalAlias = createTestDto.alias;
+        createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
+          originalAlias,
+          this.testRepository,
+          authContext.tenantId,
+          authContext.organisationId,
+        );
+      }
+    }
 
     const test = this.testRepository.create({
       ...createTestDto,
@@ -416,8 +448,242 @@ export class TestsService {
       throw new NotFoundException('Test not found');
     }
 
-    // Get all attempts for this user and test
-    const attempts = await this.testRepository.manager.find(TestAttempt, {
+    const maxAttempts = test.attempts;
+
+    // Get total attempts count
+    const totalAttempts = await this.getTotalAttempts(testId, userId, authContext);
+   
+    // Get graded attempt based on grading method
+    let finalScore: number = 0;
+    let finalResult: string | null = null;
+    let finalAttemptId: string | null = null;
+    let gradedAttemptData: TestAttempt | null = null;
+
+    switch (test.attemptsGrading) {
+      case AttemptsGradeMethod.FIRST_ATTEMPT: {
+        gradedAttemptData = await this.getFirstAttempt(testId, userId, authContext, test);
+        if (gradedAttemptData) {
+          finalScore = gradedAttemptData.score || 0;
+          finalResult = gradedAttemptData.result || null;
+          finalAttemptId = gradedAttemptData.attemptId;
+        }
+        break;
+      }
+
+      case AttemptsGradeMethod.LAST_ATTEMPT: {
+        gradedAttemptData = await this.getLastCompletedAttempt(testId, userId, authContext, test);
+        if (gradedAttemptData) {
+          finalScore = gradedAttemptData.score || 0;
+          finalResult = gradedAttemptData.result || null;
+          finalAttemptId = gradedAttemptData.attemptId;
+        }
+        break;
+      }
+
+      case AttemptsGradeMethod.HIGHEST: {
+        gradedAttemptData = await this.getHighestAttempt(testId, userId, authContext, test);
+        if (gradedAttemptData) {
+          finalScore = gradedAttemptData.score || 0;
+          finalResult = gradedAttemptData.result || null;
+          finalAttemptId = gradedAttemptData.attemptId;
+        }
+        break;
+      }
+
+      case AttemptsGradeMethod.AVERAGE: {
+        const averageData = await this.getAverageScore(testId, userId, authContext, test);
+        if (averageData) {
+          finalScore = averageData.averageScore;
+          finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
+          
+          // Get the last submitted attempt for attemptId reference
+          const lastSubmittedAttempt = await this.getLastCompletedAttempt(testId, userId, authContext, test);
+          if (lastSubmittedAttempt) {
+            finalAttemptId = lastSubmittedAttempt.attemptId;
+            gradedAttemptData = lastSubmittedAttempt; // Use for graded attempt object
+          }
+        }
+        break;
+      }
+    }
+
+    // Check if user can attempt (hasn't reached max attempts)
+    const canAttempt = totalAttempts < maxAttempts;
+
+    // Get last attempt for resume check (lightweight query)
+    const lastAttempt = await this.getLastAttemptForResume(testId, userId, authContext);
+    const canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
+
+    // Build graded attempt object
+    let gradedAttempt = null;
+    if (gradedAttemptData && finalAttemptId) {
+      gradedAttempt = {
+        attemptId: gradedAttemptData.attemptId,
+        status: gradedAttemptData.status,
+        score: finalScore,
+        result: finalResult,
+        submittedAt: gradedAttemptData.submittedAt,
+      };
+    }
+
+    // Build last attempt object
+    let lastAttemptInfo = null;
+    if (lastAttempt) {
+      lastAttemptInfo = {
+        attemptId: lastAttempt.attemptId,
+        status: lastAttempt.status,
+        resumeAllowed: canResume,
+      };
+    }
+
+    return {
+      testId,
+      totalAttemptsAllowed: maxAttempts,
+      attemptsMade: totalAttempts,
+      canAttempt,
+      canResume,
+      attemptGrading: test.attemptsGrading,
+      gradedAttempt,
+      lastAttempt: lastAttemptInfo,
+      showCorrectAnswers: test.showCorrectAnswer,
+    };
+  }
+
+  /**
+   * Retrieves the first submitted attempt for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
+   * @returns Promise<TestAttempt | null> - The first submitted attempt or null if none exists
+   */
+  private async getFirstAttempt(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<TestAttempt | null> {
+    const where: any = {
+      testId,
+      userId,
+      status: AttemptStatus.SUBMITTED,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    };
+
+    if (!test.isObjective) {
+      where.reviewStatus = ReviewStatus.REVIEWED;
+    }
+
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where,
+      order: { startedAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Retrieves the last submitted attempt for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
+   * @returns Promise<TestAttempt | null> - The last submitted attempt or null if none exists
+   */
+  private async getLastCompletedAttempt(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<TestAttempt | null> {
+    const where: any = {
+      testId,
+      userId,
+      status: AttemptStatus.SUBMITTED,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    };
+
+    if (!test.isObjective) {
+      where.reviewStatus = ReviewStatus.REVIEWED;
+    }
+
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where,
+      order: { startedAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Retrieves the attempt with the highest score for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
+   * @returns Promise<TestAttempt | null> - The highest scoring attempt or null if none exists
+   */
+  private async getHighestAttempt(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<TestAttempt | null> {
+    const where: any = {
+      testId,
+      userId,
+      status: AttemptStatus.SUBMITTED,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    };
+
+    if (!test.isObjective) {
+      where.reviewStatus = ReviewStatus.REVIEWED;
+    }
+
+    return await this.testRepository.manager.findOne(TestAttempt, {
+      where,
+      order: { score: 'DESC' },
+    });
+  }
+
+  /**
+   * Calculates the average score across all submitted attempts for a user and test.
+   * Uses database aggregation for optimal performance instead of fetching all attempts.
+   * Handles null scores by treating them as 0 using COALESCE.
+   * 
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @param test - The test object to check if it's objective
+   * @returns Promise<{averageScore: number, attemptCount: number, lastAttemptDate: Date | null} | null> - 
+   *          Aggregated score data or null if no submitted attempts exist
+   */
+  private async getAverageScore(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<{ averageScore: number; attemptCount: number; lastAttemptDate: Date | null } | null> {
+    const queryBuilder = this.testRepository.manager
+      .createQueryBuilder(TestAttempt, 'attempt')
+      .select([
+        'AVG(COALESCE(attempt.score, 0)) as averageScore',
+        'COUNT(*) as attemptCount',
+        'MAX(attempt.startedAt) as lastAttemptDate'
+      ])
+      .where('attempt.testId = :testId', { testId })
+      .andWhere('attempt.userId = :userId', { userId })
+      .andWhere('attempt.status = :status', { status: AttemptStatus.SUBMITTED })
+      .andWhere('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId });
+
+    if (!test.isObjective) {
+      queryBuilder.andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.REVIEWED });
+    }
+
+    const result = await queryBuilder.getRawOne();
+
+    if (!result || result.attemptCount === '0') {
+      return null;
+    }
+
+    return {
+      averageScore: parseFloat(result.averageScore) || 0,
+      attemptCount: parseInt(result.attemptCount) || 0,
+      lastAttemptDate: result.lastAttemptDate ? new Date(result.lastAttemptDate) : null,
+    };
+  }
+
+  /**
+   * Retrieves the most recent attempt (any status) for a user and test.
+   * Used to determine if a user can resume an in-progress attempt.
+   * 
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<TestAttempt | null> - The most recent attempt or null if none exists
+   */
+  private async getLastAttemptForResume(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+    return await this.testRepository.manager.findOne(TestAttempt, {
       where: {
         testId,
         userId,
@@ -426,38 +692,25 @@ export class TestsService {
       },
       order: { startedAt: 'DESC' },
     });
-
-    const totalAttempts = attempts.length;
-    const maxAttempts = test.attempts;
-
-    if (attempts.length === 0) {
-      // No attempts yet - user can start a new attempt
-      return {
-        canResume: false,
-        canReattempt: true,
-        lastAttemptStatus: null,
-        lastAttemptId: null,
-        maxAttempts,
-        totalAttempts,
-      };
-    }
-
-    const lastAttempt = attempts[0];
-
-    // Check if user can resume (has an in-progress attempt)
-    const canResume = lastAttempt.status === AttemptStatus.IN_PROGRESS; 
-
-    // Check if user can reattempt (hasn't reached max attempts)
-    const canReattempt = totalAttempts < maxAttempts;
-
-    return {
-      canResume,
-      canReattempt,
-      lastAttemptStatus: lastAttempt.status,
-      lastAttemptId: lastAttempt.attemptId,
-      maxAttempts,
-      totalAttempts,
-    };
   }
+
+  /**
+   * Counts the total number of attempts (any status) for a user and test.
+   * @param testId - The unique identifier of the test
+   * @param userId - The unique identifier of the user
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<number> - The total number of attempts made by the user
+   */
+  private async getTotalAttempts(testId: string, userId: string, authContext: AuthContext): Promise<number> {
+    return await this.testRepository.manager.count(TestAttempt, {
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+  }
+
 
 } 
