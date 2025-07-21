@@ -138,7 +138,11 @@ export class AttemptsService {
    */
     async getAttemptAnswers(attemptId: string, authContext: AuthContext): Promise<any> {
       // Step 1: Validate and retrieve the attempt
-      const attempt = await this.validateAndRetrieveAttempt(attemptId, authContext);
+      const attempt = await this.findAttemptById(attemptId, authContext);
+      if(!attempt){
+        throw new NotFoundException('Attempt not found');
+      }
+
       // Fetch user's answers for this attempt 
     const userAnswers = await this.testUserAnswerRepository.find({
       where: {
@@ -211,14 +215,7 @@ export class AttemptsService {
    */
   private async validateAndRetrieveAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
     // Find attempt with proper ownership validation
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        userId: authContext.userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Validate attempt exists
     if (!attempt) {
@@ -911,13 +908,7 @@ export class AttemptsService {
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     if (!attempt) {
       throw new NotFoundException('Attempt not found');
