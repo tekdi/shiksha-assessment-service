@@ -10,18 +10,22 @@ import {
   UseGuards,
   Req,
   UseInterceptors,
+  Put,
+  ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody, ApiParam } from '@nestjs/swagger';
 import { TestsService } from './tests.service';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
 import { AddQuestionToTestDto } from './dto/add-question-to-test.dto';
 import { AddQuestionsBulkDto } from './dto/add-questions-bulk.dto';
+import { TestStructureDto } from './dto/test-structure.dto';
 import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
+import { API_IDS } from '@/common/constants/api-ids.constant';
 
 @ApiTags('Tests')
 @ApiBearerAuth()
@@ -236,5 +240,42 @@ export class TestsController {
     const authContext: AuthContext = req.user;
     const status = await this.testsService.getUserTestStatus(testId, userId, authContext);
     return status;
+  }
+
+  @Put(':testId/structure')
+  @ApiOperation({ 
+    summary: 'Update test structure',
+    description: 'Update the entire test structure including section ordering and question placement within sections. All structure changes are allowed regardless of whether users have started taking the test.'
+  })
+  @ApiParam({
+    name: 'testId',
+    description: 'Unique identifier of the test',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiBody({
+    type: TestStructureDto,
+    description: 'Complete test structure with sections and questions'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Test structure updated successfully',
+    type: ApiSuccessResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid structure data, missing sections/questions, or test tracking has started',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test not found',
+  })
+  async updateTestStructure(
+    @Param('testId', ParseUUIDPipe) testId: string,
+    @Body() testStructureDto: TestStructureDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    await this.testsService.updateTestStructure(testId, testStructureDto, authContext);
+    return { message: 'Test structure updated successfully' };
   }
 } 
