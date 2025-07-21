@@ -33,15 +33,6 @@ export class QuestionsService {
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
     const { options, testId, sectionId, isCompulsory, ...questionData } = createQuestionDto;
     
-    // Validate question data
-    this.validateQuestionData(createQuestionDto, authContext);
-
-    // Validate question options
-    this.validateQuestionOptions(createQuestionDto);
-
-    // Validate question parameters
-    this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
-    
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -66,6 +57,7 @@ export class QuestionsService {
       if (!test) {
         throw new NotFoundException('Test not found');
       }
+      
       //validate section
       const sectionRepo = queryRunner.manager.getRepository(Section);
       const section = await sectionRepo.findOne({
@@ -83,6 +75,16 @@ export class QuestionsService {
         throw new BadRequestException('Cannot modify questions of a published test');
       }
     }
+
+    // Validate question data
+    this.validateQuestionData(createQuestionDto, authContext);
+
+    // Validate question options
+    this.validateQuestionOptions(createQuestionDto);
+
+    // Validate question parameters
+    this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
+    
    
     try {
       // Create question
