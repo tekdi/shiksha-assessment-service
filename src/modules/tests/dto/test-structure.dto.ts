@@ -11,7 +11,7 @@ export class QuestionStructureDto {
   questionId: string;
 
   @ApiProperty({
-    description: 'Order of the question within the section (1-based)',
+    description: 'Order of the question within the section',
     example: 1,
     minimum: 1
   })
@@ -29,7 +29,7 @@ export class SectionStructureDto {
   sectionId: string;
 
   @ApiProperty({
-    description: 'Order of the section within the test (1-based)',
+    description: 'Order of the section within the test',
     example: 1,
     minimum: 1
   })
@@ -38,7 +38,7 @@ export class SectionStructureDto {
   order: number;
 
   @ApiProperty({
-    description: 'Array of questions in this section',
+    description: 'Questions within this section',
     type: [QuestionStructureDto],
     required: false
   })
@@ -51,7 +51,7 @@ export class SectionStructureDto {
 
 export class TestStructureDto {
   @ApiProperty({
-    description: 'Array of sections in the test with their questions',
+    description: 'Sections within the test',
     type: [SectionStructureDto]
   })
   @IsArray()

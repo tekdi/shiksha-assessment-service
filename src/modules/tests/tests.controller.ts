@@ -10,10 +10,9 @@ import {
   UseGuards,
   Req,
   UseInterceptors,
-  Put,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { TestsService } from './tests.service';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
@@ -25,7 +24,6 @@ import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
-import { API_IDS } from '@/common/constants/api-ids.constant';
 
 @ApiTags('Tests')
 @ApiBearerAuth()
@@ -242,19 +240,14 @@ export class TestsController {
     return status;
   }
 
-  @Put(':testId/structure')
+  @Patch(':id/structure')
   @ApiOperation({ 
     summary: 'Update test structure',
-    description: 'Update the entire test structure including section ordering and question placement within sections. All structure changes are allowed regardless of whether users have started taking the test.'
-  })
-  @ApiParam({
-    name: 'testId',
-    description: 'Unique identifier of the test',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    description: 'Update the structure of a test including section and question ordering'
   })
   @ApiBody({
     type: TestStructureDto,
-    description: 'Complete test structure with sections and questions'
+    description: 'Test structure with sections and questions'
   })
   @ApiResponse({
     status: 200,
@@ -263,14 +256,14 @@ export class TestsController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Invalid structure data, missing sections/questions, or test tracking has started',
+    description: 'Invalid structure data or missing sections/questions',
   })
   @ApiResponse({
     status: 404,
     description: 'Test not found',
   })
   async updateTestStructure(
-    @Param('testId', ParseUUIDPipe) testId: string,
+    @Param('id', new ParseUUIDPipe()) testId: string,
     @Body() testStructureDto: TestStructureDto,
     @Req() req: any,
   ) {
