@@ -13,7 +13,7 @@ import { TestQuestion } from './entities/test-question.entity';
 import { TestAttempt } from './entities/test-attempt.entity';
 import { TestRule } from './entities/test-rule.entity';
 import { TestUserAnswer } from './entities/test-user-answer.entity';
-import { Question } from '../questions/entities/question.entity';
+import { QuestionsModule } from '../questions/questions.module';
 
 @Module({
   imports: [
@@ -24,8 +24,8 @@ import { Question } from '../questions/entities/question.entity';
       TestAttempt,
       TestRule,
       TestUserAnswer,
-      Question,
     ]),
+    QuestionsModule,
   ],
   controllers: [TestsController, SectionsController, RulesController],
   providers: [TestsService, SectionsService, RulesService, QuestionPoolService],

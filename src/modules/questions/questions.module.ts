@@ -11,6 +11,6 @@ import { QuestionOption } from './entities/question-option.entity';
   ],
   controllers: [QuestionsController],
   providers: [QuestionsService],
-  exports: [QuestionsService],
+  exports: [QuestionsService, TypeOrmModule],
 })
 export class QuestionsModule {} 

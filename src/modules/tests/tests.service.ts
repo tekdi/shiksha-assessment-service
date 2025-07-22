@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, In, Not, FindOptionsWhere } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, Like, Between, In, Not, FindOptionsWhere, DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -32,6 +32,7 @@ export class TestsService {
     private readonly questionRepository: Repository<Question>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
 
