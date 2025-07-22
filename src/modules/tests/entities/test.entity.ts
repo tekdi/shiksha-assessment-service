@@ -207,7 +207,7 @@ export class Test {
   @OneToMany(() => TestAttempt, (attempt: TestAttempt) => attempt.test)
   testAttempts: TestAttempt[];
 
-  @ManyToOne(() => Test, test => test.testId)
+  @ManyToOne(() => Test)
   @JoinColumn({ name: 'parentId' })
   parent: Test;
 

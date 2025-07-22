@@ -10,6 +10,7 @@ import {
   UseGuards,
   Req,
   UseInterceptors,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { TestsService } from './tests.service';
@@ -262,7 +263,7 @@ export class TestsController {
     description: 'Test not found',
   })
   async updateTestStructure(
-    @Param('id') testId: string,
+    @Param('id', new ParseUUIDPipe()) testId: string,
     @Body() testStructureDto: TestStructureDto,
     @Req() req: any,
   ) {
