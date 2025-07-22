@@ -25,7 +25,6 @@ import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
-import { API_IDS } from '@/common/constants/api-ids.constant';
 
 @ApiTags('Tests')
 @ApiBearerAuth()
