@@ -18,6 +18,7 @@ import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
 import { AddQuestionToTestDto } from './dto/add-question-to-test.dto';
 import { AddQuestionsBulkDto } from './dto/add-questions-bulk.dto';
+import { TestStructureDto } from './dto/test-structure.dto';
 import { Test } from './entities/test.entity';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -236,5 +237,37 @@ export class TestsController {
     const authContext: AuthContext = req.user;
     const status = await this.testsService.getUserTestStatus(testId, userId, authContext);
     return status;
+  }
+
+  @Patch(':id/structure')
+  @ApiOperation({ 
+    summary: 'Update test structure',
+    description: 'Update the structure of a test including section and question ordering'
+  })
+  @ApiBody({
+    type: TestStructureDto,
+    description: 'Test structure with sections and questions'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Test structure updated successfully',
+    type: ApiSuccessResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid structure data or missing sections/questions',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test not found',
+  })
+  async updateTestStructure(
+    @Param('id') testId: string,
+    @Body() testStructureDto: TestStructureDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    await this.testsService.updateTestStructure(testId, testStructureDto, authContext);
+    return { message: 'Test structure updated successfully' };
   }
 } 
