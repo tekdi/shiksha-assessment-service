@@ -13,7 +13,7 @@ import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
-import { Question } from '../questions/entities/question.entity';
+import { Question, QuestionType } from '../questions/entities/question.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
@@ -218,6 +218,69 @@ export class TestsService {
 
     if (!test) {
       throw new NotFoundException('Test not found');
+    }
+
+    // Extract all question IDs from test questions
+    const questionIds = test.sections
+      .flatMap(section => section.questions)
+      .map(testQuestion => testQuestion.questionId);
+
+    if (questionIds.length === 0) {
+      return test;
+    }
+
+    // Fetch all questions with options in a single query
+    const questions = await this.questionRepository.find({
+      where: { questionId: In(questionIds) },
+      relations: ['options'],
+      order: {
+        options: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    // Create a map for quick lookup
+    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Transform questions and attach to test questions
+    for (const section of test.sections) {
+      for (const testQuestion of section.questions) {
+        const question = questionsMap.get(testQuestion.questionId);
+        if (question) {
+          // Transform the question data to exclude isCorrect from options
+          const transformedQuestion = {
+            ...question,
+            options: question.options?.map(opt => ({
+              questionOptionId: opt.questionOptionId,
+              text: opt.text,
+              media: opt.media,
+              ordering: opt.ordering,
+              marks: opt.marks,
+              caseSensitive: opt.caseSensitive,
+              createdAt: opt.createdAt,
+              // Exclude blankIndex, matchWith, matchWithMedia and isCorrect for security
+            })) || [],
+          };
+
+          // For matching questions, add a separate array of matchWith options
+          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
+            const matchWithOptions = question.options
+              .filter(opt => opt.matchWith) // Only include options that have matchWith
+              .map(opt => ({
+                matchWith: opt.matchWith,
+                matchWithMedia: opt.matchWithMedia,
+                ordering: opt.ordering,
+              }))
+              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
+
+            (transformedQuestion as any).matchWithOptions = matchWithOptions;
+          }
+
+          // Replace the test question with the complete question data
+          Object.assign(testQuestion, transformedQuestion);
+        }
+      }
     }
 
     return test;
