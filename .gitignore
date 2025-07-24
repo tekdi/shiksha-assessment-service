@@ -1,4 +1,16 @@
 node_modules
 dist
-.cursor/
+
+# Environment
 .env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Uploads
+uploads
+
+# Cursor
+.cursorrules
+.cursor/
