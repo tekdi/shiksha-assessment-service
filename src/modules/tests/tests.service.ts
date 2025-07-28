@@ -30,6 +30,8 @@ export class TestsService {
     private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
+    @InjectRepository(TestAttempt)
+    private readonly testAttemptRepository: Repository<TestAttempt>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     @InjectDataSource()
@@ -907,14 +909,14 @@ export class TestsService {
    * @returns Promise<TestAttempt | null> - The most recent attempt or null if none exists
    */
   private async getLastAttemptForResume(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where: {
         testId,
         userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { startedAt: 'DESC' },
+      order: { attempt: 'DESC' },
     });
   }
 
