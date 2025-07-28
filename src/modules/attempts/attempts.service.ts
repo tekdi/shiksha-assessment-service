@@ -154,6 +154,15 @@ export class AttemptsService {
       order: { createdAt: 'ASC' }, 
     });
 
+    // Parse JSON answers and transform the response
+    const parsedAnswers = userAnswers.map(ua => {
+        return {
+          questionId: ua.questionId,
+          answer: JSON.parse(ua.answer),
+          updatedAt: ua.updatedAt
+        };
+    });
+
     // update userattempt with updatedAt
     await this.attemptRepository.update(attempt.attemptId, { updatedAt: new Date() });
 
@@ -168,7 +177,7 @@ export class AttemptsService {
         timeSpent: attempt.timeSpent,
         updatedAt: attempt.updatedAt
       },
-      answers: userAnswers,
+      answers: parsedAnswers,
     };
   }
 
@@ -318,19 +327,18 @@ export class AttemptsService {
     
     // Process each user answer and create a lookup map
     userAnswers.forEach(ua => {
-      // Parse the JSON answer data stored in the database
-      const answerData = JSON.parse(ua.answer);
-      
-      // Create structured answer object with all relevant metadata
-      answersMap.set(ua.questionId, {
-        questionId: ua.questionId,
-        answer: answerData, // Parsed answer content
-        score: ua.score, // Calculated score for this answer
-        reviewStatus: ua.reviewStatus, // Review status for subjective questions
-        remarks: ua.remarks, // Reviewer remarks if any
-        submittedAt: ua.createdAt, // When the answer was first submitted
-        updatedAt: ua.updatedAt, // When the answer was last modified
-      });
+        const answerData = JSON.parse(ua.answer);
+        
+        // Create structured answer object with all relevant metadata
+        answersMap.set(ua.questionId, {
+          questionId: ua.questionId,
+          answer: answerData,
+          score: ua.score,
+          reviewStatus: ua.reviewStatus,
+          remarks: ua.remarks,
+          submittedAt: ua.createdAt,
+          updatedAt: ua.updatedAt,
+        });
     });
     
     return answersMap;
@@ -1493,6 +1501,7 @@ export class AttemptsService {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
+        userId: authContext.userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
