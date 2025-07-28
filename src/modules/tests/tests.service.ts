@@ -642,9 +642,9 @@ export class TestsService {
       where.reviewStatus = ReviewStatus.REVIEWED;
     }
 
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where,
-      order: { startedAt: 'ASC' },
+      order: { attempt: 'ASC' },
     });
   }
 
@@ -669,9 +669,9 @@ export class TestsService {
       where.reviewStatus = ReviewStatus.REVIEWED;
     }
 
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where,
-      order: { startedAt: 'DESC' },
+      order: { attempt: 'DESC' },
     });
   }
 
@@ -696,7 +696,7 @@ export class TestsService {
       where.reviewStatus = ReviewStatus.REVIEWED;
     }
 
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where,
       order: { score: 'DESC' },
     });
@@ -715,8 +715,8 @@ export class TestsService {
    *          Aggregated score data or null if no submitted attempts exist
    */
   private async getAverageScore(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<{ averageScore: number; attemptCount: number; lastAttemptDate: Date | null } | null> {
-    const queryBuilder = this.testRepository.manager
-      .createQueryBuilder(TestAttempt, 'attempt')
+    const queryBuilder = this.testAttemptRepository
+      .createQueryBuilder('attempt')
       .select([
         'AVG(COALESCE(attempt.score, 0)) as averageScore',
         'COUNT(*) as attemptCount',
@@ -915,6 +915,7 @@ export class TestsService {
         userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: AttemptStatus.IN_PROGRESS,
       },
       order: { attempt: 'DESC' },
     });
@@ -928,7 +929,7 @@ export class TestsService {
    * @returns Promise<number> - The total number of attempts made by the user
    */
   private async getTotalAttempts(testId: string, userId: string, authContext: AuthContext): Promise<number> {
-    return await this.testRepository.manager.count(TestAttempt, {
+    return await this.testAttemptRepository.count({
       where: {
         testId,
         userId,
