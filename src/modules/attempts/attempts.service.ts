@@ -1456,30 +1456,13 @@ export class AttemptsService {
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{answers: TestUserAnswer[], totalMarks: number}> - Object containing answers and total marks
    */
-  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: any[], totalMarks: number }> {
+  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: TestUserAnswer[], totalMarks: number }> {
     const answers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-    });
-
-    // Parse JSON answers and transform the response
-    const parsedAnswers = answers.map(answer => {
-      try {
-        return {
-          ...answer,
-          answer: JSON.parse(answer.answer)
-        };
-      } catch (error) {
-        // If JSON parsing fails, return the raw answer string
-        console.warn(`Failed to parse JSON answer for question ${answer.questionId}:`, error);
-        return {
-          ...answer,
-          answer: answer.answer // Return as string if parsing fails
-        };
-      }
     });
 
     let totalMarks = 0;
@@ -1493,7 +1476,7 @@ export class AttemptsService {
       }
     }
 
-    return { answers: parsedAnswers, totalMarks };
+    return { answers, totalMarks };
   }
 
   /**
