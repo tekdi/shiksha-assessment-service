@@ -244,27 +244,10 @@ export class TestsService {
     const questionsMap = new Map(questions.map(q => [q.questionId, q]));
 
     // Transform questions and attach to test questions
-    let transformedQuestionsCount = 0;
     for (const section of test.sections) {
-      console.log('📑 [DEBUG] Processing section:', { 
-        sectionId: section.sectionId, 
-        questionsCount: section.questions?.length 
-      });
-      
       for (const testQuestion of section.questions) {
-        console.log('❓ [DEBUG] Processing test question:', { 
-          testQuestionId: testQuestion.questionId,
-          questionId: testQuestion.questionId 
-        });
-        
         const question = questionsMap.get(testQuestion.questionId);
         if (question) {
-          console.log('✅ [DEBUG] Found question in map:', { 
-            questionId: question.questionId,
-            type: question.type,
-            optionsCount: question.options?.length || 0
-          });
-          
           // Transform the question data to exclude isCorrect from options
           const transformedQuestion = {
             ...question,
@@ -280,11 +263,6 @@ export class TestsService {
             })) || [],
           };
 
-          console.log('🔄 [DEBUG] Transformed question options:', { 
-            questionId: question.questionId,
-            transformedOptionsCount: transformedQuestion.options?.length || 0
-          });
-
           // For matching questions, add a separate array of matchWith options
           if (question.type === QuestionType.MATCH && question.options?.length > 0) {
             const matchWithOptions = question.options
@@ -296,28 +274,14 @@ export class TestsService {
               }))
               .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
 
-            console.log('🔗 [DEBUG] Match question - matchWith options:', { 
-              questionId: question.questionId,
-              matchWithOptionsCount: matchWithOptions.length
-            });
-
             (transformedQuestion as any).matchWithOptions = matchWithOptions;
           }
 
           // Replace the test question with the complete question data
           Object.assign(testQuestion, transformedQuestion);
-          transformedQuestionsCount++;
-        } else {
-          console.log('❌ [DEBUG] Question not found in map for ID:', testQuestion.questionId);
         }
       }
     }
-
-    console.log('🎯 [DEBUG] Final result:', { 
-      totalSections: test.sections?.length,
-      totalQuestions: test.sections?.reduce((acc, section) => acc + section.questions?.length || 0, 0),
-      transformedQuestionsCount
-    });
 
     return test;
   }
