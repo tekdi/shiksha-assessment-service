@@ -154,6 +154,24 @@ export class AttemptsService {
       order: { createdAt: 'ASC' }, 
     });
 
+    // Parse JSON answers and transform the response
+    const parsedAnswers = userAnswers.map(ua => {
+      try {
+        return {
+          questionId: ua.questionId,
+          answer: JSON.parse(ua.answer),
+          updatedAt: ua.updatedAt
+        };
+      } catch (error) {
+        // If JSON parsing fails, return the raw answer string
+        return {
+          questionId: ua.questionId,
+          answer: ua.answer, // Return as string if parsing fails
+          updatedAt: ua.updatedAt
+        };
+      }
+    });
+
     // update userattempt with updatedAt
     await this.attemptRepository.update(attempt.attemptId, { updatedAt: new Date() });
 
@@ -168,7 +186,7 @@ export class AttemptsService {
         timeSpent: attempt.timeSpent,
         updatedAt: attempt.updatedAt
       },
-      answers: userAnswers,
+      answers: parsedAnswers,
     };
   }
 
@@ -318,19 +336,33 @@ export class AttemptsService {
     
     // Process each user answer and create a lookup map
     userAnswers.forEach(ua => {
-      // Parse the JSON answer data stored in the database
-      const answerData = JSON.parse(ua.answer);
-      
-      // Create structured answer object with all relevant metadata
-      answersMap.set(ua.questionId, {
-        questionId: ua.questionId,
-        answer: answerData, // Parsed answer content
-        score: ua.score, // Calculated score for this answer
-        reviewStatus: ua.reviewStatus, // Review status for subjective questions
-        remarks: ua.remarks, // Reviewer remarks if any
-        submittedAt: ua.createdAt, // When the answer was first submitted
-        updatedAt: ua.updatedAt, // When the answer was last modified
-      });
+      try {
+        // Parse the JSON answer data stored in the database
+        const answerData = JSON.parse(ua.answer);
+        
+        // Create structured answer object with all relevant metadata
+        answersMap.set(ua.questionId, {
+          questionId: ua.questionId,
+          answer: answerData, // Parsed answer content
+          score: ua.score, // Calculated score for this answer
+          reviewStatus: ua.reviewStatus, // Review status for subjective questions
+          remarks: ua.remarks, // Reviewer remarks if any
+          submittedAt: ua.createdAt, // When the answer was first submitted
+          updatedAt: ua.updatedAt, // When the answer was last modified
+        });
+      } catch (error) {
+        // If JSON parsing fails, log warning and use raw answer
+        console.warn(`Failed to parse JSON answer for question ${ua.questionId}:`, error);
+        answersMap.set(ua.questionId, {
+          questionId: ua.questionId,
+          answer: ua.answer, // Use raw answer string if parsing fails
+          score: ua.score,
+          reviewStatus: ua.reviewStatus,
+          remarks: ua.remarks,
+          submittedAt: ua.createdAt,
+          updatedAt: ua.updatedAt,
+        });
+      }
     });
     
     return answersMap;
@@ -1448,13 +1480,30 @@ export class AttemptsService {
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{answers: TestUserAnswer[], totalMarks: number}> - Object containing answers and total marks
    */
-  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: TestUserAnswer[], totalMarks: number }> {
+  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: any[], totalMarks: number }> {
     const answers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
+    });
+
+    // Parse JSON answers and transform the response
+    const parsedAnswers = answers.map(answer => {
+      try {
+        return {
+          ...answer,
+          answer: JSON.parse(answer.answer)
+        };
+      } catch (error) {
+        // If JSON parsing fails, return the raw answer string
+        console.warn(`Failed to parse JSON answer for question ${answer.questionId}:`, error);
+        return {
+          ...answer,
+          answer: answer.answer // Return as string if parsing fails
+        };
+      }
     });
 
     let totalMarks = 0;
@@ -1468,7 +1517,7 @@ export class AttemptsService {
       }
     }
 
-    return { answers, totalMarks };
+    return { answers: parsedAnswers, totalMarks };
   }
 
   /**
@@ -1493,6 +1542,7 @@ export class AttemptsService {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
+        userId: authContext.userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
