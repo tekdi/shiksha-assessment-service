@@ -156,20 +156,11 @@ export class AttemptsService {
 
     // Parse JSON answers and transform the response
     const parsedAnswers = userAnswers.map(ua => {
-      try {
         return {
           questionId: ua.questionId,
           answer: JSON.parse(ua.answer),
           updatedAt: ua.updatedAt
         };
-      } catch (error) {
-        // If JSON parsing fails, return the raw answer string
-        return {
-          questionId: ua.questionId,
-          answer: ua.answer, // Return as string if parsing fails
-          updatedAt: ua.updatedAt
-        };
-      }
     });
 
     // update userattempt with updatedAt
@@ -336,33 +327,18 @@ export class AttemptsService {
     
     // Process each user answer and create a lookup map
     userAnswers.forEach(ua => {
-      try {
-        // Parse the JSON answer data stored in the database
         const answerData = JSON.parse(ua.answer);
         
         // Create structured answer object with all relevant metadata
         answersMap.set(ua.questionId, {
           questionId: ua.questionId,
-          answer: answerData, // Parsed answer content
-          score: ua.score, // Calculated score for this answer
-          reviewStatus: ua.reviewStatus, // Review status for subjective questions
-          remarks: ua.remarks, // Reviewer remarks if any
-          submittedAt: ua.createdAt, // When the answer was first submitted
-          updatedAt: ua.updatedAt, // When the answer was last modified
-        });
-      } catch (error) {
-        // If JSON parsing fails, log warning and use raw answer
-        console.warn(`Failed to parse JSON answer for question ${ua.questionId}:`, error);
-        answersMap.set(ua.questionId, {
-          questionId: ua.questionId,
-          answer: ua.answer, // Use raw answer string if parsing fails
+          answer: answerData,
           score: ua.score,
           reviewStatus: ua.reviewStatus,
           remarks: ua.remarks,
           submittedAt: ua.createdAt,
           updatedAt: ua.updatedAt,
         });
-      }
     });
     
     return answersMap;
