@@ -11,15 +11,15 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 ### 🧾 `tests`
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
-| id                | UUID                     | Primary key                                      |
+| testId            | UUID                     | Primary key                                      |
 | parentId          | UUID                     | Parent test ID (for generated tests)             |
-| type              | VARCHAR(255)             | Test type: plain, rule_based, generated          |
+| type              | VARCHAR(255)             | Test type: `plain`, `rule_based`, `generated`    |
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
 | ordering          | INTEGER                  | Display order                                    |
 | attempts          | INTEGER                  | Maximum attempts allowed                         |
-| attemptsGrading   | TEXT                     | Grading strategy for multiple attempts           |
-| status            | TEXT                     | draft, published, unpublished, archived          |
+| attemptsGrading   | TEXT                     | Grading strategy: `first_attempt`, `last_attempt`, `average`, `highest` |
+| status            | TEXT                     | `draft`, `published`, `unpublished`, `archived`  |
 | title             | TEXT                     | Test title                                       |
 | alias             | TEXT                     | Test alias                                       |
 | description       | TEXT                     | Test description                                 |
@@ -38,7 +38,7 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | printAnswersheet  | BOOLEAN                  | Allow answer sheet printing                       |
 | questionsShuffle  | BOOLEAN                  | Shuffle questions                                |
 | answersShuffle    | BOOLEAN                  | Shuffle answer options                            |
-| gradingType       | TEXT                     | quiz, assignment, feedback                       |
+| gradingType       | TEXT                     | `quiz`, `assignment`, `feedback`                 |
 | isObjective       | BOOLEAN                  | Is objective test                                |
 | showThankyouPage  | BOOLEAN                  | Show thank you page                              |
 | showAllQuestions  | BOOLEAN                  | Show all questions at once                       |
@@ -54,14 +54,14 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 ### 🧾 `testSections`
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
-| id                | UUID                     | Primary key                                      |
+| sectionId         | UUID                     | Primary key                                      |
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
-| testId            | UUID                     | Linked test ID                                   |
-| name              | TEXT                     | Section name                                     |
+| title             | TEXT                     | Section title                                    |
 | description       | TEXT                     | Section description                              |
+| testId            | UUID                     | Linked test ID                                   |
 | ordering          | INTEGER                  | Section order                                    |
-| isActive          | BOOLEAN                  | Is section active                                |
+| status            | TEXT                     | Section status (default: 'active')               |
 | minQuestions      | INTEGER                  | Minimum questions to include                     |
 | maxQuestions      | INTEGER                  | Maximum questions to include                     |
 | createdBy         | UUID                     | Author                                           |
@@ -72,32 +72,34 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 ### 🧾 `testQuestions`
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
-| id                | UUID                     | Primary key                                      |
+| testQuestionId    | UUID                     | Primary key                                      |
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
 | testId            | UUID                     | Linked test ID                                   |
 | questionId        | UUID                     | Linked question ID                               |
-| questionOrder     | INTEGER                  | Question order                                   |
+| ordering          | INTEGER                  | Question order                                   |
 | sectionId         | UUID                     | Linked section ID (nullable)                     |
-| ruleId            | UUID                     | **NEW** - Linked rule ID for rule-based tests   |
+| ruleId            | UUID                     | Linked rule ID for rule-based tests              |
 | isCompulsory      | BOOLEAN                  | Is question compulsory                           |
 
 ### 🧾 `testRules`
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
-| id                | UUID                     | Primary key                                      |
+| ruleId            | UUID                     | Primary key                                      |
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
 | name              | TEXT                     | Rule name                                        |
 | description       | TEXT                     | Optional description                             |
-| ruleType          | TEXT                     | Rule type (category_based, difficulty_based, etc.)|
+| ruleType          | TEXT                     | Rule type: `category_based`, `difficulty_based`, `type_based`, `mixed` |
 | testId            | UUID                     | Linked test ID (nullable)                        |
 | sectionId         | UUID                     | Linked section ID (nullable)                     |
 | numberOfQuestions | INTEGER                  | Number of questions to select                    |
+| poolSize          | INTEGER                  | Pool size for question selection                 |
 | minMarks          | INTEGER                  | Minimum marks (optional)                         |
 | maxMarks          | INTEGER                  | Maximum marks (optional)                         |
-| selectionStrategy | TEXT                     | random, sequential, weighted                     |
+| selectionStrategy | TEXT                     | `random`, `sequential`, `weighted`               |
 | criteria          | JSONB                    | Rule criteria (categories, levels, types, etc.)  |
+| selectionMode     | ENUM                     | `PRESELECTED`, `DYNAMIC`                         |
 | isActive          | BOOLEAN                  | Is rule active                                   |
 | priority          | INTEGER                  | Rule priority                                    |
 | createdBy         | UUID                     | Author                                           |
@@ -112,36 +114,35 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
 | testId            | UUID                     | Original test ID                                 |
-| resolvedTestId    | UUID                     | **NEW** - Generated test ID for rule-based tests |
+| resolvedTestId    | UUID                     | Generated test ID for rule-based tests           |
 | userId            | UUID                     | User taking the test                             |
 | attempt           | INTEGER                  | Attempt number                                   |
 | startedAt         | TIMESTAMP WITH TIME ZONE | When attempt started                             |
 | submittedAt       | TIMESTAMP WITH TIME ZONE | When attempt submitted                           |
-| status            | TEXT                     | I=in_progress, S=submitted                       |
-| reviewStatus      | TEXT                     | P=pending, U=under_review, R=reviewed, N=not_applicable |
+| status            | TEXT                     | `I`=in_progress, `S`=submitted                   |
+| reviewStatus      | TEXT                     | `P`=pending, `U`=under_review, `R`=reviewed, `N`=not_applicable |
 | score             | DECIMAL(5,2)             | Final score                                      |
-| submissionType    | VARCHAR                  |'self'=> self-submitted,'auto'=> auto-submitted on timeout |
-| result            | TEXT                     | P=pass, F=fail                                   |
+| submissionType    | VARCHAR                  | `self`= self-submitted, `auto`= auto-submitted on timeout |
+| result            | TEXT                     | `P`=pass, `F`=fail                               |
 | currentPosition   | INTEGER                  | Current question position                        |
 | timeSpent         | INTEGER                  | Time spent in seconds                            |
 | updatedBy         | UUID                     | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
-## 🧾 `testAttemptsReval`
-
-| Column          | Type                     | Description                                                     |
-| ----------------| ------------------------ | --------------------------------------------------------------- |
-| attemptRevalId  | UUID                     | Primary key                                                     |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
-| attemptId       | INTEGER                  | Attempt number                                                  |
-| oldScore        | DECIMAL(5,2)             | score                                                           |
-| newScore        | DECIMAL(5,2)             | score                                                           |
-| oldResult       | VARCHAR                  | `P=pass`, `F=fail`                                              |
-| newResult       | VARCHAR                  |`P=pass`, `F=fail`                                               |
-| remarks         | TEXT                     |                                                                 |
-| updatedBy       | UUID                     | Last updated by                                                 |
-| updatedAt       | TIMESTAMP WITH TIME ZONE | Timestamp of last update                                        |
+### 🧾 `testAttemptsReval`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| attemptRevalId    | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| attemptId         | UUID                     | Linked attempt ID                                |
+| oldScore          | DECIMAL(5,2)             | Previous score                                   |
+| newScore          | DECIMAL(5,2)             | Updated score                                    |
+| oldResult         | VARCHAR                  | `P`=pass, `F`=fail                               |
+| newResult         | VARCHAR                  | `P`=pass, `F`=fail                               |
+| remarks           | TEXT                     | Review remarks                                   |
+| updatedBy         | UUID                     | Last updated by                                  |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Timestamp of last update                         |
 
 ### 🧾 `testUserAnswers`
 | Column            | Type                     | Description                                      |
@@ -154,22 +155,20 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | answer            | TEXT                     | JSON string containing answer structure          |
 | score             | DECIMAL(5,2)             | Score given (if reviewed)                        |
 | reviewedBy        | UUID                     | Reviewer                                         |
-| reviewStatus      | TEXT                     | P=pending, R=reviewed                            |
+| reviewStatus      | TEXT                     | `P`=pending, `R`=reviewed                        |
 | reviewedAt        | TIMESTAMP WITH TIME ZONE | When it was reviewed                             |
 | remarks           | TEXT                     | Reviewer comments                                |
 | anssOrder         | TEXT                     | Order of answers                                 |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
 | updatedBy         | UUID                     | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
----
 
-## 🧾 `testUserStatus`
-
+### 🧾 `testUserStatus`
 | Column             | Type                     | Description                                   |
 |--------------------|--------------------------|-----------------------------------------------|
-| stausId            | UUID                     | Primary key                                   |
-| tenantId             | UUID                     | Tenant reference                           |
-| organisationId       | UUID                     | org reference                              |
+| statusId           | UUID                     | Primary key                                   |
+| tenantId           | UUID                     | Tenant reference                              |
+| organisationId     | UUID                     | Org reference                                 |
 | userId             | UUID                     | FK to user                                    |
 | testId             | UUID                     | FK to test                                    |
 | allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
@@ -184,22 +183,23 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 ### 🧾 `questions`
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
-| id                | UUID                     | Primary key                                      |
+| questionId        | UUID                     | Primary key                                      |
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
 | ordering          | INTEGER                  | Display order                                    |
-| title             | TEXT                     | Question title                                   |
+| text              | TEXT                     | Question text content                            |
+| media             | JSONB                    | Media URLs (image, video, audio, document)       |
 | alias             | TEXT                     | Question alias                                   |
 | description       | TEXT                     | Question description                             |
 | categoryId        | UUID                     | Category ID                                      |
-| type              | TEXT                     | mcq, multiple_answer, true_false, fill_blank, match, subjective, essay |
-| level             | TEXT                     | easy, medium, hard                               |
+| type              | TEXT                     | `mcq`, `multiple_answer`, `true_false`, `fill_blank`, `match`, `subjective`, `essay` |
+| level             | TEXT                     | `easy`, `medium`, `hard`                         |
 | marks             | INTEGER                  | Marks for this question                          |
-| status            | TEXT                     | draft, published, archived                       |
+| status            | TEXT                     | `draft`, `published`, `archived`                 |
 | idealTime         | INTEGER                  | Ideal time in seconds                            |
-| gradingType       | TEXT                     | quiz, exercise                                   |
+| gradingType       | TEXT                     | `quiz`, `exercise`                               |
 | allowPartialScoring | BOOLEAN                | Allow partial scoring                            |
-| params            | JSONB                    | **NEW** - Question parameters (maxLength, rubric, etc.) |
+| params            | JSONB                    | Question parameters (maxLength, rubric, etc.)    |
 | checkedOut        | UUID                     | Checked out by user                              |
 | checkedOutTime    | TIMESTAMP WITH TIME ZONE | Checkout time                                    |
 | createdBy         | UUID                     | Author                                           |
@@ -210,22 +210,191 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 ### 🧾 `questionOptions`
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
-| id                | UUID                     | Primary key                                      |
+| questionOptionId  | UUID                     | Primary key                                      |
 | tenantId          | UUID                     | Tenant reference                                 |
 | organisationId    | UUID                     | Org reference                                    |
 | questionId        | UUID                     | Linked question ID                               |
-| text              | TEXT                     | Option text                                      |
+| text              | TEXT                     | Option text content                              |
+| media             | JSONB                    | Media URLs for the option                        |
 | matchWith         | TEXT                     | Match text (for matching questions)              |
-| position          | INTEGER                  | Option position                                  |
+| matchWithMedia    | JSONB                    | Media URLs for matching                          |
+| ordering          | INTEGER                  | Option position                                  |
 | isCorrect         | BOOLEAN                  | Is correct answer                                |
 | marks             | DECIMAL(5,2)             | Marks for this option                            |
 | blankIndex        | INTEGER                  | Blank index (for fill-in-blank)                  |
 | caseSensitive     | BOOLEAN                  | Case sensitive matching                          |
 | createdAt         | TIMESTAMP                | Created on                                       |
 
+### 🧾 `questionPools`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| testId            | UUID                     | Linked test ID                                   |
+| sectionId         | UUID                     | Linked section ID (nullable)                     |
+| ruleId            | UUID                     | Linked rule ID (nullable)                        |
+| name              | TEXT                     | Pool name                                        |
+| description       | TEXT                     | Pool description                                 |
+| questionIds       | JSONB                    | Array of question IDs                            |
+| totalQuestions    | INTEGER                  | Total questions in pool                          |
+| totalMarks        | INTEGER                  | Total marks in pool                              |
+| isActive          | BOOLEAN                  | Is pool active                                   |
+| generatedAt       | TIMESTAMP WITH TIME ZONE | When pool was generated                          |
+| expiresAt         | TIMESTAMP WITH TIME ZONE | When pool expires                                |
+| createdBy         | UUID                     | Author                                           |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
+
+### 🧾 `attemptQuestions`
+| Column            | Type                     | Description                                      |
+|-------------------|--------------------------|--------------------------------------------------|
+| id                | UUID                     | Primary key                                      |
+| tenantId          | UUID                     | Tenant reference                                 |
+| organisationId    | UUID                     | Org reference                                    |
+| attemptId         | UUID                     | Linked attempt ID                                |
+| questionId        | UUID                     | Linked question ID                               |
+| questionOrder     | INTEGER                  | Question order in attempt                        |
+| sectionId         | UUID                     | Linked section ID (nullable)                     |
+| ruleId            | UUID                     | Linked rule ID (nullable)                        |
+| marks             | INTEGER                  | Marks for this question                          |
+| isCompulsory      | BOOLEAN                  | Is question compulsory                           |
+| servedAt          | TIMESTAMP WITH TIME ZONE | When question was served                         |
+| createdBy         | UUID                     | Author                                           |
+| createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
+| updatedBy         | UUID                     | Last modified by                                 |
+| updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
+
 ---
 
-## 🔄 **Rule-Based Test Workflow - Two Approaches**
+## 🎯 **Enums & Constants**
+
+### **Test Types**
+```typescript
+enum TestType {
+  PLAIN = 'plain',
+  RULE_BASED = 'rule_based',
+  GENERATED = 'generated',
+}
+```
+
+### **Test Status**
+```typescript
+enum TestStatus {
+  DRAFT = 'draft',
+  PUBLISHED = 'published',
+  UNPUBLISHED = 'unpublished',
+  ARCHIVED = 'archived',
+}
+```
+
+### **Grading Types**
+```typescript
+enum GradingType {
+  QUIZ = 'quiz',
+  ASSIGNMENT = 'assignment',
+  FEEDBACK = 'feedback',
+}
+```
+
+### **Attempts Grading Methods**
+```typescript
+enum AttemptsGradeMethod {
+  FIRST_ATTEMPT = 'first_attempt',
+  LAST_ATTEMPT = 'last_attempt',
+  AVERAGE = 'average',
+  HIGHEST = 'highest',
+}
+```
+
+### **Question Types**
+```typescript
+enum QuestionType {
+  MCQ = 'mcq',
+  MULTIPLE_ANSWER = 'multiple_answer',
+  TRUE_FALSE = 'true_false',
+  FILL_BLANK = 'fill_blank',
+  MATCH = 'match',
+  SUBJECTIVE = 'subjective',
+  ESSAY = 'essay',
+}
+```
+
+### **Question Levels**
+```typescript
+enum QuestionLevel {
+  EASY = 'easy',
+  MEDIUM = 'medium',
+  HARD = 'hard',
+}
+```
+
+### **Question Status**
+```typescript
+enum QuestionStatus {
+  DRAFT = 'draft',
+  PUBLISHED = 'published',
+  ARCHIVED = 'archived',
+}
+```
+
+### **Attempt Status**
+```typescript
+enum AttemptStatus {
+  IN_PROGRESS = 'I',
+  SUBMITTED = 'S',
+}
+```
+
+### **Review Status**
+```typescript
+enum ReviewStatus {
+  PENDING = 'P',
+  UNDER_REVIEW = 'U',
+  REVIEWED = 'R',
+  NOT_APPLICABLE = 'N',
+}
+```
+
+### **Submission Type**
+```typescript
+enum SubmissionType {
+  SELF = 'self',
+  AUTO = 'auto',
+}
+```
+
+### **Result Type**
+```typescript
+enum ResultType {
+  PASS = 'P',
+  FAIL = 'F',
+}
+```
+
+### **Rule Types**
+```typescript
+enum RuleType {
+  CATEGORY_BASED = 'category_based',
+  DIFFICULTY_BASED = 'difficulty_based',
+  TYPE_BASED = 'type_based',
+  MIXED = 'mixed',
+}
+```
+
+### **Selection Strategy**
+```typescript
+enum SelectionStrategy {
+  RANDOM = 'random',
+  SEQUENTIAL = 'sequential',
+  WEIGHTED = 'weighted',
+}
+```
+
+---
+
+## 🔄 **Rule-Based Test Workflow**
 
 ### **Approach A: Pre-selected Questions (PRESELECTED mode)**
 1. **Admin creates rule** with criteria and sets `selectionMode = 'PRESELECTED'`
@@ -284,6 +453,37 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 }
 ```
 
+### **Question Parameters (JSONB):**
+```json
+{
+  "maxLength": 500,                         // For text answers
+  "minLength": 10,
+  "allowAttachments": true,
+  "wordLimit": 1000,
+  "caseSensitive": false,
+  "allowPartialScoring": true,
+  "rubric": {
+    "criteria": [
+      {
+        "name": "Content",
+        "maxScore": 10,
+        "description": "Relevance and completeness"
+      }
+    ]
+  }
+}
+```
+
+### **Question Media (JSONB):**
+```json
+{
+  "image": "https://cdn.example.com/question.png",
+  "video": "https://cdn.example.com/question.mp4",
+  "audio": "https://cdn.example.com/question.mp3",
+  "document": "https://cdn.example.com/question.pdf"
+}
+```
+
 ---
 
 ## 🔧 **Multi-tenancy & Security**
@@ -301,14 +501,57 @@ All tables include:
 ```
 tests (1) ←→ (N) testSections
 tests (1) ←→ (N) testQuestions
+tests (1) ←→ (N) testRules
+tests (1) ←→ (N) testAttempts
+tests (1) ←→ (N) questionPools
+
 testSections (1) ←→ (N) testQuestions
+testSections (1) ←→ (N) testRules
+testSections (1) ←→ (N) questionPools
+
 testRules (1) ←→ (N) testQuestions (via ruleId)
+testRules (1) ←→ (N) questionPools
+
+testAttempts (1) ←→ (N) testUserAnswers
+testAttempts (1) ←→ (N) attemptQuestions
+testAttempts (1) ←→ (N) testAttemptsReval
 testAttempts (1) ←→ (1) tests (generated) (via resolvedTestId)
-testUserAnswers (N) ←→ (1) testAttempts
+
 questions (1) ←→ (N) questionOptions
+questions (1) ←→ (N) testQuestions
+questions (1) ←→ (N) testUserAnswers
+questions (1) ←→ (N) attemptQuestions
+
+tests (1) ←→ (N) testUserStatus
+users (1) ←→ (N) testUserStatus
+
+tests (1) ←→ (1) tests (parent-child relationship via parentId)
 ```
 
-## Dynamic Rule-Based Test Workflow
+---
+
+## 🔍 **Indexes for Performance**
+
+```sql
+-- Multi-tenancy indexes
+CREATE INDEX idx_questions_tenant ON questions("tenantId", "organisationId");
+CREATE INDEX idx_tests_tenant ON tests("tenantId", "organisationId");
+CREATE INDEX idx_test_attempts_user ON "testAttempts"("userId", "tenantId");
+
+-- Type-based indexes
+CREATE INDEX idx_questions_type ON questions(type);
+CREATE INDEX idx_tests_type ON tests(type);
+
+-- Status-based indexes
+CREATE INDEX idx_test_attempts_status ON "testAttempts"(status);
+
+-- Foreign key indexes
+CREATE INDEX idx_test_user_answers_attempt ON "testUserAnswers"("attemptId");
+```
+
+---
+
+## 🚀 **Dynamic Rule-Based Test Workflow**
 
 ### Phase 1: Test Creation & Rule Setup
 1. **Create Test** (`tests` table)
