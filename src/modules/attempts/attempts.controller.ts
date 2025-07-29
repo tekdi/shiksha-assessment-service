@@ -34,7 +34,7 @@ export class AttemptsController {
     return { attemptId: attempt.attemptId };
   }
 
-  @Get(':attemptId/resume')
+  @Get(':attemptId/resume/:userId')
   @ApiOperation({ 
     summary: 'Get / Resume an in-progress attempt',
     description: 'Load an existing in-progress attempt and recover previous answers, state, time, and review statuses. Cannot be used for submitted attempts.'
@@ -52,18 +52,22 @@ export class AttemptsController {
     status: 404,
     description: 'Attempt not found',
   })
-  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any): Promise<{ result: any }> {
+  async resumeAttempt(
+    @Param('attemptId') attemptId: string, 
+    @Param('userId') userId: string,
+    @Req() req: any
+  ): Promise<{ result: any }> {
     const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.getAttemptAnswers(attemptId, authContext);
+    const result = await this.attemptsService.getAttemptAnswers(attemptId, userId, authContext);
     return result;
   }
 
-  @Get(':attemptId/questions')
+  @Get(':attemptId/questions/:userId')
   @ApiOperation({ summary: 'Get questions for an attempt' })
   @ApiResponse({ status: 200, description: 'Questions retrieved', type: ApiSuccessResponseDto })
-  async getAttemptQuestions(@Param('attemptId') attemptId: string, @Req() req: any) {
+  async getAttemptQuestions(@Param('attemptId') attemptId: string, @Param('userId') userId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
-    return this.attemptsService.getAttemptQuestions(attemptId, authContext);
+    return this.attemptsService.getAttemptQuestions(attemptId, userId, authContext);
   }
 
   @Post(':attemptId/answers')
@@ -99,7 +103,7 @@ export class AttemptsController {
     };
   }
 
-  @Post(':attemptId/review')
+  @Post(':attemptId/review/:userId')
   @ApiOperation({ summary: 'Review a test attempt (for subjective questions)' })
   @ApiResponse({ status: 200, description: 'Attempt reviewed', type: ApiSuccessResponseDto })
   async reviewAttempt(
