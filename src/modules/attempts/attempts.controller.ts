@@ -103,7 +103,7 @@ export class AttemptsController {
     };
   }
 
-  @Post(':attemptId/review/:userId')
+  @Post(':attemptId/review')
   @ApiOperation({ summary: 'Review a test attempt (for subjective questions)' })
   @ApiResponse({ status: 200, description: 'Attempt reviewed', type: ApiSuccessResponseDto })
   async reviewAttempt(
