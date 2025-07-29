@@ -22,7 +22,8 @@ export class AuthContextInterceptor implements NestInterceptor {
                    request.headers['user-id'] || 
                    request.headers['userId'] || 
                    request.query.userId || 
-                   request.query.userid;
+                   request.query.userid || 
+                   'system';
                    
     
     // Validate required headers
@@ -45,7 +46,7 @@ export class AuthContextInterceptor implements NestInterceptor {
       throw new BadRequestException('organisationId must be a valid UUID format');
     }
     
-    if (!uuidRegex.test(userId)) {
+    if (userId !== 'system' && !uuidRegex.test(userId)) {
       throw new BadRequestException('userId must be a valid UUID format');
     }
     
