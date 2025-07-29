@@ -10,7 +10,7 @@ import { Question, QuestionType } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
 import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
-import { SubmitAnswerDto } from './dto/submit-answer.dto';
+import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
@@ -711,9 +711,10 @@ export class AttemptsService {
     });
   }
 
-  async submitAnswer(attemptId: string, submitAnswerDto: SubmitAnswerDto[], authContext: AuthContext): Promise<void> {
-    // Convert single answer to array for unified processing
-    const answersArray = Array.isArray(submitAnswerDto) ? submitAnswerDto : [submitAnswerDto];
+  async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<void> {
+    // Handle the new format with answers array and optional global timeSpent
+    const answersArray = submitAnswerDto.answers || [];
+    const globalTimeSpent = submitAnswerDto.timeSpent || 0;
     
     if (answersArray.length === 0) {
       throw new NotFoundException('No answers provided');
@@ -772,7 +773,7 @@ export class AttemptsService {
     // Prepare answers to save/update
     const answersToSave = [];
     const answersToUpdate = [];
-    let totalTimeSpent = 0;
+    let totalTimeSpent = globalTimeSpent; // Start with global timeSpent if provided
 
     for (const answerDto of answersArray) {
       const answer = JSON.stringify(answerDto.answer);
@@ -814,11 +815,7 @@ export class AttemptsService {
         });
         answersToSave.push(userAnswer);
       }
-
-      // Accumulate time spent
-      if (answerDto.timeSpent) {
-        totalTimeSpent += answerDto.timeSpent;
-      }
+      
     }
 
     // Save all answers in batch operations
