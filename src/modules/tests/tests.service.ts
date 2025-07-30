@@ -12,7 +12,7 @@ import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
-import { Question } from '../questions/entities/question.entity';
+import { Question, QuestionType } from '../questions/entities/question.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
@@ -31,6 +31,8 @@ export class TestsService {
     private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
+    @InjectRepository(TestAttempt)
+    private readonly testAttemptRepository: Repository<TestAttempt>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     @InjectDataSource()
@@ -220,6 +222,69 @@ export class TestsService {
 
     if (!test) {
       throw new NotFoundException('Test not found');
+    }
+
+    // Extract all question IDs from test questions
+    const questionIds = test.sections
+      .flatMap(section => section.questions)
+      .map(testQuestion => testQuestion.questionId);
+
+    if (questionIds.length === 0) {
+      return test;
+    }
+
+    // Fetch all questions with options in a single query
+    const questions = await this.questionRepository.find({
+      where: { questionId: In(questionIds) },
+      relations: ['options'],
+      order: {
+        options: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    // Create a map for quick lookup
+    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Transform questions and attach to test questions
+    for (const section of test.sections) {
+      for (const testQuestion of section.questions) {
+        const question = questionsMap.get(testQuestion.questionId);
+        if (question) {
+          // Transform the question data to exclude isCorrect from options
+          const transformedQuestion = {
+            ...question,
+            options: question.options?.map(opt => ({
+              questionOptionId: opt.questionOptionId,
+              text: opt.text,
+              media: opt.media,
+              ordering: opt.ordering,
+              marks: opt.marks,
+              caseSensitive: opt.caseSensitive,
+              createdAt: opt.createdAt,
+              // Exclude blankIndex, matchWith, matchWithMedia and isCorrect for security
+            })) || [],
+          };
+
+          // For matching questions, add a separate array of matchWith options
+          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
+            const matchWithOptions = question.options
+              .filter(opt => opt.matchWith) // Only include options that have matchWith
+              .map(opt => ({
+                matchWith: opt.matchWith,
+                matchWithMedia: opt.matchWithMedia,
+                ordering: opt.ordering,
+              }))
+              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
+
+            (transformedQuestion as any).matchWithOptions = matchWithOptions;
+          }
+
+          // Replace the test question with the complete question data
+          Object.assign(testQuestion, transformedQuestion);
+        }
+      }
     }
 
     return test;
@@ -573,9 +638,9 @@ export class TestsService {
       where.reviewStatus = ReviewStatus.REVIEWED;
     }
 
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where,
-      order: { startedAt: 'ASC' },
+      order: { attempt: 'ASC' },
     });
   }
 
@@ -600,9 +665,9 @@ export class TestsService {
       where.reviewStatus = ReviewStatus.REVIEWED;
     }
 
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where,
-      order: { startedAt: 'DESC' },
+      order: { attempt: 'DESC' },
     });
   }
 
@@ -627,7 +692,7 @@ export class TestsService {
       where.reviewStatus = ReviewStatus.REVIEWED;
     }
 
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where,
       order: { score: 'DESC' },
     });
@@ -646,8 +711,8 @@ export class TestsService {
    *          Aggregated score data or null if no submitted attempts exist
    */
   private async getAverageScore(testId: string, userId: string, authContext: AuthContext, test: Test): Promise<{ averageScore: number; attemptCount: number; lastAttemptDate: Date | null } | null> {
-    const queryBuilder = this.testRepository.manager
-      .createQueryBuilder(TestAttempt, 'attempt')
+    const queryBuilder = this.testAttemptRepository
+      .createQueryBuilder('attempt')
       .select([
         'AVG(COALESCE(attempt.score, 0)) as averageScore',
         'COUNT(*) as attemptCount',
@@ -838,14 +903,15 @@ export class TestsService {
    * @returns Promise<TestAttempt | null> - The most recent attempt or null if none exists
    */
   private async getLastAttemptForResume(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
-    return await this.testRepository.manager.findOne(TestAttempt, {
+    return await this.testAttemptRepository.findOne({
       where: {
         testId,
         userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: AttemptStatus.IN_PROGRESS,
       },
-      order: { startedAt: 'DESC' },
+      order: { attempt: 'DESC' },
     });
   }
 
@@ -857,7 +923,7 @@ export class TestsService {
    * @returns Promise<number> - The total number of attempts made by the user
    */
   private async getTotalAttempts(testId: string, userId: string, authContext: AuthContext): Promise<number> {
-    return await this.testRepository.manager.count(TestAttempt, {
+    return await this.testAttemptRepository.count({
       where: {
         testId,
         userId,

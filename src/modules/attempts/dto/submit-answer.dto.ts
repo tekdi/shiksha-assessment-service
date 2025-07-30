@@ -38,9 +38,17 @@ export class SubmitAnswerDto {
   @ValidateNested()
   @Type(() => AnswerDto)
   answer: AnswerDto;
+}
+
+export class SubmitMultipleAnswersDto {
+  @ApiProperty({ type: [SubmitAnswerDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SubmitAnswerDto)
+  answers: SubmitAnswerDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
-  timeSpent?: number; // Time spent on this question in seconds
+  timeSpent?: number; // Total time spent on all questions in seconds
 } 

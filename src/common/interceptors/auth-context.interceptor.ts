@@ -24,6 +24,7 @@ export class AuthContextInterceptor implements NestInterceptor {
                    request.query.userId || 
                    request.query.userid || 
                    'system';
+                   
     
     // Validate required headers
     if (!tenantId) {

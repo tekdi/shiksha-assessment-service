@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
-import { SubmitAnswerDto } from './dto/submit-answer.dto';
+import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -34,7 +34,7 @@ export class AttemptsController {
     return { attemptId: attempt.attemptId };
   }
 
-  @Get(':attemptId/resume')
+  @Get(':attemptId/resume/:userId')
   @ApiOperation({ 
     summary: 'Get / Resume an in-progress attempt',
     description: 'Load an existing in-progress attempt and recover previous answers, state, time, and review statuses. Cannot be used for submitted attempts.'
@@ -52,35 +52,39 @@ export class AttemptsController {
     status: 404,
     description: 'Attempt not found',
   })
-  async resumeAttempt(@Param('attemptId') attemptId: string, @Req() req: any): Promise<{ result: any }> {
+  async resumeAttempt(
+    @Param('attemptId') attemptId: string, 
+    @Param('userId') userId: string,
+    @Req() req: any
+  ): Promise<{ result: any }> {
     const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.getAttemptAnswers(attemptId, authContext);
+    const result = await this.attemptsService.getAttemptAnswers(attemptId, userId, authContext);
     return result;
   }
 
-  @Get(':attemptId/questions')
+  @Get(':attemptId/questions/:userId')
   @ApiOperation({ summary: 'Get questions for an attempt' })
   @ApiResponse({ status: 200, description: 'Questions retrieved', type: ApiSuccessResponseDto })
-  async getAttemptQuestions(@Param('attemptId') attemptId: string, @Req() req: any) {
+  async getAttemptQuestions(@Param('attemptId') attemptId: string, @Param('userId') userId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
-    return this.attemptsService.getAttemptQuestions(attemptId, authContext);
+    return this.attemptsService.getAttemptQuestions(attemptId, userId, authContext);
   }
 
   @Post(':attemptId/answers')
   @ApiOperation({ 
     summary: 'Submit multiple answers for questions',
-    description: 'Submit answers for multiple questions in a test attempt. Accepts an array of answer objects.'
+    description: 'Submit answers for multiple questions in a test attempt. Accepts an object with answers array and optional global timeSpent.'
   })
   @ApiResponse({ status: 200, description: 'Answers submitted', type: ApiSuccessResponseDto })
   async submitAnswer(
     @Param('attemptId') attemptId: string,
-    @Body() answersArray: SubmitAnswerDto[],
+    @Body() submitAnswerDto: SubmitMultipleAnswersDto,
     @Req() req: any,
   ) {
     const authContext: AuthContext = req.user;
     
     // Submit all answers efficiently in one call
-    await this.attemptsService.submitAnswer(attemptId, answersArray, authContext);
+    await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
     return { message: 'Answers submitted successfully' };
   }
 

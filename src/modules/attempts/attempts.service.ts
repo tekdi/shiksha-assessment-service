@@ -10,7 +10,7 @@ import { Question, QuestionType } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
 import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
-import { SubmitAnswerDto } from './dto/submit-answer.dto';
+import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
@@ -139,9 +139,9 @@ export class AttemptsService {
    * @param attemptId - The unique identifier of the attempt to retrieve
    * @param authContext - Authentication context containing user and organization details
    */
-    async getAttemptAnswers(attemptId: string, authContext: AuthContext): Promise<any> {
+    async getAttemptAnswers(attemptId: string, userId: string, authContext: AuthContext): Promise<any> {
       // Step 1: Validate and retrieve the attempt
-      const attempt = await this.findAttemptById(attemptId, authContext);
+      const attempt = await this.findAttemptById(attemptId, userId, authContext);
       if(!attempt){
         throw new NotFoundException('Attempt not found');
       }
@@ -155,6 +155,15 @@ export class AttemptsService {
       },
       select: ['questionId', 'answer', 'updatedAt'],
       order: { createdAt: 'ASC' }, 
+    });
+
+    // Parse JSON answers and transform the response
+    const parsedAnswers = userAnswers.map(ua => {
+        return {
+          questionId: ua.questionId,
+          answer: JSON.parse(ua.answer),
+          updatedAt: ua.updatedAt
+        };
     });
 
     // update userattempt with updatedAt
@@ -171,7 +180,7 @@ export class AttemptsService {
         timeSpent: attempt.timeSpent,
         updatedAt: attempt.updatedAt
       },
-      answers: userAnswers,
+      answers: parsedAnswers,
     };
   }
 
@@ -184,9 +193,9 @@ export class AttemptsService {
    * @param attemptId - The unique identifier of the attempt to retrieve
    * @param authContext - Authentication context containing user and organization details
    */
-  async getAttempt_NotInUse(attemptId: string, authContext: AuthContext): Promise<any> {
+  async getAttempt_NotInUse(attemptId: string, userId: string, authContext: AuthContext): Promise<any> {
     // Step 1: Validate and retrieve the attempt
-    const attempt = await this.validateAndRetrieveAttempt(attemptId, authContext);
+    const attempt = await this.validateAndRetrieveAttempt(attemptId, userId, authContext);
     
     // Step 2: Fetch all related test and questions data
     const { test, testQuestions, questions, sections, userAnswers } = await this.fetchTestAndQuestionsData(attempt, authContext);
@@ -216,9 +225,9 @@ export class AttemptsService {
    * @param attemptId - The unique identifier of the attempt to validate
    * @param authContext - Authentication context for user and organization validation
    */
-  private async validateAndRetrieveAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+  private async validateAndRetrieveAttempt(attemptId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
     // Find attempt with proper ownership validation
-    const attempt = await this.findAttemptById(attemptId, authContext);
+    const attempt = await this.findAttemptById(attemptId, userId, authContext);
 
     // Validate attempt exists
     if (!attempt) {
@@ -321,19 +330,18 @@ export class AttemptsService {
     
     // Process each user answer and create a lookup map
     userAnswers.forEach(ua => {
-      // Parse the JSON answer data stored in the database
-      const answerData = JSON.parse(ua.answer);
-      
-      // Create structured answer object with all relevant metadata
-      answersMap.set(ua.questionId, {
-        questionId: ua.questionId,
-        answer: answerData, // Parsed answer content
-        score: ua.score, // Calculated score for this answer
-        reviewStatus: ua.reviewStatus, // Review status for subjective questions
-        remarks: ua.remarks, // Reviewer remarks if any
-        submittedAt: ua.createdAt, // When the answer was first submitted
-        updatedAt: ua.updatedAt, // When the answer was last modified
-      });
+        const answerData = JSON.parse(ua.answer);
+        
+        // Create structured answer object with all relevant metadata
+        answersMap.set(ua.questionId, {
+          questionId: ua.questionId,
+          answer: answerData,
+          score: ua.score,
+          reviewStatus: ua.reviewStatus,
+          remarks: ua.remarks,
+          submittedAt: ua.createdAt,
+          updatedAt: ua.updatedAt,
+        });
     });
     
     return answersMap;
@@ -676,8 +684,8 @@ export class AttemptsService {
   }
 
 
-  async getAttemptQuestions(attemptId: string, authContext: AuthContext): Promise<Question[]> {
-    const attempt = await this.findAttemptById(attemptId, authContext);
+  async getAttemptQuestions(attemptId: string, userId: string, authContext: AuthContext): Promise<Question[]> {
+    const attempt = await this.findAttemptById(attemptId, userId, authContext);
 
     // Get questions from the resolved test (generated test for rule-based)
     const testId = attempt.resolvedTestId || attempt.testId;
@@ -706,9 +714,10 @@ export class AttemptsService {
     });
   }
 
-  async submitAnswer(attemptId: string, submitAnswerDto: SubmitAnswerDto[], authContext: AuthContext): Promise<void> {
-    // Convert single answer to array for unified processing
-    const answersArray = Array.isArray(submitAnswerDto) ? submitAnswerDto : [submitAnswerDto];
+  async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<void> {
+    // Handle the new format with answers array and optional global timeSpent
+    const answersArray = submitAnswerDto.answers || [];
+    const globalTimeSpent = submitAnswerDto.timeSpent || 0;
     
     if (answersArray.length === 0) {
       throw new NotFoundException('No answers provided');
@@ -767,7 +776,7 @@ export class AttemptsService {
     // Prepare answers to save/update
     const answersToSave = [];
     const answersToUpdate = [];
-    let totalTimeSpent = 0;
+    let totalTimeSpent = globalTimeSpent; // Start with global timeSpent if provided
 
     for (const answerDto of answersArray) {
       const answer = JSON.stringify(answerDto.answer);
@@ -809,11 +818,7 @@ export class AttemptsService {
         });
         answersToSave.push(userAnswer);
       }
-
-      // Accumulate time spent
-      if (answerDto.timeSpent) {
-        totalTimeSpent += answerDto.timeSpent;
-      }
+      
     }
 
     // Save all answers in batch operations
@@ -911,7 +916,7 @@ export class AttemptsService {
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.findAttemptById(attemptId, authContext);
+    const attempt = await this.findAttemptById(attemptId, authContext.userId, authContext);
 
     if (!attempt) {
       throw new NotFoundException('Attempt not found');
@@ -1492,10 +1497,11 @@ export class AttemptsService {
     return shuffled;
   }
 
-  private async findAttemptById(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+  private async findAttemptById(attemptId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
+        userId: userId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
