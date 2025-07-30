@@ -1,8 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryRunner } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Question, QuestionStatus, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
@@ -16,6 +15,7 @@ import { TestQuestion } from '../tests/entities/test-question.entity';
 import { Test, TestStatus } from '../tests/entities/test.entity';
 import { OrderingService } from '../../common/services/ordering.service';
 import { TestSection } from '../tests/entities/test-section.entity';
+import { SectionStatus } from '../tests/dto/create-section.dto';
 
 @Injectable()
 export class QuestionsService {
@@ -26,6 +26,7 @@ export class QuestionsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    @Inject(forwardRef(() => TestsService))
     private readonly testsService: TestsService,
     private readonly dataSource: DataSource,
     private readonly orderingService: OrderingService,
@@ -78,7 +79,7 @@ export class QuestionsService {
     }
 
     // Validate question data
-    this.validateQuestionData(createQuestionDto);
+    this.validateQuestionData(createQuestionDto, authContext);
 
     // Validate question options
     this.validateQuestionOptions(createQuestionDto);
@@ -322,7 +323,7 @@ export class QuestionsService {
     const mergedDto = { ...question, ...updateQuestionDto };
     
     // Validate question data
-    this.validateQuestionData(mergedDto);
+    this.validateQuestionData(mergedDto, authContext);
 
     // If question type is being updated, validate the new type with options
     if (questionData.type && questionData.type !== question.type) {
@@ -500,12 +501,8 @@ export class QuestionsService {
   private validateQuestionOptions(questionDto: CreateQuestionDto): void {
     const { type, options, marks: questionMarks } = questionDto;
 
-    // For non-subjective/non-essay questions, options are mandatory
-    if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
-      if (!options || options.length === 0) {
-        throw new BadRequestException(`Options are mandatory for question type '${type}'. Please provide at least one option.`);
-      }
-      
+    // For all question types, if options are provided, validate them
+    if (options && options.length > 0) {
       // Validate that all options have required fields
       this.validateOptionFields(options, questionMarks);
       
@@ -580,17 +577,34 @@ export class QuestionsService {
    * Performs basic validation of question properties
    * @param createQuestionDto - The question DTO to validate
    */
-  private validateQuestionData(createQuestionDto: CreateQuestionDto): void {
+  private async validateQuestionData(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
     const { marks: questionMarks } = createQuestionDto;
 
+    // Validate question text length
+    if (createQuestionDto.text && createQuestionDto.text.trim().length === 0) {
+      throw new BadRequestException('Question text cannot be empty.');
+    }
+    // validate duplicate question text
+    await this.validateDuplicateQuestionText(createQuestionDto, authContext);
+    
     // Validate question marks are positive if specified
     if (questionMarks !== undefined && questionMarks <= 0) {
       throw new BadRequestException('Question marks must be greater than 0.');
     }
 
-    // Validate question text length
-    if (createQuestionDto.text && createQuestionDto.text.trim().length === 0) {
-      throw new BadRequestException('Question text cannot be empty.');
+  }
+
+  private async validateDuplicateQuestionText(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
+    const { text } = createQuestionDto;
+    const question = await this.questionRepository.findOne({
+      where: {
+        text,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    if (question) {
+      throw new BadRequestException('A question with the same text already exists');
     }
   }
 

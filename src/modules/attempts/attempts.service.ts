@@ -16,6 +16,9 @@ import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
 import { ResumeAttemptDto } from './dto/resume-attempt.dto';
 import { TestSection } from '../tests/entities/test-section.entity';
+import { SectionStatus } from '../tests/dto/create-section.dto';
+import { QuestionStatus } from '../questions/entities/question.entity';
+
 
 @Injectable()
 export class AttemptsService {
@@ -138,7 +141,11 @@ export class AttemptsService {
    */
     async getAttemptAnswers(attemptId: string, authContext: AuthContext): Promise<any> {
       // Step 1: Validate and retrieve the attempt
-      const attempt = await this.validateAndRetrieveAttempt(attemptId, authContext);
+      const attempt = await this.findAttemptById(attemptId, authContext);
+      if(!attempt){
+        throw new NotFoundException('Attempt not found');
+      }
+
       // Fetch user's answers for this attempt 
     const userAnswers = await this.testUserAnswerRepository.find({
       where: {
@@ -211,14 +218,7 @@ export class AttemptsService {
    */
   private async validateAndRetrieveAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
     // Find attempt with proper ownership validation
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        userId: authContext.userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    const attempt = await this.findAttemptById(attemptId, authContext);
 
     // Validate attempt exists
     if (!attempt) {
@@ -913,8 +913,49 @@ export class AttemptsService {
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
     const attempt = await this.findAttemptById(attemptId, authContext);
 
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
+    
+    // Get test information for passing marks
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Validate that the test has subjective questions
+    if (test.isObjective) {
+      throw new BadRequestException('Objective tests do not require manual review');
+    }
+    
+    // Validate attempt status
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new BadRequestException('Only submitted attempts can be reviewed');
+    }
+
+    // Get all answers for this attempt to validate
+    const attemptAnswers = await this.testUserAnswerRepository
+      .createQueryBuilder('answer')
+      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
+      .where('answer.attemptId = :attemptId', { attemptId })
+      .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('question.type IN (:...questionTypes)', { questionTypes: [QuestionType.SUBJECTIVE, QuestionType.ESSAY] })
+      .getMany();
+
     // Update scores for reviewed answers
     for (const answerReview of reviewDto.answers) {
+      // Score validation already done in the first loop above
+      const validatedScore = Number(answerReview.score) || 0;
+      
       await this.testUserAnswerRepository.update(
         {
           attemptId,
@@ -923,22 +964,45 @@ export class AttemptsService {
           organisationId: authContext.organisationId,
         },
         {
-          score: answerReview.score,
+          score: validatedScore,
           remarks: answerReview.remarks,
           reviewedBy: authContext.userId,
-          reviewStatus: 'R' as any, // REVIEWED
+          reviewStatus: AnswerReviewStatus.REVIEWED,
           reviewedAt: new Date(),
         }
       );
     }
 
-    // Calculate final score
-    const finalScore = await this.calculateFinalScore(attemptId, authContext);
+    // Check if all pending subjective questions have been reviewed
+    const pendingSubjectiveAnswers = attemptAnswers.filter(answer => {
+      return answer.reviewStatus != AnswerReviewStatus.REVIEWED;
+    });
+
+    // Determine attempt review status based on whether all questions are reviewed
+    let attemptReviewStatus: ReviewStatus;
+    if (pendingSubjectiveAnswers.length === 0) {
+      // All subjective questions have been reviewed
+      attemptReviewStatus = ReviewStatus.REVIEWED;
+    } else {
+      // Some questions still pending - mark as under review
+      attemptReviewStatus = ReviewStatus.UNDER_REVIEW;
+    }
+
+    // Calculate final score by preserving existing auto-graded scores and adding reviewed scores
+    const finalScore = await this.calculateTotalAttemptScore(attemptId, authContext);
+
     
-    attempt.score = finalScore;
-    attempt.result = finalScore >= 60 ? ResultType.PASS : ResultType.FAIL;
-    attempt.reviewStatus = ReviewStatus.REVIEWED;
+    // Ensure final score is a proper number
+    const validatedFinalScore = Number(finalScore) || 0;
+    
+    attempt.score = validatedFinalScore;
+    attempt.reviewStatus = attemptReviewStatus;
     attempt.updatedBy = authContext.userId;
+
+    // Only set result when attempt is fully reviewed
+    if (attemptReviewStatus === ReviewStatus.REVIEWED) {
+      attempt.result = validatedFinalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+    }
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
@@ -962,7 +1026,7 @@ export class AttemptsService {
       .leftJoin('questions', 'question', 'question.questionId = answers.questionId')
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('attempt.reviewStatus = :reviewStatus', { reviewStatus: ReviewStatus.PENDING })
+      .andWhere('attempt.reviewStatus IN (:...reviewStatuses)', { reviewStatuses: [ReviewStatus.PENDING, ReviewStatus.UNDER_REVIEW] })
       .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSIGNMENT })
       .andWhere('answers.reviewStatus = :answerReviewStatus', { answerReviewStatus: 'P' })
       .select([
@@ -970,6 +1034,7 @@ export class AttemptsService {
         'attempt.testId',
         'attempt.userId',
         'attempt.submittedAt',
+        'attempt.reviewStatus',
         'answers.questionId',
         'question.text as title',
         'question.type',
@@ -1449,6 +1514,13 @@ export class AttemptsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: TestStatus.PUBLISHED,
+      },
+      relations: ['sections'],
+      order: {
+        sections: {
+          ordering: 'ASC',
+        },
       },
     });
 
@@ -1459,6 +1531,92 @@ export class AttemptsService {
     return test;
   }
 
+  private async validateAttemptForAnswersheet(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+     // Only return results if attempt is submitted
+     if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new Error('Attempt results are only available for submitted attempts');
+    }
+
+    // Don't return results if attempt is under review
+    if (attempt.reviewStatus != ReviewStatus.REVIEWED) {
+      throw new Error('Attempt results are not available while under review');
+    }
+
+    return attempt;
+  }
+
+  /**
+   * Generates the complete answersheet for a test attempt
+   * @param attemptId - The ID of the attempt
+   * @param authContext - Authentication context for tenant and organization validation
+   * @returns Complete answersheet with test details, attempt info, and sections with questions
+   */
+  async getAttemptAnswersheet(attemptId: string, authContext: AuthContext): Promise<any> {
+    // Step 1: Validate attempt and its status
+    const attempt = await this.validateAttemptForAnswersheet(attemptId, authContext);
+    const test = await this.testRepository.findOne({
+      where: {
+        testId: attempt.testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if(!test.answerSheet){
+      throw new Error('Answer sheet is not enabled for this test');
+    }
+
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId: attempt.attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    
+    const answers = [];
+    for (const userAnswer of userAnswers) {
+      const question = await this.questionRepository.findOne({
+        where: {
+          questionId: userAnswer.questionId,
+        },
+        relations: ['options'],
+      });
+      
+      const parsedAnswer = JSON.parse(userAnswer.answer);
+      
+      // Get correct answers if test.showCorrectAnswer is true
+      let correctAnswers = [];
+      if (test.showCorrectAnswer && question.options) {
+        correctAnswers = question.options
+          .filter(opt => opt.isCorrect)
+          .map(opt => opt.questionOptionId);
+      }
+      
+      answers.push({
+        questionId: userAnswer.questionId,
+        userAnswer: parsedAnswer,
+        score: userAnswer.score,
+        correctAnswers: correctAnswers,
+      });
+    }
+    
+    // Step 3: Build the complete answersheet structure
+    const answersheet = {
+      attempt: attempt,     
+      answers: answers,
+    }; 
+
+    return answersheet;
+  }
+ 
   private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
     await this.pluginManager.triggerEvent(
       eventName,

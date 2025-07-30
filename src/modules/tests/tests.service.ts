@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, In, Not, FindOptionsWhere } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, Like, Between, In, Not, FindOptionsWhere, DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -17,6 +17,8 @@ import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
 import { OrderingService } from '@/common/services/ordering.service';
+import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
+import { TestStructureDto } from './dto/test-structure.dto';
 
 @Injectable()
 export class TestsService {
@@ -31,6 +33,7 @@ export class TestsService {
     private readonly questionRepository: Repository<Question>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly orderingService: OrderingService,
   ) {}
@@ -671,6 +674,160 @@ export class TestsService {
       attemptCount: parseInt(result.attemptCount) || 0,
       lastAttemptDate: result.lastAttemptDate ? new Date(result.lastAttemptDate) : null,
     };
+  }
+
+  async updateTestStructure(testId: string, testStructureDto: TestStructureDto, authContext: AuthContext): Promise<void> {
+    // Use transaction for data consistency
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Validate test exists and belongs to tenant/organization
+      const test = await this.testRepository.findOne({
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      if (!test) {
+        throw new NotFoundException('Test not found');
+      }
+
+
+
+      // Get existing sections and questions for validation
+      const existingSections = await queryRunner.manager.find(TestSection, {
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      const existingQuestions = await queryRunner.manager.find(TestQuestion, {
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      // Validate all existing sections are included in the structure update
+      const existingSectionIds = new Set(existingSections.map(s => s.sectionId));
+      const providedSectionIds = new Set(testStructureDto.sections.map(s => s.sectionId));
+      const missingSections = existingSections
+        .filter(s => !providedSectionIds.has(s.sectionId))
+        .map(s => s.sectionId);
+
+      if (missingSections.length > 0) {
+        throw new BadRequestException(RESPONSE_MESSAGES.MISSING_SECTIONS_IN_STRUCTURE(missingSections));
+      }
+
+      // Validate all existing questions are included in the structure update
+      const existingQuestionIds = new Set(existingQuestions.map(q => q.questionId));
+      const providedQuestionIds = new Set();
+      
+      testStructureDto.sections.forEach(section => {
+        if (section.questions) {
+          section.questions.forEach(question => {
+            providedQuestionIds.add(question.questionId);
+          });
+        }
+      });
+
+      const missingQuestions = existingQuestions
+        .filter(q => !providedQuestionIds.has(q.questionId))
+        .map(q => q.questionId);
+
+      if (missingQuestions.length > 0) {
+        throw new BadRequestException(RESPONSE_MESSAGES.MISSING_QUESTIONS_IN_STRUCTURE(missingQuestions));
+      }
+
+      // Validate that all sections belong to the test
+      const sectionIds = testStructureDto.sections.map(s => s.sectionId);
+      const foundSections = await queryRunner.manager.find(TestSection, {
+        where: {
+          sectionId: In(sectionIds),
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      if (foundSections.length !== sectionIds.length) {
+        throw new BadRequestException(RESPONSE_MESSAGES.SOME_SECTIONS_NOT_FOUND);
+      }
+
+      // Validate that all questions belong to the provided sections
+      const allQuestionIds = [];
+      testStructureDto.sections.forEach(section => {
+        if (section.questions) {
+          section.questions.forEach(question => {
+            allQuestionIds.push(question.questionId);
+          });
+        }
+      });
+
+      if (allQuestionIds.length > 0) {
+        const foundQuestions = await queryRunner.manager.find(TestQuestion, {
+          where: {
+            questionId: In(allQuestionIds),
+            testId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        });
+
+        if (foundQuestions.length !== allQuestionIds.length) {
+          throw new BadRequestException(RESPONSE_MESSAGES.QUESTIONS_NOT_FOUND_IN_STRUCTURE);
+        }
+      }
+
+      // Update section ordering
+      for (const sectionData of testStructureDto.sections) {
+        await queryRunner.manager.update(TestSection, 
+          { sectionId: sectionData.sectionId },
+          { ordering: sectionData.order }
+        );
+      }
+
+      // Update question ordering and placement
+      for (const sectionData of testStructureDto.sections) {
+        if (sectionData.questions) {
+          for (const questionData of sectionData.questions) {
+            await queryRunner.manager.update(TestQuestion,
+              { 
+                testId,
+                questionId: questionData.questionId,
+                tenantId: authContext.tenantId,
+                organisationId: authContext.organisationId,
+              },
+              { 
+                ordering: questionData.order,
+                sectionId: sectionData.sectionId
+              }
+            );
+          }
+        }
+      }
+
+      // Commit transaction
+      await queryRunner.commitTransaction();
+
+      // Invalidate cache
+      await this.invalidateTestCache(authContext.tenantId);
+
+    } catch (error) {
+      // Rollback transaction on error
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      // Release query runner
+      await queryRunner.release();
+    }
   }
 
   /**
