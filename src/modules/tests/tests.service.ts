@@ -696,8 +696,6 @@ export class TestsService {
         throw new NotFoundException('Test not found');
       }
 
-
-
       // Get existing sections and questions for validation
       const existingSections = await queryRunner.manager.find(TestSection, {
         where: {
