@@ -27,6 +27,8 @@ export class QuestionsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @InjectRepository(TestSection)
     private readonly testSectionRepository: Repository<TestSection>,
+    @InjectRepository(Test)
+    private readonly testRepository: Repository<Test>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly testsService: TestsService,
@@ -60,7 +62,7 @@ export class QuestionsService {
     
     if (testId && sectionId) {
       // Validate test exists
-      test = await this.dataSource.getRepository(Test).findOne({
+      test = await this.testRepository.findOne({
         where: {
           testId,
           tenantId: authContext.tenantId,
