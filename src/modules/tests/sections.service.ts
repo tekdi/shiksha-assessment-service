@@ -8,6 +8,7 @@ import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType } from './entities/test.entity';
 import { Test } from './entities/test.entity';
 import { TestRule } from './entities/test-rule.entity';
+import { OrderingService } from '@/common/services/ordering.service';
 
 @Injectable()
 export class SectionsService {
@@ -18,14 +19,22 @@ export class SectionsService {
     private readonly testRepository: Repository<Test>,
     @InjectRepository(TestRule)
     private readonly ruleRepository: Repository<TestRule>,
+    private readonly orderingService: OrderingService,
   ) {}
 
   async create(createSectionDto: CreateSectionDto, authContext: AuthContext): Promise<TestSection> {
     // Validate test type and section configuration
     await this.validateSectionConfiguration(createSectionDto.testId, authContext);
 
+    // Set ordering if not provided
+    let ordering = createSectionDto.ordering;
+    if (ordering === undefined) {
+      ordering = await this.orderingService.getNextSectionOrder(createSectionDto.testId, authContext);
+    }
+
     const section = this.sectionRepository.create({
       ...createSectionDto,
+      ordering,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
       createdBy: authContext.userId,
@@ -126,4 +135,6 @@ export class SectionsService {
         throw new BadRequestException(`Unsupported test type: ${test.type}`);
     }
   }
+
+
 } 

@@ -1,8 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryRunner } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Question, QuestionStatus, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
@@ -14,7 +13,8 @@ import { TestsService } from '../tests/tests.service';
 import { DataSource } from 'typeorm';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { Test, TestStatus } from '../tests/entities/test.entity';
-import { Section } from '../tests/entities/section.entity';
+import { OrderingService } from '../../common/services/ordering.service';
+import { TestSection } from '../tests/entities/test-section.entity';
 import { SectionStatus } from '../tests/dto/create-section.dto';
 
 @Injectable()
@@ -26,8 +26,10 @@ export class QuestionsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    @Inject(forwardRef(() => TestsService))
     private readonly testsService: TestsService,
     private readonly dataSource: DataSource,
+    private readonly orderingService: OrderingService,
   ) {}
 
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
@@ -59,7 +61,7 @@ export class QuestionsService {
       }
       
       //validate section
-      const sectionRepo = queryRunner.manager.getRepository(Section);
+      const sectionRepo = queryRunner.manager.getRepository(TestSection);
       const section = await sectionRepo.findOne({
         where: {
           sectionId,
@@ -115,7 +117,7 @@ export class QuestionsService {
           testId,
           sectionId,
           questionId: savedQuestion.questionId,
-          ordering: await this.getNextQuestionOrder(queryRunner, testId, sectionId, authContext),
+          ordering: await this.orderingService.getNextQuestionOrderWithRunner(queryRunner, testId, sectionId, authContext),
           isCompulsory: isCompulsory || false,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
@@ -321,7 +323,7 @@ export class QuestionsService {
     const mergedDto = { ...question, ...updateQuestionDto };
     
     // Validate question data
-    this.validateQuestionData(mergedDto);
+    this.validateQuestionData(mergedDto, authContext);
 
     // If question type is being updated, validate the new type with options
     if (questionData.type && questionData.type !== question.type) {
@@ -906,21 +908,5 @@ export class QuestionsService {
     }
   }
 
-  private async getNextQuestionOrder(
-    queryRunner: QueryRunner,
-    testId: string,
-    sectionId: string,
-    authContext: AuthContext
-  ): Promise<number> {
-    const result = await queryRunner.manager
-      .createQueryBuilder(TestQuestion, 'tq')
-      .where('tq.testId = :testId', { testId })
-      .andWhere('tq.sectionId = :sectionId', { sectionId })
-      .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .select('MAX(tq.ordering)', 'maxOrdering')
-      .getRawOne();
-    
-    return (result?.maxOrdering || 0) + 1;
-  }
+
 } 
