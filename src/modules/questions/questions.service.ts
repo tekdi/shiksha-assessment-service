@@ -426,12 +426,8 @@ export class QuestionsService {
   private validateQuestionOptions(questionDto: CreateQuestionDto): void {
     const { type, options, marks: questionMarks } = questionDto;
 
-    // For non-subjective/non-essay questions, options are mandatory
-    if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
-      if (!options || options.length === 0) {
-        throw new BadRequestException(`Options are mandatory for question type '${type}'. Please provide at least one option.`);
-      }
-      
+    // For all question types, if options are provided, validate them
+    if (options && options.length > 0) {
       // Validate that all options have required fields
       this.validateOptionFields(options, questionMarks);
       

@@ -16,6 +16,9 @@ import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
 import { ResumeAttemptDto } from './dto/resume-attempt.dto';
 import { TestSection } from '../tests/entities/test-section.entity';
+import { SectionStatus } from '../tests/dto/create-section.dto';
+import { QuestionStatus } from '../questions/entities/question.entity';
+
 
 @Injectable()
 export class AttemptsService {
@@ -1511,6 +1514,13 @@ export class AttemptsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: TestStatus.PUBLISHED,
+      },
+      relations: ['sections'],
+      order: {
+        sections: {
+          ordering: 'ASC',
+        },
       },
     });
 
@@ -1521,6 +1531,92 @@ export class AttemptsService {
     return test;
   }
 
+  private async validateAttemptForAnswersheet(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+     // Only return results if attempt is submitted
+     if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new Error('Attempt results are only available for submitted attempts');
+    }
+
+    // Don't return results if attempt is under review
+    if (attempt.reviewStatus != ReviewStatus.REVIEWED) {
+      throw new Error('Attempt results are not available while under review');
+    }
+
+    return attempt;
+  }
+
+  /**
+   * Generates the complete answersheet for a test attempt
+   * @param attemptId - The ID of the attempt
+   * @param authContext - Authentication context for tenant and organization validation
+   * @returns Complete answersheet with test details, attempt info, and sections with questions
+   */
+  async getAttemptAnswersheet(attemptId: string, authContext: AuthContext): Promise<any> {
+    // Step 1: Validate attempt and its status
+    const attempt = await this.validateAttemptForAnswersheet(attemptId, authContext);
+    const test = await this.testRepository.findOne({
+      where: {
+        testId: attempt.testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if(!test.answerSheet){
+      throw new Error('Answer sheet is not enabled for this test');
+    }
+
+    const userAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId: attempt.attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    
+    const answers = [];
+    for (const userAnswer of userAnswers) {
+      const question = await this.questionRepository.findOne({
+        where: {
+          questionId: userAnswer.questionId,
+        },
+        relations: ['options'],
+      });
+      
+      const parsedAnswer = JSON.parse(userAnswer.answer);
+      
+      // Get correct answers if test.showCorrectAnswer is true
+      let correctAnswers = [];
+      if (test.showCorrectAnswer && question.options) {
+        correctAnswers = question.options
+          .filter(opt => opt.isCorrect)
+          .map(opt => opt.questionOptionId);
+      }
+      
+      answers.push({
+        questionId: userAnswer.questionId,
+        userAnswer: parsedAnswer,
+        score: userAnswer.score,
+        correctAnswers: correctAnswers,
+      });
+    }
+    
+    // Step 3: Build the complete answersheet structure
+    const answersheet = {
+      attempt: attempt,     
+      answers: answers,
+    }; 
+
+    return answersheet;
+  }
+ 
   private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
     await this.pluginManager.triggerEvent(
       eventName,
