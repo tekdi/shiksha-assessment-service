@@ -8,7 +8,6 @@ import { Test } from './entities/test.entity';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
-import { TestStructureDto } from './dto/test-structure.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
@@ -17,7 +16,9 @@ import { Question, QuestionType } from '../questions/entities/question.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
+import { OrderingService } from '@/common/services/ordering.service';
 import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
+import { TestStructureDto } from './dto/test-structure.dto';
 
 @Injectable()
 export class TestsService {
@@ -36,6 +37,7 @@ export class TestsService {
     private readonly cacheManager: Cache,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly orderingService: OrderingService,
   ) {}
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
@@ -306,12 +308,15 @@ export class TestsService {
       throw new BadRequestException('Question is already added to this test');
     }
 
+    // Get the next available ordering number
+    const ordering = await this.orderingService.getNextQuestionOrder(testId, sectionId, authContext);
+
     // Add question to test
     const testQuestion = this.testQuestionRepository.create({
       testId,
       sectionId,
       questionId,
-      ordering: 0, // Will be set based on existing questions
+      ordering,
       isCompulsory,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
@@ -390,16 +395,7 @@ export class TestsService {
       let ordering = questionData.ordering;
       if (ordering === undefined) {
         // Get the next available ordering number
-        const maxOrdering = await this.testQuestionRepository
-          .createQueryBuilder('tq')
-          .where('tq.testId = :testId', { testId })
-          .andWhere('tq.sectionId = :sectionId', { sectionId })
-          .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
-          .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
-          .select('MAX(tq.ordering)', 'maxOrdering')
-          .getRawOne();
-
-        ordering = (maxOrdering?.maxOrdering || 0) + 1;
+        ordering = await this.orderingService.getNextQuestionOrder(testId, sectionId, authContext);
       }
 
       questionsToAdd.push({
@@ -764,8 +760,6 @@ export class TestsService {
       if (!test) {
         throw new NotFoundException('Test not found');
       }
-
-
 
       // Get existing sections and questions for validation
       const existingSections = await queryRunner.manager.find(TestSection, {

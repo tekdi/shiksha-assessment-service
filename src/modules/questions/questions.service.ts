@@ -1,15 +1,21 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, QueryRunner } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
-import { Question, QuestionType } from './entities/question.entity';
+import { Question, QuestionStatus, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionDto } from './dto/query-question.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { TestsService } from '../tests/tests.service';
+import { DataSource } from 'typeorm';
+import { TestQuestion } from '../tests/entities/test-question.entity';
+import { Test, TestStatus } from '../tests/entities/test.entity';
+import { OrderingService } from '../../common/services/ordering.service';
+import { TestSection } from '../tests/entities/test-section.entity';
+import { SectionStatus } from '../tests/dto/create-section.dto';
 
 @Injectable()
 export class QuestionsService {
@@ -20,47 +26,116 @@ export class QuestionsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    @Inject(forwardRef(() => TestsService))
+    private readonly testsService: TestsService,
+    private readonly dataSource: DataSource,
+    private readonly orderingService: OrderingService,
   ) {}
 
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
-    const { options, ...questionData } = createQuestionDto;
+    const { options, testId, sectionId, isCompulsory, ...questionData } = createQuestionDto;
     
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    if (testId && !sectionId) {
+      throw new BadRequestException('sectionId is required when testId is provided');
+    }
+    if (!testId && sectionId) {
+      throw new BadRequestException('testId is required when sectionId is provided');
+    }
+    // Add question to test if testId and sectionId are provided
+    if (testId && sectionId) {
+      // Validate test type and question addition
+      const testRepo = queryRunner.manager.getRepository(Test);
+      const test = await testRepo.findOne({
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!test) {
+        throw new NotFoundException('Test not found');
+      }
+      
+      //validate section
+      const sectionRepo = queryRunner.manager.getRepository(TestSection);
+      const section = await sectionRepo.findOne({
+        where: {
+          sectionId,
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!section) {
+        throw new NotFoundException('Section not found');
+      }
+      if (test.status === TestStatus.PUBLISHED) {
+        throw new BadRequestException('Cannot modify questions of a published test');
+      }
+    }
+
     // Validate question data
-    this.validateQuestionData(createQuestionDto);
-    
-    // Validate question options (includes duplicate validation)
+    this.validateQuestionData(createQuestionDto, authContext);
+
+    // Validate question options
     this.validateQuestionOptions(createQuestionDto);
-    
+
     // Validate question parameters
     this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
     
-    const question = this.questionRepository.create({
-      ...questionData,
-      tenantId: authContext.tenantId,
-      organisationId: authContext.organisationId,
-      createdBy: authContext.userId,
-    });
-
-    const savedQuestion = await this.questionRepository.save(question);
-
-    // Create options if provided
-    if (options && options.length > 0) {
-      const questionOptions = options.map(optionData => 
-        this.questionOptionRepository.create({
-          ...optionData,
+   
+    try {
+      // Create question
+      const question = this.questionRepository.create({
+        ...questionData,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        createdBy: authContext.userId,
+      });
+      const savedQuestion = await queryRunner.manager.save(Question, question);
+      // Create options if provided
+      if (options && options.length > 0) {
+        const questionOptions = options.map(optionData =>
+          this.questionOptionRepository.create({
+            ...optionData,
+            questionId: savedQuestion.questionId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          })
+        );
+        await queryRunner.manager.save(QuestionOption, questionOptions);
+      }
+      
+      if (testId && sectionId) {
+        const testQuestionRepo = queryRunner.manager.getRepository(TestQuestion);
+        // Add question to test
+        const testQuestion = testQuestionRepo.create({
+          testId,
+          sectionId,
           questionId: savedQuestion.questionId,
+          ordering: await this.orderingService.getNextQuestionOrderWithRunner(queryRunner, testId, sectionId, authContext),
+          isCompulsory: isCompulsory || false,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
-        })
-      );
+        });
+        await testQuestionRepo.save(testQuestion);
+      }      
       
-      await this.questionOptionRepository.save(questionOptions);
+      await queryRunner.commitTransaction();
+      // Invalidate cache
+      await this.invalidateQuestionCache(authContext.tenantId);
+      // Return the created question (with options)
+      return this.findOne(savedQuestion.questionId, authContext);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    // Invalidate cache
-    await this.invalidateQuestionCache(authContext.tenantId);
-    
-    return this.findOne(savedQuestion.questionId, authContext);
   }
 
   async findAll(queryDto: QueryQuestionDto, authContext: AuthContext) {
@@ -189,7 +264,7 @@ export class QuestionsService {
 
     // Rule preview mode - only show published questions
     if (rulePreview === 'true') {
-      queryBuilder.andWhere('question.status = :publishedStatus', { publishedStatus: 'published' });
+      queryBuilder.andWhere('question.status = :publishedStatus', { publishedStatus: QuestionStatus.PUBLISHED });
     }
 
     const total = await queryBuilder.getCount();
@@ -248,7 +323,7 @@ export class QuestionsService {
     const mergedDto = { ...question, ...updateQuestionDto };
     
     // Validate question data
-    this.validateQuestionData(mergedDto);
+    this.validateQuestionData(mergedDto, authContext);
 
     // If question type is being updated, validate the new type with options
     if (questionData.type && questionData.type !== question.type) {
@@ -339,7 +414,7 @@ export class QuestionsService {
       .leftJoinAndSelect('question.options', 'options')
       .where('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.status = :status', { status: 'published' });
+      .andWhere('question.status = :status', { status: QuestionStatus.PUBLISHED });
 
     // Apply rule criteria
     if (ruleCriteria.categories && ruleCriteria.categories.length > 0) {
@@ -426,12 +501,8 @@ export class QuestionsService {
   private validateQuestionOptions(questionDto: CreateQuestionDto): void {
     const { type, options, marks: questionMarks } = questionDto;
 
-    // For non-subjective/non-essay questions, options are mandatory
-    if (type !== QuestionType.SUBJECTIVE && type !== QuestionType.ESSAY) {
-      if (!options || options.length === 0) {
-        throw new BadRequestException(`Options are mandatory for question type '${type}'. Please provide at least one option.`);
-      }
-      
+    // For all question types, if options are provided, validate them
+    if (options && options.length > 0) {
       // Validate that all options have required fields
       this.validateOptionFields(options, questionMarks);
       
@@ -506,17 +577,34 @@ export class QuestionsService {
    * Performs basic validation of question properties
    * @param createQuestionDto - The question DTO to validate
    */
-  private validateQuestionData(createQuestionDto: CreateQuestionDto): void {
+  private async validateQuestionData(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
     const { marks: questionMarks } = createQuestionDto;
 
+    // Validate question text length
+    if (createQuestionDto.text && createQuestionDto.text.trim().length === 0) {
+      throw new BadRequestException('Question text cannot be empty.');
+    }
+    // validate duplicate question text
+    await this.validateDuplicateQuestionText(createQuestionDto, authContext);
+    
     // Validate question marks are positive if specified
     if (questionMarks !== undefined && questionMarks <= 0) {
       throw new BadRequestException('Question marks must be greater than 0.');
     }
 
-    // Validate question text length
-    if (createQuestionDto.text && createQuestionDto.text.trim().length === 0) {
-      throw new BadRequestException('Question text cannot be empty.');
+  }
+
+  private async validateDuplicateQuestionText(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
+    const { text } = createQuestionDto;
+    const question = await this.questionRepository.findOne({
+      where: {
+        text,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+    if (question) {
+      throw new BadRequestException('A question with the same text already exists');
     }
   }
 
@@ -819,4 +907,6 @@ export class QuestionsService {
       throw new BadRequestException(`Duplicate matchWith values found: ${duplicateMatchWith.join(', ')}`);
     }
   }
+
+
 } 

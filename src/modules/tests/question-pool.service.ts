@@ -5,6 +5,7 @@ import { TestQuestion } from './entities/test-question.entity';
 import { TestRule } from './entities/test-rule.entity';
 import { Question } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { QuestionStatus } from '../questions/entities/question.entity';
 
 @Injectable()
 export class QuestionPoolService {
@@ -49,7 +50,7 @@ export class QuestionPoolService {
       .createQueryBuilder('question')
       .where('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.status = :status', { status: 'published' });
+      .andWhere('question.status = :status', { status: QuestionStatus.PUBLISHED });
 
     if (criteria.categories && criteria.categories.length > 0) {
       queryBuilder.andWhere('question.categoryId IN (:...categories)', { categories: criteria.categories });
