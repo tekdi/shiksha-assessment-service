@@ -1,0 +1,36 @@
+# Database Configuration
+# DB_HOST=localhost
+# DB_PORT=5432
+# DB_USERNAME=postgres
+# DB_PASSWORD=postgres
+# DB_DATABASE=assessment_db
+
+# Dev Database Configuration
+DB_HOST=localhost
+DB_PORT=5434
+DB_USERNAME=aspire
+DB_PASSWORD="lFba-2hA}JH_)C"
+DB_NAME=assessment_db
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# Application Configuration
+PORT=6000
+NODE_ENV=development
+
+# JWT Configuration (for future use)
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=24h 
+
+ASSESSMENT_PREFIX=assessment/v1
+
+# Storage Configuration
+# Supported providers: aws, azure, gcp
+CLOUD_STORAGE_PROVIDER=
+CLOUD_STORAGE_ACCESS_KEY_ID=
+CLOUD_STORAGE_SECRET_ACCESS_KEY=
+CLOUD_STORAGE_BUCKET_NAME=
+CLOUD_STORAGE_REGION=
