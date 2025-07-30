@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryRunner } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Question, QuestionStatus, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
@@ -24,9 +25,10 @@ export class QuestionsService {
     private readonly questionRepository: Repository<Question>,
     @InjectRepository(QuestionOption)
     private readonly questionOptionRepository: Repository<QuestionOption>,
+    @InjectRepository(TestSection)
+    private readonly testSectionRepository: Repository<TestSection>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
-    @Inject(forwardRef(() => TestsService))
     private readonly testsService: TestsService,
     private readonly dataSource: DataSource,
     private readonly orderingService: OrderingService,
@@ -35,21 +37,30 @@ export class QuestionsService {
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
     const { options, testId, sectionId, isCompulsory, ...questionData } = createQuestionDto;
     
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
+    // Validate input parameters first
     if (testId && !sectionId) {
       throw new BadRequestException('sectionId is required when testId is provided');
     }
     if (!testId && sectionId) {
       throw new BadRequestException('testId is required when sectionId is provided');
     }
-    // Add question to test if testId and sectionId are provided
+
+    // Validate question data (includes duplicate text check)
+    await this.validateQuestionData(createQuestionDto, authContext);
+
+    // Validate question options
+    this.validateQuestionOptions(createQuestionDto);
+
+    // Validate question parameters
+    this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
+
+    // Validate test and section existence before starting transaction
+    let test: Test | null = null;
+    let section: TestSection | null = null;
+    
     if (testId && sectionId) {
-      // Validate test type and question addition
-      const testRepo = queryRunner.manager.getRepository(Test);
-      const test = await testRepo.findOne({
+      // Validate test exists
+      test = await this.dataSource.getRepository(Test).findOne({
         where: {
           testId,
           tenantId: authContext.tenantId,
@@ -60,9 +71,8 @@ export class QuestionsService {
         throw new NotFoundException('Test not found');
       }
       
-      //validate section
-      const sectionRepo = queryRunner.manager.getRepository(TestSection);
-      const section = await sectionRepo.findOne({
+      // Validate section exists
+      section = await this.testSectionRepository.findOne({
         where: {
           sectionId,
           testId,
@@ -73,19 +83,15 @@ export class QuestionsService {
       if (!section) {
         throw new NotFoundException('Section not found');
       }
+      
       if (test.status === TestStatus.PUBLISHED) {
         throw new BadRequestException('Cannot modify questions of a published test');
       }
     }
-
-    // Validate question data
-    this.validateQuestionData(createQuestionDto, authContext);
-
-    // Validate question options
-    this.validateQuestionOptions(createQuestionDto);
-
-    // Validate question parameters
-    this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
+    
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
     
    
     try {
