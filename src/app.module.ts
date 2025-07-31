@@ -12,7 +12,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { PluginModule } from './modules/plugins/plugin.module';
 import { DatabaseConfig } from './config/database.config';
 import { RedisConfig } from './config/redis.config';
-import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
 
 @Module({
   imports: [
@@ -21,20 +20,6 @@ import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
-    // Conditionally import CloudStorageModule if provider is configured
-    ...(process.env.CLOUD_STORAGE_PROVIDER
-      ? [
-          CloudStorageModule.register({
-            provider: process.env.CLOUD_STORAGE_PROVIDER as 'aws' | 'azure' | 'gcp',
-            region: process.env.CLOUD_STORAGE_REGION,
-            credentials: {
-              accessKeyId: process.env.CLOUD_STORAGE_ACCESS_KEY_ID,
-              secretAccessKey: process.env.CLOUD_STORAGE_SECRET_ACCESS_KEY,
-            },
-            bucket: process.env.CLOUD_STORAGE_BUCKET_NAME,
-          }),
-        ]
-      : []),
     
     // Database
     TypeOrmModule.forRootAsync({

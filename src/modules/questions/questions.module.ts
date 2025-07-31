@@ -8,10 +8,11 @@ import { TestsModule } from '../tests/tests.module';
 import { OrderingService } from '@/common/services/ordering.service';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestSection } from '../tests/entities/test-section.entity';
+import { Test } from '../tests/entities/test.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Question, QuestionOption, TestQuestion, TestSection]),
+    TypeOrmModule.forFeature([Question, QuestionOption, TestQuestion, TestSection, Test]),
     forwardRef(() => TestsModule),
   ],
   controllers: [QuestionsController],

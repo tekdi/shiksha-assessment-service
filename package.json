@@ -19,7 +19,6 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "postinstall": "cd node_modules/@vinayak-patil/cloud-storage && npm run build",
     "migration:run": "ts-node -r tsconfig-paths/register src/scripts/migration-runner-with-polyfill.ts",
     "migration:status": "ts-node -r tsconfig-paths/register src/scripts/simple-migration-status.ts"
   },
@@ -60,8 +59,7 @@
     "redis": "^4.7.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "typeorm": "^0.3.25",
-    "@vinayak-patil/cloud-storage": "https://github.com/vinayak-patil/cloud-storage/archive/refs/tags/v1.0.1.tar.gz"
+    "typeorm": "^0.3.25"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.7",
