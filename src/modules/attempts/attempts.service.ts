@@ -722,6 +722,7 @@ export class AttemptsService {
     if (answersArray.length === 0) {
       return { message: 'No answers provided to submit' };
     }
+    console.log('authContext.userId', authContext.userId);
 
     // Verify attempt exists and belongs to user (only once)
     const attempt = await this.attemptRepository.findOne({
@@ -907,10 +908,10 @@ export class AttemptsService {
 
     // Transform the raw results to match the expected format
     const missingQuestions = missingCompulsoryQuestions.map(q => ({
-      questionId: q.questionId,
+      questionId: q.tq_questionId,
       title: q.title,
-      ordering: q.ordering,
-      sectionId: q.sectionId,
+      ordering: q.tq_ordering,
+      sectionId: q.tq_sectionId,
     }));
 
     return {
@@ -926,7 +927,7 @@ export class AttemptsService {
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{isValid: boolean, missingQuestions?: Array<{questionId: string, title: string, ordering: number, sectionId?: string}>}>
    */
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
+  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<any> {
     const attempt = await this.findAttemptById(attemptId, authContext.userId, authContext);
 
     // Check if attempt is already submitted
@@ -939,8 +940,7 @@ export class AttemptsService {
     
     if (!compulsoryValidation.isValid) {
       throw new BadRequestException({
-        message: 'Cannot submit attempt. The following compulsory questions must be answered:',
-        compulsoryQuestions: compulsoryValidation.missingQuestions,
+        message: `Cannot submit attempt. The following compulsory questions (JSON) must be answered: ${JSON.stringify(compulsoryValidation.missingQuestions)}`,
       });
     }
 
@@ -984,8 +984,15 @@ export class AttemptsService {
       reviewStatus: savedAttempt.reviewStatus,
       isObjective: test.isObjective,
     });
+    
+    return { 
+      attemptId: savedAttempt.attemptId, 
+      score: savedAttempt.score,
+      reviewStatus: savedAttempt.reviewStatus,
+      result: savedAttempt.result,
+      totalMarks: test.totalMarks
+    };
 
-    return { ...savedAttempt, totalMarks: test.totalMarks };
   }
 
   async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {

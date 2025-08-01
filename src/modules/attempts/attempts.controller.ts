@@ -94,13 +94,7 @@ export class AttemptsController {
   async submitAttempt(@Param('attemptId') attemptId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.submitAttempt(attemptId, authContext);
-    return { 
-      attemptId: attempt.attemptId, 
-      score: attempt.score,
-      reviewStatus: attempt.reviewStatus,
-      result: attempt.result,
-      totalMarks: attempt.totalMarks
-    };
+    return attempt;
   }
 
   @Post(':attemptId/review')
