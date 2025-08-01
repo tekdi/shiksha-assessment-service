@@ -714,13 +714,13 @@ export class AttemptsService {
     });
   }
 
-  async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<void> {
+  async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<any> {
     // Handle the new format with answers array and optional global timeSpent
     const answersArray = submitAnswerDto.answers || [];
     const globalTimeSpent = submitAnswerDto.timeSpent || 0;
     
     if (answersArray.length === 0) {
-      throw new NotFoundException('No answers provided');
+      return { message: 'No answers provided to submit' };
     }
 
     // Verify attempt exists and belongs to user (only once)
@@ -854,21 +854,108 @@ export class AttemptsService {
 
     await this.attemptRepository.save(attempt);
 
+    return { message: 'Answers submitted successfully' };
   }
 
+  /**
+   * Validates that all compulsory questions for a test attempt have been answered.
+   * Returns both validation status and detailed information about missing questions.
+   * 
+   * @param attempt - The test attempt to validate
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{isValid: boolean, missingQuestions?: Array<{questionId: string, title: string, ordering: number, sectionId?: string}>}>
+   */
+  async validateCompulsoryQuestions(attempt: TestAttempt, authContext: AuthContext): Promise<{
+    isValid: boolean;
+    missingQuestions?: Array<{
+      questionId: string;
+      title: string;
+      ordering: number;
+      sectionId?: string;
+    }>;
+  }> {
+    const testId = attempt.resolvedTestId || attempt.testId;
+
+    // Single optimized query: Get compulsory questions that are NOT answered by the user
+    const missingCompulsoryQuestions = await this.testQuestionRepository
+      .createQueryBuilder('tq')
+      .leftJoin('questions', 'q', 'q.questionId = tq.questionId')
+      .leftJoin('testUserAnswers', 'tua', 
+        'tua.questionId = tq.questionId AND tua.attemptId = :attemptId', 
+        { attemptId: attempt.attemptId }
+      )
+      .where('tq.testId = :testId', { testId })
+      .andWhere('tq.isCompulsory = :isCompulsory', { isCompulsory: true })
+      .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('q.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('q.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('tua.questionId IS NULL') // This means no answer exists for this question
+      .select([
+        'tq.questionId',
+        'tq.ordering',
+        'tq.sectionId',
+        'q.text as title'
+      ])
+      .orderBy('tq.ordering', 'ASC')
+      .getRawMany();
+
+    if (missingCompulsoryQuestions.length === 0) {
+      // All compulsory questions are answered
+      return { isValid: true };
+    }
+
+    // Transform the raw results to match the expected format
+    const missingQuestions = missingCompulsoryQuestions.map(q => ({
+      questionId: q.questionId,
+      title: q.title,
+      ordering: q.ordering,
+      sectionId: q.sectionId,
+    }));
+
+    return {
+      isValid: false,
+      missingQuestions,
+    };
+  }
+
+  /**
+   * Lightweight method to quickly check if all compulsory questions are answered.
+   * This is more efficient when you only need to know if validation passes.
+   * 
+   * @param attempt - The test attempt to validate
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<boolean> - true if all compulsory questions are answered, false otherwise
+   */
+  async areAllCompulsoryQuestionsAnswered(attempt: TestAttempt, authContext: AuthContext): Promise<boolean> {
+    const validation = await this.validateCompulsoryQuestions(attempt, authContext);
+    return validation.isValid;
+  }
+
+  /**
+   * Public method to check compulsory questions validation status for an attempt.
+   * This can be used by the frontend to show which compulsory questions are missing.
+   * 
+   * @param attemptId - The ID of the test attempt to validate
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{isValid: boolean, missingQuestions?: Array<{questionId: string, title: string, ordering: number, sectionId?: string}>}>
+   */
   async submitAttempt(attemptId: string, authContext: AuthContext): Promise<TestAttempt & { totalMarks: number }> {
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['test'],
-    });
+    const attempt = await this.findAttemptById(attemptId, authContext.userId, authContext);
 
     // Check if attempt is already submitted
     if (attempt.status === AttemptStatus.SUBMITTED) {
       throw new Error('Attempt is already submitted');
+    }
+
+    // Validate compulsory questions before allowing submission
+    const compulsoryValidation = await this.validateCompulsoryQuestions(attempt, authContext);
+    
+    if (!compulsoryValidation.isValid) {
+      throw new BadRequestException({
+        message: 'Cannot submit attempt. The following compulsory questions must be answered:',
+        compulsoryQuestions: compulsoryValidation.missingQuestions,
+      });
     }
 
     // Get test information

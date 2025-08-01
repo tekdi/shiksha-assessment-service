@@ -84,8 +84,8 @@ export class AttemptsController {
     const authContext: AuthContext = req.user;
     
     // Submit all answers efficiently in one call
-    await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
-    return { message: 'Answers submitted successfully' };
+    const result = await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
+    return result;
   }
 
   @Post(':attemptId/submit')
