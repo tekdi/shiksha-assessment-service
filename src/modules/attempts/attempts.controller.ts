@@ -84,8 +84,8 @@ export class AttemptsController {
     const authContext: AuthContext = req.user;
     
     // Submit all answers efficiently in one call
-    await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
-    return { message: 'Answers submitted successfully' };
+    const result = await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
+    return result;
   }
 
   @Post(':attemptId/submit')
@@ -94,13 +94,7 @@ export class AttemptsController {
   async submitAttempt(@Param('attemptId') attemptId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.submitAttempt(attemptId, authContext);
-    return { 
-      attemptId: attempt.attemptId, 
-      score: attempt.score,
-      reviewStatus: attempt.reviewStatus,
-      result: attempt.result,
-      totalMarks: attempt.totalMarks
-    };
+    return attempt;
   }
 
   @Post(':attemptId/review')
