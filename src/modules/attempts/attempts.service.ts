@@ -920,21 +920,7 @@ export class AttemptsService {
   }
 
   /**
-   * Lightweight method to quickly check if all compulsory questions are answered.
-   * This is more efficient when you only need to know if validation passes.
-   * 
-   * @param attempt - The test attempt to validate
-   * @param authContext - Authentication context for tenant/organization filtering
-   * @returns Promise<boolean> - true if all compulsory questions are answered, false otherwise
-   */
-  async areAllCompulsoryQuestionsAnswered(attempt: TestAttempt, authContext: AuthContext): Promise<boolean> {
-    const validation = await this.validateCompulsoryQuestions(attempt, authContext);
-    return validation.isValid;
-  }
-
-  /**
-   * Public method to check compulsory questions validation status for an attempt.
-   * This can be used by the frontend to show which compulsory questions are missing.
+   * Submit an attempt and validate compulsory questions.
    * 
    * @param attemptId - The ID of the test attempt to validate
    * @param authContext - Authentication context for tenant/organization filtering
