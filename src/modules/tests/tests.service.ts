@@ -19,6 +19,7 @@ import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attemp
 import { OrderingService } from '@/common/services/ordering.service';
 import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
 import { TestStructureDto } from './dto/test-structure.dto';
+import { TestRule } from './entities/test-rule.entity';
 
 @Injectable()
 export class TestsService {
@@ -33,6 +34,8 @@ export class TestsService {
     private readonly questionRepository: Repository<Question>,
     @InjectRepository(TestAttempt)
     private readonly testAttemptRepository: Repository<TestAttempt>,
+    @InjectRepository(TestRule)
+    private readonly testRuleRepository: Repository<TestRule>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     @InjectDataSource()
@@ -933,5 +936,174 @@ export class TestsService {
     });
   }
 
+  /**
+   * Creates a deep copy of a test including all sections, questions, and rules.
+   * The cloned test will be in DRAFT status and will have a new unique alias.
+   * 
+   * @param testId - The unique identifier of the test to clone
+   * @param authContext - Authentication context containing tenant and organization IDs
+   * @returns Promise<string> - The ID of the cloned test
+   */
+  async cloneTest(testId: string, authContext: AuthContext): Promise<string> {
+    // Start a transaction for the entire cloning process
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Find the original test with all its relations
+      const originalTest = await queryRunner.manager.findOne(Test, {
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        relations: ['sections', 'questions'],
+      });
+
+      if (!originalTest) {
+        throw new NotFoundException('Test not found');
+      }
+
+      // Create a new test with copied properties
+      const clonedTestData: Partial<Test> = {
+        type: originalTest.type,
+        title: `${originalTest.title} (Copy)`,
+        description: originalTest.description,
+        reviewers: originalTest.reviewers,
+        status: TestStatus.DRAFT, // Always set to DRAFT for cloned tests
+        showTime: originalTest.showTime,
+        timeDuration: originalTest.timeDuration,
+        showTimeFinished: originalTest.showTimeFinished,
+        timeFinishedDuration: originalTest.timeFinishedDuration,
+        totalMarks: originalTest.totalMarks,
+        passingMarks: originalTest.passingMarks,
+        image: originalTest.image,
+        startDate: originalTest.startDate,
+        endDate: originalTest.endDate,
+        answerSheet: originalTest.answerSheet,
+        showCorrectAnswer: originalTest.showCorrectAnswer,
+        printAnswersheet: originalTest.printAnswersheet,
+        questionsShuffle: originalTest.questionsShuffle,
+        answersShuffle: originalTest.answersShuffle,
+        gradingType: originalTest.gradingType,
+        isObjective: originalTest.isObjective,
+        showThankyouPage: originalTest.showThankyouPage,
+        showAllQuestions: originalTest.showAllQuestions,
+        paginationLimit: originalTest.paginationLimit,
+        showQuestionsOverview: originalTest.showQuestionsOverview,
+        ordering: originalTest.ordering,
+        attempts: originalTest.attempts,
+        attemptsGrading: originalTest.attemptsGrading,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        createdBy: authContext.userId,
+      };
+
+      // Generate unique alias for the cloned test
+      const baseAlias = originalTest.alias ? `${originalTest.alias}_copy` : `${originalTest.title}_copy`;
+      clonedTestData.alias = await HelperUtil.generateUniqueAliasWithRepo(
+        baseAlias,
+        this.testRepository,
+        authContext.tenantId,
+        authContext.organisationId,
+      );
+
+      // Create the cloned test
+      const clonedTest = queryRunner.manager.create(Test, clonedTestData);
+      const savedClonedTest = await queryRunner.manager.save(clonedTest);
+
+      // Clone sections
+      const sectionIdMapping = new Map<string, string>(); // original section ID -> new section ID
+      
+      for (const originalSection of originalTest.sections) {
+        const clonedSectionData = {
+          title: originalSection.title,
+          description: originalSection.description,
+          testId: savedClonedTest.testId,
+          ordering: originalSection.ordering,
+          status: originalSection.status,
+          minQuestions: originalSection.minQuestions,
+          maxQuestions: originalSection.maxQuestions,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          createdBy: authContext.userId,
+        };
+
+        const clonedSection = queryRunner.manager.create(TestSection, clonedSectionData);
+        const savedClonedSection = await queryRunner.manager.save(clonedSection);
+        
+        // Store the mapping for later use
+        sectionIdMapping.set(originalSection.sectionId, savedClonedSection.sectionId);
+      }
+
+      // Clone test questions
+      for (const originalQuestion of originalTest.questions) {
+        const clonedQuestionData = {
+          testId: savedClonedTest.testId,
+          questionId: originalQuestion.questionId,
+          ordering: originalQuestion.ordering,
+          sectionId: originalQuestion.sectionId ? sectionIdMapping.get(originalQuestion.sectionId) : null,
+          ruleId: originalQuestion.ruleId,
+          isCompulsory: originalQuestion.isCompulsory,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        };
+
+        const clonedQuestion = queryRunner.manager.create(TestQuestion, clonedQuestionData);
+        await queryRunner.manager.save(clonedQuestion);
+      }
+
+      // Clone test rules (if any)
+      const originalRules = await queryRunner.manager.find(TestRule, {
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      for (const originalRule of originalRules) {
+        const clonedRuleData = {
+          name: originalRule.name,
+          description: originalRule.description,
+          ruleType: originalRule.ruleType,
+          testId: savedClonedTest.testId,
+          sectionId: originalRule.sectionId ? sectionIdMapping.get(originalRule.sectionId) : null,
+          numberOfQuestions: originalRule.numberOfQuestions,
+          poolSize: originalRule.poolSize,
+          minMarks: originalRule.minMarks,
+          maxMarks: originalRule.maxMarks,
+          selectionStrategy: originalRule.selectionStrategy,
+          criteria: originalRule.criteria,
+          selectionMode: originalRule.selectionMode,
+          isActive: originalRule.isActive,
+          priority: originalRule.priority,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          createdBy: authContext.userId,
+        };
+
+        const clonedRule = queryRunner.manager.create(TestRule, clonedRuleData);
+        await queryRunner.manager.save(clonedRule);
+      }
+
+      // Commit transaction
+      await queryRunner.commitTransaction();
+
+      // Invalidate cache
+      await this.invalidateTestCache(authContext.tenantId);
+
+      return savedClonedTest.testId;
+
+    } catch (error) {
+      // Rollback transaction on error
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      // Release query runner
+      await queryRunner.release();
+    }
+  }
 
 } 

@@ -276,4 +276,41 @@ export class TestsController {
     await this.testsService.updateTestStructure(testId, testStructureDto, authContext);
     return { message: 'Test structure updated successfully' };
   }
+
+  @Post(':testId/clone')
+  @ApiOperation({ 
+    summary: 'Clone a test',
+    description: 'Creates a deep copy of the test including all sections, questions, and rules. The cloned test will be in DRAFT status.'
+  })
+  @ApiParam({
+    name: 'testId',
+    description: 'Unique identifier of the test to clone',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Test cloned successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Test cloned successfully' },
+        clonedTestId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test not found',
+  })
+  async cloneTest(
+    @Param('testId', ParseUUIDPipe) testId: string,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const clonedTestId = await this.testsService.cloneTest(testId, authContext);
+    return { 
+      message: 'Test cloned successfully',
+      clonedTestId 
+    };
+  }
 } 
