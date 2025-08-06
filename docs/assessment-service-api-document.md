@@ -21,6 +21,7 @@
    - [Add Questions Bulk](#add-questions-bulk)
    - [Get User Test Status](#get-user-test-status)
    - [Update Test Structure](#update-test-structure)
+   - [Clone Test](#clone-test)
 
 4. [Questions](#questions)
    - [Create Question](#create-question)
@@ -457,6 +458,72 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 }
 ```
 - **Status Codes**: 200 (OK), 400 (Bad Request), 404 (Not Found)
+
+#### Clone Test
+- **Endpoint**: `POST /tests/{testId}/clone`
+- **Description**: Create a deep copy of a test including all sections, questions, and rules
+- **Headers**: `tenantId`, `organisationId`, `userId` (required)
+- **Path Parameters**:
+  - `testId` (UUID): Test ID to clone
+- **Response Structure**:
+```json
+{
+  "message": "Test cloned successfully",
+  "clonedTestId": "123e4567-e89b-12d3-a456-426614174000"
+}
+```
+- **Status Codes**: 201 (Created), 404 (Not Found)
+
+#### Validations and Conditions
+
+**Input Validation Rules**:
+- **Required Path Parameters**:
+  - `testId` (UUID): Valid UUID format, must exist in database
+- **Required Headers**:
+  - `tenantId` (UUID): Valid UUID format
+  - `organisationId` (UUID): Valid UUID format
+  - `userId` (UUID): Valid UUID format
+- **No Request Body**: Endpoint does not accept request body
+
+**Business Logic Conditions**:
+- **Test Existence**: Test must exist and belong to the specified tenant/organization
+- **Deep Copy Process**:
+  - Creates new test with all properties copied except IDs and timestamps
+  - Title is appended with "(Copy)" suffix
+  - Status is set to `DRAFT` regardless of original status
+  - Generates unique alias for the cloned test
+- **Section Cloning**:
+  - All sections are cloned with new IDs
+  - Maintains original ordering and properties
+  - Links to the new test
+- **Question Cloning**:
+  - All test questions are cloned with new testId
+  - Maintains original ordering and properties
+  - Links to corresponding new sections via ID mapping
+  - Preserves `isCompulsory` flag and `ruleId` references
+- **Rule Cloning**:
+  - All test rules are cloned with new IDs
+  - Links to new test and corresponding new sections
+  - Preserves all rule configuration and criteria
+- **Database Transaction**: Entire cloning process wrapped in transaction for data consistency
+- **ID Mapping**: Maintains mapping between original and new section IDs for proper relationships
+- **Multi-tenancy**: All data automatically filtered by tenantId and organisationId
+- **Audit Trail**: CreatedBy automatically set from auth context
+
+**Authorization Conditions**:
+- **Required Headers**: All endpoints require `tenantId`, `organisationId`, `userId`
+- **Header Validation**: UUID format validation for all required headers
+- **Multi-tenant Isolation**: Data automatically isolated by tenant and organization
+- **User Context**: All operations logged with userId for audit trail
+- **No Role-based Access**: Currently no role restrictions (all authenticated users can clone tests)
+
+**Error Scenarios**:
+- **Missing Headers**: 400 Bad Request with specific header name
+- **Invalid UUID Format**: 400 Bad Request for malformed UUIDs
+- **Test Not Found**: 404 Not Found if test doesn't exist
+- **Database Errors**: 500 Internal Server Error with transaction rollback
+- **Constraint Violations**: 500 Internal Server Error if database constraints are violated
+- **Transaction Failures**: 500 Internal Server Error with complete rollback
 
 ## Questions
 
