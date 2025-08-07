@@ -578,12 +578,23 @@ export class TestsService {
       }
     }
 
-    // Check if user can attempt (hasn't reached max attempts)
-    const canAttempt = totalAttempts < maxAttempts;
-
     // Get last attempt for resume check (lightweight query)
-    const lastAttempt = await this.getLastAttemptForResume(testId, userId, authContext);
-    const canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
+    const lastAttempt = await this.getLastAttemptForResume(test, userId, authContext);
+    
+    // Handle allowResubmission logic
+    let canAttempt: boolean;
+    let canResume: boolean;
+    
+    if (test.allowResubmission) {
+      // For tests with allowResubmission, user can always attempt (only one attempt allowed)
+      canAttempt = totalAttempts === 0;
+      // Can resume if there's an existing attempt (in progress or submitted)
+      canResume = lastAttempt !== null;
+    } else {
+      // Original logic for tests without allowResubmission
+      canAttempt = totalAttempts < maxAttempts;
+      canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
+    }
 
     // Build graded attempt object
     let gradedAttempt = null;
@@ -905,17 +916,34 @@ export class TestsService {
    * @param authContext - Authentication context containing tenant and organization IDs
    * @returns Promise<TestAttempt | null> - The most recent attempt or null if none exists
    */
-  private async getLastAttemptForResume(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
-    return await this.testAttemptRepository.findOne({
-      where: {
-        testId,
-        userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        status: AttemptStatus.IN_PROGRESS,
-      },
-      order: { attempt: 'DESC' },
-    });
+  private async getLastAttemptForResume(test: Test, userId: string, authContext: AuthContext): Promise<TestAttempt | null> {
+    const testId = test.testId;
+
+    // Handle allowResubmission logic
+    if (test.allowResubmission) {
+      // For tests with allowResubmission, return any existing attempt (in progress or submitted)
+      return await this.testAttemptRepository.findOne({
+        where: {
+          testId,
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { attempt: 'DESC' },
+      });
+    } else {
+      // Original logic for tests without allowResubmission - only in-progress attempts
+      return await this.testAttemptRepository.findOne({
+        where: {
+          testId,
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: AttemptStatus.IN_PROGRESS,
+        },
+        order: { attempt: 'DESC' },
+      });
+    }
   }
 
   /**
@@ -992,6 +1020,7 @@ export class TestsService {
         showAllQuestions: originalTest.showAllQuestions,
         paginationLimit: originalTest.paginationLimit,
         showQuestionsOverview: originalTest.showQuestionsOverview,
+        allowResubmission: originalTest.allowResubmission,
         ordering: originalTest.ordering,
         attempts: originalTest.attempts,
         attemptsGrading: originalTest.attemptsGrading,
