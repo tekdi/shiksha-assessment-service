@@ -28,7 +28,8 @@ export enum TestStatus {
 
 export enum GradingType {
   QUIZ = 'quiz',
-  ASSIGNMENT = 'assignment',
+  ASSESSMENT = 'assessment',
+  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SECIFIC - ASPRE_LEADER
   FEEDBACK = 'feedback',
 }
 export enum AttemptsGradeMethod {
@@ -172,6 +173,13 @@ export class Test {
   @ApiProperty()
   @Column({ type: 'boolean', default: false })
   showQuestionsOverview: boolean;
+
+  @ApiProperty({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times.',
+    default: false 
+  })
+  @Column({ type: 'boolean', default: false })
+  allowResubmission: boolean;
 
   @ApiProperty({ required: false })
   @Column({ type: 'uuid', nullable: true })

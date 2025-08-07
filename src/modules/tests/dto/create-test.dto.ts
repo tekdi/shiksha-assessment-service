@@ -139,6 +139,14 @@ export class CreateTestDto {
   @IsBoolean()
   showQuestionsOverview?: boolean;
 
+  @ApiPropertyOptional({ 
+    description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times.',
+    default: false 
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowResubmission?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
