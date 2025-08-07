@@ -196,13 +196,14 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   "totalMarks": 100,
   "passingMarks": 50,
   "gradingType": "quiz",
-  "attempts": 3
+  "attempts": 3,
+  "allowResubmission": false
 }
 ```
 
 **Test Types**: `plain`, `rule_based`, `generated`  
 **Test Status**: `draft`, `published`, `unpublished`, `archived`  
-**Grading Types**: `quiz`, `assignment`, `feedback`  
+**Grading Types**: `quiz`, `assessment`, `reflection.prompt`, `feedback`  
 **Attempts Grade Methods**: `first_attempt`, `last_attempt`, `average`, `highest`
 
 - **Response Structure**:
@@ -219,7 +220,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 - **Required Fields**:
   - `type` (enum): Must be one of `plain`, `rule_based`, `generated`
   - `title` (string): 1-255 characters, non-empty after trimming
-  - `gradingType` (enum): Must be one of `quiz`, `assignment`, `feedback`
+  - `gradingType` (enum): Must be one of `quiz`, `assessment`, `reflection.prompt`, `feedback`
 - **Optional Fields**:
   - `parentId` (UUID): Valid UUID format if provided
   - `alias` (string): 1-100 characters, URL-friendly format
@@ -235,6 +236,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   - `endDate` (string): ISO 8601 date format, must be after startDate
   - `attempts` (number): Positive integer
   - `attemptsGrading` (enum): Must be one of `first_attempt`, `last_attempt`, `average`, `highest`
+  - `allowResubmission` (boolean): When true, users can only have one attempt and can submit it multiple times (defaults to `false`)
 - **Boolean Fields**: All boolean fields default to `false`
 - **Date Validation**: Custom validator ensures endDate > startDate and startDate > current time
 
@@ -250,6 +252,9 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   - `startDate` must be in the future
   - `endDate` must be after `startDate`
   - Custom validator enforces these constraints
+- **Allow Resubmission Logic**:
+  - When `allowResubmission` is true, users can only have one attempt and can submit it multiple times
+  - When `allowResubmission` is false, users can have multiple attempts based on the `attempts` field
 - **Multi-tenancy**: All data automatically filtered by tenantId and organisationId
 - **Audit Trail**: CreatedBy and CreatedAt automatically set from auth context
 
@@ -728,7 +733,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   "type": "subjective",
   "level": "medium",
   "marks": 10,
-  "gradingType": "assignment",
+  "gradingType": "assessment",
   "params": {
     "maxLength": 500,
     "minLength": 50,
@@ -764,7 +769,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   "type": "essay",
   "level": "hard",
   "marks": 25,
-  "gradingType": "assignment",
+  "gradingType": "assessment",
   "idealTime": 1800,
   "params": {
     "maxLength": 2000,
@@ -822,7 +827,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   - `marks` (number): Positive integer (defaults to 1)
   - `status` (enum): Must be one of `draft`, `published`, `archived` (defaults to `draft`)
   - `idealTime` (number): Positive integer
-  - `gradingType` (enum): Must be one of `quiz`, `assignment`, `feedback` (defaults to `quiz`)
+  - `gradingType` (enum): Must be one of `quiz`, `assessment`, `reflection.prompt`, `feedback` (defaults to `quiz`)
   - `allowPartialScoring` (boolean): Defaults to `false`
   - `params` (object): Question-specific parameters
   - `options` (array): Array of question options (required for non-subjective questions)
@@ -996,10 +1001,13 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   - Current time must be within test's `startDate` and `endDate` range
   - If `startDate` is set, current time must be after it
   - If `endDate` is set, current time must be before it
-- **Attempt Limits**:
+- **Allow Resubmission Logic**:
+  - If `allowResubmission` is true: Returns existing attempt if one exists, otherwise creates new attempt
+  - If `allowResubmission` is false: Standard attempt limit logic applies
+- **Attempt Limits** (when `allowResubmission` is false):
   - User must not have exceeded maximum attempts for this test
   - Maximum attempts is defined by test's `attempts` field (default: 1)
-- **Existing Attempts**:
+- **Existing Attempts** (when `allowResubmission` is false):
   - User must not have an incomplete attempt in progress
   - User must not have a submitted attempt pending review
 - **Test Type Handling**:
@@ -1037,6 +1045,45 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   - `userId` (UUID): User ID
 - **Response Structure**: Attempt data with previous answers and state
 - **Status Codes**: 200 (OK), 400 (Bad Request), 404 (Not Found)
+
+#### Validations and Conditions
+
+**Input Validation Rules**:
+- **Required Path Parameters**:
+  - `attemptId` (UUID): Valid UUID format, must exist and belong to user
+  - `userId` (UUID): Valid UUID format, must match authenticated user
+- **Required Headers**:
+  - `tenantId` (UUID): Valid UUID format
+  - `organisationId` (UUID): Valid UUID format
+  - `userId` (UUID): Valid UUID format
+- **No Request Body**: Endpoint does not accept request body
+
+**Business Logic Conditions**:
+- **Attempt Validation**:
+  - Attempt must exist and belong to the specified user
+  - Attempt status must be `I - in_progress` (or submitted if `allowResubmission` is true)
+  - Attempt must not be expired
+- **Allow Resubmission Logic**:
+  - For tests with `allowResubmission` true: Can resume submitted attempts
+  - For tests with `allowResubmission` false: Can only resume in-progress attempts
+- **Multi-tenancy**: All data automatically filtered by tenantId and organisationId
+- **Audit Trail**: Attempt access logged with userId and timestamp
+
+**Authorization Conditions**:
+- **Required Headers**: All endpoints require `tenantId`, `organisationId`, `userId`
+- **Header Validation**: UUID format validation for all required headers
+- **Multi-tenant Isolation**: Data automatically isolated by tenant and organization
+- **User Context**: All operations logged with userId for audit trail
+- **Attempt Ownership**: User can only resume their own attempts
+- **No Role-based Access**: Currently no role restrictions (all authenticated users can resume attempts)
+
+**Error Scenarios**:
+- **Missing Headers**: 400 Bad Request with specific header name
+- **Invalid UUID Format**: 400 Bad Request for malformed UUIDs
+- **Attempt Not Found**: 404 Not Found if attempt doesn't exist
+- **Attempt Not Owned**: 403 Forbidden if attempt doesn't belong to user
+- **Cannot Resume Submitted Attempt**: 400 Bad Request if attempt is submitted and `allowResubmission` is false
+- **Database Errors**: 500 Internal Server Error with generic message
 
 #### Get Attempt Questions
 - **Endpoint**: `GET /attempts/{attemptId}/questions/{userId}`
@@ -1261,8 +1308,11 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 **Business Logic Conditions**:
 - **Attempt Validation**:
   - Attempt must exist and belong to the specified user
-  - Attempt status must be `I - in_progress`
-  - Attempt must not be expired or submitted
+  - Attempt status must be `I - in_progress` (or submitted if `allowResubmission` is true)
+  - Attempt must not be expired
+- **Allow Resubmission Logic**:
+  - For tests with `allowResubmission` true: Can resume submitted attempts
+  - For tests with `allowResubmission` false: Can only resume in-progress attempts
 - **Question Validation**:
   - All question IDs must exist and belong to the test
   - Questions must be part of the specified attempt
@@ -1293,7 +1343,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 - **Invalid UUID Format**: 400 Bad Request for malformed UUIDs
 - **Attempt Not Found**: 404 Not Found if attempt doesn't exist
 - **Attempt Not Owned**: 403 Forbidden if attempt doesn't belong to user
-- **Attempt Not In Progress**: 400 Bad Request if attempt is not in progress
+- **Attempt Not In Progress**: 400 Bad Request if attempt is not in progress (when `allowResubmission` is false)
 - **Question Not Found**: 400 Bad Request if question doesn't exist
 - **Invalid Answer Format**: 400 Bad Request if answer format doesn't match question type
 - **Option Not Found**: 400 Bad Request if selected option doesn't exist
@@ -1318,6 +1368,47 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 }
 ```
 - **Status Codes**: 200 (OK), 400 (Bad Request), 404 (Not Found)
+
+#### Validations and Conditions
+
+**Input Validation Rules**:
+- **Required Path Parameters**:
+  - `attemptId` (UUID): Valid UUID format, must exist and belong to user
+- **Required Headers**:
+  - `tenantId` (UUID): Valid UUID format
+  - `organisationId` (UUID): Valid UUID format
+  - `userId` (UUID): Valid UUID format
+- **No Request Body**: Endpoint does not accept request body
+
+**Business Logic Conditions**:
+- **Attempt Validation**:
+  - Attempt must exist and belong to the specified user
+  - Attempt status must be `I - in_progress` (or submitted if `allowResubmission` is true)
+  - Attempt must not be expired
+- **Allow Resubmission Logic**:
+  - For tests with `allowResubmission` true: Can submit already submitted attempts
+  - For tests with `allowResubmission` false: Can only submit in-progress attempts
+- **Test Type Handling**:
+  - For `FEEDBACK` type tests: No scoring, only feedback collection
+  - For other types: Standard scoring and evaluation
+- **Multi-tenancy**: All data automatically filtered by tenantId and organisationId
+- **Audit Trail**: Attempt submission logged with userId and timestamp
+
+**Authorization Conditions**:
+- **Required Headers**: All endpoints require `tenantId`, `organisationId`, `userId`
+- **Header Validation**: UUID format validation for all required headers
+- **Multi-tenant Isolation**: Data automatically isolated by tenant and organization
+- **User Context**: All operations logged with userId for audit trail
+- **Attempt Ownership**: User can only submit their own attempts
+- **No Role-based Access**: Currently no role restrictions (all authenticated users can submit attempts)
+
+**Error Scenarios**:
+- **Missing Headers**: 400 Bad Request with specific header name
+- **Invalid UUID Format**: 400 Bad Request for malformed UUIDs
+- **Attempt Not Found**: 404 Not Found if attempt doesn't exist
+- **Attempt Not Owned**: 403 Forbidden if attempt doesn't belong to user
+- **Attempt Already Submitted**: 400 Bad Request if attempt already submitted (when `allowResubmission` is false)
+- **Database Errors**: 500 Internal Server Error with generic message
 
 #### Review Attempt
 - **Endpoint**: `POST /attempts/{attemptId}/review`
