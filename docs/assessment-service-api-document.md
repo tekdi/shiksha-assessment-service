@@ -432,6 +432,44 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 ```
 - **Status Codes**: 200 (OK), 404 (Not Found)
 
+#### Validations and Conditions
+
+**Input Validation Rules**:
+- **Required Path Parameters**:
+  - `testId` (UUID): Valid UUID format, must exist in database
+  - `userId` (UUID): Valid UUID format
+- **Required Headers**:
+  - `tenantId` (UUID): Valid UUID format
+  - `organisationId` (UUID): Valid UUID format
+  - `userId` (UUID): Valid UUID format
+- **No Request Body**: Endpoint does not accept request body
+
+**Business Logic Conditions**:
+- **Test Existence**: Test must exist and belong to the specified tenant/organization
+- **Allow Resubmission Logic**:
+  - For tests with `allowResubmission` true: 
+    - `canAttempt` is true only if user has no attempts (totalAttempts === 0)
+    - `canResume` is true if user has any existing attempt (in progress or submitted)
+  - For tests with `allowResubmission` false:
+    - `canAttempt` is true if user hasn't reached maximum attempts
+    - `canResume` is true only if user has an in-progress attempt
+- **Attempt Grading**: Returns graded attempt based on test's `attemptsGrading` method
+- **Multi-tenancy**: All data automatically filtered by tenantId and organisationId
+- **Audit Trail**: Status check logged with userId and timestamp
+
+**Authorization Conditions**:
+- **Required Headers**: All endpoints require `tenantId`, `organisationId`, `userId`
+- **Header Validation**: UUID format validation for all required headers
+- **Multi-tenant Isolation**: Data automatically isolated by tenant and organization
+- **User Context**: All operations logged with userId for audit trail
+- **No Role-based Access**: Currently no role restrictions (all authenticated users can check test status)
+
+**Error Scenarios**:
+- **Missing Headers**: 400 Bad Request with specific header name
+- **Invalid UUID Format**: 400 Bad Request for malformed UUIDs
+- **Test Not Found**: 404 Not Found if test doesn't exist
+- **Database Errors**: 500 Internal Server Error with generic message
+
 #### Update Test Structure
 - **Endpoint**: `PUT /tests/{testId}/structure`
 - **Description**: Update complete test structure with sections and questions
