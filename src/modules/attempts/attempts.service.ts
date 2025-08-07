@@ -70,23 +70,43 @@ export class AttemptsService {
     if (test.endDate && now > test.endDate) {
       throw new Error('Test is no longer available for attempts');
     }
-    // check if user has the last attempt which is in progress or submitted but not reviewed
-    const lastAttempt = await this.attemptRepository.findOne({
-      where: {
-        testId,
-        userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId, 
-        status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
-        reviewStatus: ReviewStatus.PENDING
-      },
-    });
+    // Handle allowResubmission logic
+    if (test.allowResubmission) {
+      // For tests with allowResubmission, check if user already has an attempt
+      const existingAttempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { attempt: 'DESC' }, // Get the most recent attempt
+      });
 
-    if (lastAttempt?.status === AttemptStatus.IN_PROGRESS) {
-      throw new Error('You have a incomplete attempt. Please complete it before starting a new attempt.');
-    }
-    if (lastAttempt?.status === AttemptStatus.SUBMITTED && lastAttempt?.reviewStatus === ReviewStatus.PENDING) {
-      throw new Error('Your last attempt is currently under review. Please wait for the review to finish before starting a new one.');
+      if (existingAttempt) {
+        // Return the existing attempt instead of creating a new one
+        return existingAttempt;
+      }
+    } else {
+      // Original logic for tests without allowResubmission
+      // check if user has the last attempt which is in progress or submitted but not reviewed
+      const lastAttempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId, 
+          status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
+          reviewStatus: ReviewStatus.PENDING
+        },
+      });
+
+      if (lastAttempt?.status === AttemptStatus.IN_PROGRESS) {
+        throw new Error('You have a incomplete attempt. Please complete it before starting a new attempt.');
+      }
+      if (lastAttempt?.status === AttemptStatus.SUBMITTED && lastAttempt?.reviewStatus === ReviewStatus.PENDING) {
+        throw new Error('Your last attempt is currently under review. Please wait for the review to finish before starting a new one.');
+      }
     }
 
     // Get all existing attempts for this user and test
@@ -221,6 +241,7 @@ export class AttemptsService {
   /**
    * Validates and retrieves a test attempt for the authenticated user.
    * Ensures the attempt exists, belongs to the user, and is in progress.
+   * For tests with allowResubmission, allows access to submitted attempts.
    * 
    * @param attemptId - The unique identifier of the attempt to validate
    * @param authContext - Authentication context for user and organization validation
@@ -234,8 +255,13 @@ export class AttemptsService {
       throw new NotFoundException('Attempt not found');
     }
 
+    // Get test information to check allowResubmission setting
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.findTestById(testId, authContext);
+
     // Ensure attempt is in progress - only in-progress attempts can be resumed
-    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+    // Exception: For tests with allowResubmission, allow access to submitted attempts
+    if (attempt.status !== AttemptStatus.IN_PROGRESS && !test.allowResubmission) {
       throw new BadRequestException('Cannot resume a submitted attempt. Use the result endpoint to view submitted attempt details.');
     }
 
@@ -739,7 +765,12 @@ export class AttemptsService {
       throw new NotFoundException('Attempt not found');
     }
 
-    if (attempt.status === AttemptStatus.SUBMITTED) {
+    // Get test information to check allowResubmission setting
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.findTestById(testId, authContext);
+
+    // Check if attempt is submitted (only for tests without allowResubmission)
+    if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
       throw new Error('Cannot submit answer to completed attempt');
     }
 
@@ -930,8 +961,12 @@ export class AttemptsService {
   async submitAttempt(attemptId: string, authContext: AuthContext): Promise<any> {
     const attempt = await this.findAttemptById(attemptId, authContext.userId, authContext);
 
-    // Check if attempt is already submitted
-    if (attempt.status === AttemptStatus.SUBMITTED) {
+    // Get test information to check allowResubmission setting
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.findTestById(testId, authContext);
+
+    // Check if attempt is already submitted (only for tests without allowResubmission)
+    if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
       throw new Error('Attempt is already submitted');
     }
 
@@ -944,9 +979,7 @@ export class AttemptsService {
       });
     }
 
-    // Get test information
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
+    // Get test information (already retrieved above)
 
     // Check if the test itself is a FEEDBACK type test
     if (attempt.test?.gradingType === GradingType.FEEDBACK) {
@@ -1112,7 +1145,7 @@ export class AttemptsService {
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
       .andWhere('attempt.reviewStatus IN (:...reviewStatuses)', { reviewStatuses: [ReviewStatus.PENDING, ReviewStatus.UNDER_REVIEW] })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSIGNMENT })
+      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSESSMENT })
       .andWhere('answers.reviewStatus = :answerReviewStatus', { answerReviewStatus: 'P' })
       .select([
         'attempt.attemptId',
@@ -1157,7 +1190,7 @@ export class AttemptsService {
       status: originalTest.status,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
-      createdBy: 'system',
+      createdBy: authContext.userId,
     });
 
     const savedGeneratedTest = await this.testRepository.save(generatedTest);
