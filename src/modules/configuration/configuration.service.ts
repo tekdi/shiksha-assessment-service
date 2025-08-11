@@ -3,8 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
-import { TenantContext } from '../common/tenant/tenant.context';
-import { RESPONSE_MESSAGES } from '../common/constants/response-messages.constant';
+import { TenantContext } from '@/common/tenant/tenant.context';
+import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
 import { TenantConfigValue } from './interfaces/tenant-config.interface';
 import { CacheService } from '../cache/cache.service';
 
