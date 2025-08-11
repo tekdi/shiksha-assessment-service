@@ -1,8 +1,7 @@
 import { Controller, Post, Get, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ConfigurationService } from './configuration.service';    
-import { TenantOrg } from '../common/decorators/tenant-org.decorator';
-import { response } from 'express';
+import { TenantOrg } from '@/common/decorators/tenant-org.decorator';
 
 @ApiTags('Configuration')
 @Controller('config')
