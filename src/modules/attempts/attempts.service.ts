@@ -1,14 +1,35 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
-import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
-import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
+import axios from 'axios';
+import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
+import {
+  TestAttempt,
+  AttemptStatus,
+  SubmissionType,
+  ReviewStatus,
+  ResultType,
+} from '../tests/entities/test-attempt.entity';
+import {
+  TestUserAnswer,
+  ReviewStatus as AnswerReviewStatus,
+} from '../tests/entities/test-user-answer.entity';
+import {
+  Test,
+  TestType,
+  TestStatus,
+  AttemptsGradeMethod,
+  GradingType,
+} from '../tests/entities/test.entity';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
-import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
@@ -19,9 +40,14 @@ import { TestSection } from '../tests/entities/test-section.entity';
 import { SectionStatus } from '../tests/dto/create-section.dto';
 import { QuestionStatus } from '../questions/entities/question.entity';
 
+import { AssessmentElasticsearchService } from '../../elasticsearch/assessment-elasticsearch.service';
+import { Logger } from '@nestjs/common';
+import { isElasticsearchEnabled } from '../../common/utils/elasticsearch.util';
 
 @Injectable()
 export class AttemptsService {
+  private readonly logger = new Logger(AttemptsService.name);
+
   constructor(
     @InjectRepository(TestAttempt)
     private readonly attemptRepository: Repository<TestAttempt>,
@@ -41,9 +67,14 @@ export class AttemptsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
+    private readonly assessmentElasticsearchService: AssessmentElasticsearchService // Injected
   ) {}
 
-  async startAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
+  async startAttempt(
+    testId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<TestAttempt> {
     // Check if test exists and user can attempt
     const test = await this.testRepository.findOne({
       where: {
@@ -67,50 +98,13 @@ export class AttemptsService {
     if (test.startDate && now < test.startDate) {
       throw new Error('Test is not yet available for attempts');
     }
+
     if (test.endDate && now > test.endDate) {
       throw new Error('Test is no longer available for attempts');
     }
-    // Handle allowResubmission logic
-    if (test.allowResubmission) {
-      // For tests with allowResubmission, check if user already has an attempt
-      const existingAttempt = await this.attemptRepository.findOne({
-        where: {
-          testId,
-          userId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-        order: { attempt: 'DESC' }, // Get the most recent attempt
-      });
 
-      if (existingAttempt) {
-        // Return the existing attempt instead of creating a new one
-        return existingAttempt;
-      }
-    } else {
-      // Original logic for tests without allowResubmission
-      // check if user has the last attempt which is in progress or submitted but not reviewed
-      const lastAttempt = await this.attemptRepository.findOne({
-        where: {
-          testId,
-          userId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId, 
-          status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
-          reviewStatus: ReviewStatus.PENDING
-        },
-      });
-
-      if (lastAttempt?.status === AttemptStatus.IN_PROGRESS) {
-        throw new Error('You have a incomplete attempt. Please complete it before starting a new attempt.');
-      }
-      if (lastAttempt?.status === AttemptStatus.SUBMITTED && lastAttempt?.reviewStatus === ReviewStatus.PENDING) {
-        throw new Error('Your last attempt is currently under review. Please wait for the review to finish before starting a new one.');
-      }
-    }
-
-    // Get all existing attempts for this user and test
-    const totalAttempts = await this.attemptRepository.count({
+    // Check if user has already reached max attempts
+    const existingAttempts = await this.attemptRepository.find({
       where: {
         testId,
         userId,
@@ -119,54 +113,77 @@ export class AttemptsService {
       },
     });
 
-    const maxAttempts = test.attempts;
-
-    // Check if user has reached maximum attempts
-    if (totalAttempts >= maxAttempts) {
-      throw new Error(`Maximum attempts (${maxAttempts}) reached for this test. You cannot start a new attempt.`);
+    if (existingAttempts.length >= test.attempts) {
+      throw new Error('Maximum attempts reached for this test');
     }
 
-    // Create attempt
+    // Create new attempt
     const attempt = this.attemptRepository.create({
       testId,
       userId,
-      attempt: totalAttempts + 1,
-      status: AttemptStatus.IN_PROGRESS,
       tenantId: authContext.tenantId,
-      organisationId: authContext.organisationId
+      organisationId: authContext.organisationId,
+      status: AttemptStatus.IN_PROGRESS,
+      submissionType: SubmissionType.SELF,
+      startedAt: new Date(),
+      timeSpent: 0,
+      score: 0,
     });
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
-    // Generate questions based on test type
-    if (test.type === TestType.RULE_BASED) {
-      await this.generateRuleBasedTestQuestions(savedAttempt, test, authContext);
-    }
+    // --- ELASTICSEARCH SYNC: Update assessment attempt start in user's Elasticsearch document ---
+    try {
+      this.logger.log(
+        `🔄 Starting Elasticsearch assessment attempt sync for attemptId: ${savedAttempt.attemptId}, userId: ${userId}, testId: ${testId}`
+      );
+      this.logger.log(
+        `📊 Assessment data - Status: ${savedAttempt.status}, Score: ${savedAttempt.score}, TimeSpent: ${savedAttempt.timeSpent}s`
+      );
 
-    // Trigger plugin event
-    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_STARTED, authContext, {
-      attemptId: savedAttempt.attemptId,
-      testId: savedAttempt.testId,
-      attemptNumber: savedAttempt.attempt,
-    });
+      // Call the Assessment Elasticsearch service to update assessment attempt start
+      await this.assessmentElasticsearchService.handleAssessmentAttemptStart(
+        userId,
+        testId,
+        savedAttempt.attemptId,
+        authContext.tenantId,
+        authContext.organisationId
+      );
+
+      this.logger.log(
+        `✅ Successfully synced assessment attempt start to Elasticsearch: attemptId=${savedAttempt.attemptId}, userId=${userId}, testId=${testId}`
+      );
+    } catch (elasticsearchError) {
+      this.logger.error(
+        `❌ Failed to sync assessment attempt start to Elasticsearch: attemptId=${savedAttempt.attemptId}, userId=${userId}`,
+        elasticsearchError
+      );
+      this.logger.error(`❌ Error details: ${elasticsearchError.message}`);
+      // Don't fail the main operation if Elasticsearch sync fails
+    }
+    // --- END ELASTICSEARCH SYNC ---
 
     return savedAttempt;
   }
 
-    /**
+  /**
    * Retrieves a test attempt with user answers, and progress metrics.
-   * 
+   *
    * @param attemptId - The unique identifier of the attempt to retrieve
    * @param authContext - Authentication context containing user and organization details
    */
-    async getAttemptAnswers(attemptId: string, userId: string, authContext: AuthContext): Promise<any> {
-      // Step 1: Validate and retrieve the attempt
-      const attempt = await this.findAttemptById(attemptId, userId, authContext);
-      if(!attempt){
-        throw new NotFoundException('Attempt not found');
-      }
+  async getAttemptAnswers(
+    attemptId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<any> {
+    // Step 1: Validate and retrieve the attempt
+    const attempt = await this.findAttemptById(attemptId, userId, authContext);
+    if (!attempt) {
+      throw new NotFoundException('Attempt not found');
+    }
 
-      // Fetch user's answers for this attempt 
+    // Fetch user's answers for this attempt
     const userAnswers = await this.testUserAnswerRepository.find({
       where: {
         attemptId: attempt.attemptId,
@@ -174,23 +191,25 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
       },
       select: ['questionId', 'answer', 'updatedAt'],
-      order: { createdAt: 'ASC' }, 
+      order: { createdAt: 'ASC' },
     });
 
     // Parse JSON answers and transform the response
-    const parsedAnswers = userAnswers.map(ua => {
-        return {
-          questionId: ua.questionId,
-          answer: JSON.parse(ua.answer),
-          updatedAt: ua.updatedAt
-        };
+    const parsedAnswers = userAnswers.map((ua) => {
+      return {
+        questionId: ua.questionId,
+        answer: JSON.parse(ua.answer),
+        updatedAt: ua.updatedAt,
+      };
     });
 
     // update userattempt with updatedAt
-    await this.attemptRepository.update(attempt.attemptId, { updatedAt: new Date() });
+    await this.attemptRepository.update(attempt.attemptId, {
+      updatedAt: new Date(),
+    });
 
-    return { 
-      attempt : {
+    return {
+      attempt: {
         attemptId: attempt.attemptId,
         testId: attempt.testId,
         userId: attempt.userId,
@@ -198,7 +217,7 @@ export class AttemptsService {
         startedAt: attempt.startedAt,
         currentPosition: attempt.currentPosition,
         timeSpent: attempt.timeSpent,
-        updatedAt: attempt.updatedAt
+        updatedAt: attempt.updatedAt,
       },
       answers: parsedAnswers,
     };
@@ -209,44 +228,66 @@ export class AttemptsService {
    * Retrieves a test attempt with all associated data for resuming an in-progress test.
    * This method orchestrates the retrieval and transformation of attempt data including
    * test details, questions, user answers, and progress metrics.
-   * 
+   *
    * @param attemptId - The unique identifier of the attempt to retrieve
    * @param authContext - Authentication context containing user and organization details
    */
-  async getAttempt_NotInUse(attemptId: string, userId: string, authContext: AuthContext): Promise<any> {
+  async getAttempt_NotInUse(
+    attemptId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<any> {
     // Step 1: Validate and retrieve the attempt
-    const attempt = await this.validateAndRetrieveAttempt(attemptId, userId, authContext);
-    
+    const attempt = await this.validateAndRetrieveAttempt(
+      attemptId,
+      userId,
+      authContext
+    );
+
     // Step 2: Fetch all related test and questions data
-    const { test, testQuestions, questions, sections, userAnswers } = await this.fetchTestAndQuestionsData(attempt, authContext);
-    
+    const { test, testQuestions, questions, sections, userAnswers } =
+      await this.fetchTestAndQuestionsData(attempt, authContext);
+
     // Step 3: Transform user answers into a lookup map for efficient access
     const answersMap = this.transformUserAnswers(userAnswers);
-    
+
     // Step 4: Organize questions by sections and handle section structure
     const { sectionsWithQuestions } = this.organizeQuestionsBySections(
-      testQuestions, 
-      questions, 
+      testQuestions,
+      questions,
       answersMap,
       sections
     );
-    
+
     // Step 5: Calculate progress metrics (answered questions, percentage, current position)
-    const progressMetrics = this.calculateProgressMetrics(questions, userAnswers, testQuestions, attempt);
-    
+    const progressMetrics = this.calculateProgressMetrics(
+      questions,
+      userAnswers,
+      testQuestions,
+      attempt
+    );
+
     // Step 6: Build and return the complete response structure
-    return this.buildAttemptResponse(attempt, test, sectionsWithQuestions, progressMetrics);
+    return this.buildAttemptResponse(
+      attempt,
+      test,
+      sectionsWithQuestions,
+      progressMetrics
+    );
   }
 
   /**
    * Validates and retrieves a test attempt for the authenticated user.
    * Ensures the attempt exists, belongs to the user, and is in progress.
-   * For tests with allowResubmission, allows access to submitted attempts.
-   * 
+   *
    * @param attemptId - The unique identifier of the attempt to validate
    * @param authContext - Authentication context for user and organization validation
    */
-  private async validateAndRetrieveAttempt(attemptId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
+  private async validateAndRetrieveAttempt(
+    attemptId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<TestAttempt> {
     // Find attempt with proper ownership validation
     const attempt = await this.findAttemptById(attemptId, userId, authContext);
 
@@ -255,14 +296,11 @@ export class AttemptsService {
       throw new NotFoundException('Attempt not found');
     }
 
-    // Get test information to check allowResubmission setting
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
-
     // Ensure attempt is in progress - only in-progress attempts can be resumed
-    // Exception: For tests with allowResubmission, allow access to submitted attempts
-    if (attempt.status !== AttemptStatus.IN_PROGRESS && !test.allowResubmission) {
-      throw new BadRequestException('Cannot resume a submitted attempt. Use the result endpoint to view submitted attempt details.');
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new BadRequestException(
+        'Cannot resume a submitted attempt. Use the result endpoint to view submitted attempt details.'
+      );
     }
 
     return attempt;
@@ -272,11 +310,14 @@ export class AttemptsService {
    * Fetches all test-related data including test details, questions, sections, and user answers.
    * This method performs multiple database queries to gather all necessary data for building
    * the complete attempt response.
-   * 
+   *
    * @param attempt - The validated test attempt entity
    * @param authContext - Authentication context for data access validation
    */
-  private async fetchTestAndQuestionsData(attempt: TestAttempt, authContext: AuthContext): Promise<{
+  private async fetchTestAndQuestionsData(
+    attempt: TestAttempt,
+    authContext: AuthContext
+  ): Promise<{
     test: Test;
     testQuestions: TestQuestion[];
     questions: Question[];
@@ -285,7 +326,7 @@ export class AttemptsService {
   }> {
     // Determine which test to use (resolved test for rule-based tests, original test otherwise)
     const testId = attempt.resolvedTestId || attempt.testId;
-    
+
     // Fetch test details with proper ownership validation
     const test = await this.testRepository.findOne({
       where: {
@@ -310,7 +351,7 @@ export class AttemptsService {
     });
 
     // Extract question IDs and fetch complete question data with options
-    const questionIds = testQuestions.map(tq => tq.questionId);
+    const questionIds = testQuestions.map((tq) => tq.questionId);
     const questions = await this.questionRepository.find({
       where: {
         questionId: In(questionIds),
@@ -347,29 +388,31 @@ export class AttemptsService {
   /**
    * Transforms user answers from database entities into a lookup map for efficient access.
    * Parses JSON answer data and creates a structured map with question ID as key.
-   * 
+   *
    * @param userAnswers - Array of TestUserAnswer entities from database
    * @returns Map with questionId as key and structured answer data as value
    */
-  private transformUserAnswers(userAnswers: TestUserAnswer[]): Map<string, any> {
+  private transformUserAnswers(
+    userAnswers: TestUserAnswer[]
+  ): Map<string, any> {
     const answersMap = new Map();
-    
+
     // Process each user answer and create a lookup map
-    userAnswers.forEach(ua => {
-        const answerData = JSON.parse(ua.answer);
-        
-        // Create structured answer object with all relevant metadata
-        answersMap.set(ua.questionId, {
-          questionId: ua.questionId,
-          answer: answerData,
-          score: ua.score,
-          reviewStatus: ua.reviewStatus,
-          remarks: ua.remarks,
-          submittedAt: ua.createdAt,
-          updatedAt: ua.updatedAt,
-        });
+    userAnswers.forEach((ua) => {
+      const answerData = JSON.parse(ua.answer);
+
+      // Create structured answer object with all relevant metadata
+      answersMap.set(ua.questionId, {
+        questionId: ua.questionId,
+        answer: answerData,
+        score: ua.score,
+        reviewStatus: ua.reviewStatus,
+        remarks: ua.remarks,
+        submittedAt: ua.createdAt,
+        updatedAt: ua.updatedAt,
+      });
     });
-    
+
     return answersMap;
   }
 
@@ -377,7 +420,7 @@ export class AttemptsService {
    * Organizes questions by their assigned sections and transforms user answers.
    * Processes each test question, applies user answers, and groups them by section.
    * Questions without sections are collected separately.
-   * 
+   *
    * @param testQuestions - Array of test questions with ordering and section information
    * @param questions - Array of complete question entities with options
    * @param answersMap - Map of user answers keyed by question ID
@@ -385,8 +428,8 @@ export class AttemptsService {
    * @returns Object containing sections with questions and questions without sections
    */
   private organizeQuestionsBySections(
-    testQuestions: TestQuestion[], 
-    questions: Question[], 
+    testQuestions: TestQuestion[],
+    questions: Question[],
     answersMap: Map<string, any>,
     sections: TestSection[]
   ): {
@@ -398,15 +441,24 @@ export class AttemptsService {
     // Process each test question in order
     for (const testQuestion of testQuestions) {
       // Find the corresponding complete question entity
-      const question = questions.find(q => q.questionId === testQuestion.questionId);
+      const question = questions.find(
+        (q) => q.questionId === testQuestion.questionId
+      );
       if (!question) continue; // Skip if question not found
 
       // Get user's answer for this question and transform it
       const userAnswer = answersMap.get(question.questionId);
-      const selectedOptions = this.transformUserAnswerForQuestion(userAnswer, question);
-      
+      const selectedOptions = this.transformUserAnswerForQuestion(
+        userAnswer,
+        question
+      );
+
       // Build complete question data with user answers
-      const questionData = this.buildQuestionData(question, testQuestion, selectedOptions);
+      const questionData = this.buildQuestionData(
+        question,
+        testQuestion,
+        selectedOptions
+      );
 
       // Organize question by section or add to unsectioned questions
       if (testQuestion.sectionId) {
@@ -415,11 +467,14 @@ export class AttemptsService {
           questionsBySection.set(testQuestion.sectionId, []);
         }
         questionsBySection.get(testQuestion.sectionId).push(questionData);
-      } 
+      }
     }
 
     // Build the final sections structure with questions
-    const sectionsWithQuestions = this.buildSectionsWithQuestions(questionsBySection, sections);
+    const sectionsWithQuestions = this.buildSectionsWithQuestions(
+      questionsBySection,
+      sections
+    );
 
     return { sectionsWithQuestions };
   }
@@ -428,39 +483,50 @@ export class AttemptsService {
    * Transforms user answer data based on question type for display purposes.
    * Converts raw answer data into a structured format appropriate for each question type.
    * Handles different answer formats for MCQ, fill-in-blank, matching, and text questions.
-   * 
+   *
    * @param userAnswer - User's answer data with metadata
    * @param question - Question entity with type and options information
    * @returns Transformed answer data or null if no answer exists
    */
-  private transformUserAnswerForQuestion(userAnswer: any, question: Question): any {
+  private transformUserAnswerForQuestion(
+    userAnswer: any,
+    question: Question
+  ): any {
     // Return null if no user answer exists
     if (!userAnswer || !userAnswer.answer) {
       return [];
     }
 
     const answerData = userAnswer.answer;
-    
+
     // Transform answer based on question type
     switch (question.type) {
       case QuestionType.MCQ:
       case QuestionType.TRUE_FALSE:
       case QuestionType.MULTIPLE_ANSWER:
         // For multiple choice questions, return selected options with their text
-        if (answerData.selectedOptionIds && answerData.selectedOptionIds.length > 0) {
-          return question.options?.filter(opt => 
-            answerData.selectedOptionIds.includes(opt.questionOptionId)
-          ).map(opt => ({
-            questionOptionId: opt.questionOptionId,
-            text: opt.text,
-          })) || [];
+        if (
+          answerData.selectedOptionIds &&
+          answerData.selectedOptionIds.length > 0
+        ) {
+          return (
+            question.options
+              ?.filter((opt) =>
+                answerData.selectedOptionIds.includes(opt.questionOptionId)
+              )
+              .map((opt) => ({
+                questionOptionId: opt.questionOptionId,
+                text: opt.text,
+              })) || []
+          );
         }
         break;
-        
+
       case QuestionType.FILL_BLANK:
         // For fill-in-blank questions, return blank answers with indices
         if (answerData.selectedOptionIds || answerData.blanks) {
-          const fillBlankAnswers = answerData.selectedOptionIds || answerData.blanks;
+          const fillBlankAnswers =
+            answerData.selectedOptionIds || answerData.blanks;
           return fillBlankAnswers.map((blank: any) => {
             return {
               blankIndex: blank.blankIndex,
@@ -469,32 +535,36 @@ export class AttemptsService {
           });
         }
         break;
-        
+
       case QuestionType.MATCH:
         // For matching questions, return matched pairs with option text and matched text
         if (answerData.matches) {
           return answerData.matches.map((match: any) => {
-            const option = question.options?.find(opt => opt.questionOptionId === match.optionId);
+            const option = question.options?.find(
+              (opt) => opt.questionOptionId === match.optionId
+            );
             return {
               questionOptionId: match.optionId,
-              text: option?.text || '',  // User needs to see what they selected
-              matchWith: match.matchWith,  // The text they matched with
+              text: option?.text || '', // User needs to see what they selected
+              matchWith: match.matchWith, // The text they matched with
             };
           });
         }
         break;
-        
+
       case QuestionType.SUBJECTIVE:
       case QuestionType.ESSAY:
         // For text-based questions, return the text content
         if (answerData.text) {
-          return [{
-            text: answerData.text,
-          }];
+          return [
+            {
+              text: answerData.text,
+            },
+          ];
         }
         break;
     }
-    
+
     return null;
   }
 
@@ -502,13 +572,17 @@ export class AttemptsService {
    * Builds a complete question data structure combining question details with user answers.
    * Creates a standardized question object for the frontend with all necessary information
    * while excluding sensitive data like correct answers and option scores.
-   * 
+   *
    * @param question - Complete question entity with options
    * @param testQuestion - Test question entity with ordering and section information
    * @param selectedOptions - Transformed user answer data for this question
    * @returns Complete question data object for frontend consumption
    */
-  private buildQuestionData(question: Question, testQuestion: TestQuestion, selectedOptions: any): any {
+  private buildQuestionData(
+    question: Question,
+    testQuestion: TestQuestion,
+    selectedOptions: any
+  ): any {
     return {
       // Basic question information
       questionId: question.questionId,
@@ -522,26 +596,27 @@ export class AttemptsService {
       allowPartialScoring: question.allowPartialScoring,
       params: question.params,
       media: question.media,
-      
+
       // Test-specific question properties
       ordering: testQuestion.ordering,
       isCompulsory: testQuestion.isCompulsory,
       sectionId: testQuestion.sectionId,
       ruleId: testQuestion.ruleId,
-      
+
       // Question options (excluding sensitive data for security)
-      options: question.options?.map(opt => ({
-        questionOptionId: opt.questionOptionId,
-        text: opt.text,
-        media: opt.media,
-        matchWith: opt.matchWith,
-        matchWithMedia: opt.matchWithMedia,
-        ordering: opt.ordering,
-        blankIndex: opt.blankIndex,
-        caseSensitive: opt.caseSensitive,
-        // Don't include isCorrect and marks for security
-      })) || [],
-      
+      options:
+        question.options?.map((opt) => ({
+          questionOptionId: opt.questionOptionId,
+          text: opt.text,
+          media: opt.media,
+          matchWith: opt.matchWith,
+          matchWithMedia: opt.matchWithMedia,
+          ordering: opt.ordering,
+          blankIndex: opt.blankIndex,
+          caseSensitive: opt.caseSensitive,
+          // Don't include isCorrect and marks for security
+        })) || [],
+
       // User's selected answers (if any)
       ...(selectedOptions && { selectedOptions }),
     };
@@ -550,13 +625,16 @@ export class AttemptsService {
   /**
    * Builds the final sections structure with their associated questions.
    * Maps section entities to section objects containing questions organized by section ID.
-   * 
+   *
    * @param questionsBySection - Map of questions organized by section ID
    * @param sections - Array of test section entities
    * @returns Array of section objects with questions
    */
-  private buildSectionsWithQuestions(questionsBySection: Map<string, any[]>, sections: TestSection[]): any[] {
-    return sections.map(section => ({
+  private buildSectionsWithQuestions(
+    questionsBySection: Map<string, any[]>,
+    sections: TestSection[]
+  ): any[] {
+    return sections.map((section) => ({
       sectionId: section.sectionId,
       title: section.title,
       description: section.description,
@@ -571,7 +649,7 @@ export class AttemptsService {
    * Calculates progress metrics for the test attempt including completion status and current position.
    * Determines how many questions have been answered, progress percentage, and the current question position
    * for resuming the test.
-   * 
+   *
    * @param questions - Array of all questions in the test
    * @param userAnswers - Array of user's submitted answers
    * @param testQuestions - Array of test questions with ordering information
@@ -579,9 +657,9 @@ export class AttemptsService {
    * @returns Object containing progress metrics (total, answered, percentage, current position)
    */
   private calculateProgressMetrics(
-    questions: Question[], 
-    userAnswers: TestUserAnswer[], 
-    testQuestions: TestQuestion[], 
+    questions: Question[],
+    userAnswers: TestUserAnswer[],
+    testQuestions: TestQuestion[],
     attempt: TestAttempt
   ): {
     totalQuestions: number;
@@ -592,25 +670,30 @@ export class AttemptsService {
     // Calculate basic progress metrics
     const totalQuestions = questions.length;
     const answeredQuestions = userAnswers.length;
-    const progressPercentage = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
+    const progressPercentage =
+      totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
 
     // Determine the current question position for resuming the test
     let currentPosition = attempt.currentPosition;
-    
+
     // If no current position is set, determine it based on user answers
     if (!currentPosition) {
       if (userAnswers.length > 0) {
         // Find the highest ordering value among answered questions
         const answeredQuestionOrderings = testQuestions
-          .filter(tq => userAnswers.some(ua => ua.questionId === tq.questionId))
-          .map(tq => tq.ordering);
-        
+          .filter((tq) =>
+            userAnswers.some((ua) => ua.questionId === tq.questionId)
+          )
+          .map((tq) => tq.ordering);
+
         if (answeredQuestionOrderings.length > 0) {
           // Find the highest ordering (last answered question)
           const maxOrdering = Math.max(...answeredQuestionOrderings);
-          
+
           // Find the next question after the last answered one
-          const nextQuestion = testQuestions.find(tq => tq.ordering > maxOrdering);
+          const nextQuestion = testQuestions.find(
+            (tq) => tq.ordering > maxOrdering
+          );
           currentPosition = nextQuestion ? nextQuestion.ordering : maxOrdering;
         } else {
           // No matching test questions found for user answers - start from beginning
@@ -639,7 +722,7 @@ export class AttemptsService {
    * Builds the complete response structure for the test attempt.
    * Combines test details, attempt information, progress metrics, and organized questions
    * into a comprehensive response object for the frontend.
-   * 
+   *
    * @param attempt - Test attempt entity with user and status information
    * @param test - Test entity with configuration and settings
    * @param sectionsWithQuestions - Array of sections with their questions
@@ -648,74 +731,79 @@ export class AttemptsService {
    * @returns Complete response object with all attempt data
    */
   private buildAttemptResponse(
-    attempt: TestAttempt, 
-    test: Test, 
-    sectionsWithQuestions: any[], 
+    attempt: TestAttempt,
+    test: Test,
+    sectionsWithQuestions: any[],
     progressMetrics: any
   ) {
+    return {
+      // Test configuration and details
+      testId: attempt.testId,
+      resolvedTestId: attempt.resolvedTestId,
+      title: test.title,
+      description: test.description,
+      totalMarks: test.totalMarks,
+      timeDuration: test.timeDuration,
+      showTime: test.showTime,
+      type: test.type,
+      passingMarks: test.passingMarks,
 
-    return {     
-        // Test configuration and details
-        testId: attempt.testId,
-        resolvedTestId: attempt.resolvedTestId,
-        title: test.title,
-        description: test.description,
-        totalMarks: test.totalMarks,
-        timeDuration: test.timeDuration,
-        showTime: test.showTime,
-        type: test.type,
-        passingMarks: test.passingMarks,
-        
-        // Test display settings
-        showCorrectAnswer: test.showCorrectAnswer,
-        showQuestionsOverview: test.showQuestionsOverview,
-        questionsShuffle: test.questionsShuffle,
-        answersShuffle: test.answersShuffle,
-        paginationLimit: test.paginationLimit,
-        showThankyouPage: test.showThankyouPage,
-        showAllQuestions: test.showAllQuestions,
-        answerSheet: test.answerSheet,
-        printAnswersheet: test.printAnswersheet,
-        
-        // Attempt information with progress
-        attempt: {
-          attemptId: attempt.attemptId,
-          userId: attempt.userId,
-          attempt: attempt.attempt,
-          status: attempt.status,
-          reviewStatus: attempt.reviewStatus,
-          submissionType: attempt.submissionType,
-          result: attempt.result,
-          score: attempt.score,
-          currentPosition: progressMetrics.currentPosition,
-          timeSpent: attempt.timeSpent,
-          startedAt: attempt.startedAt,
-          submittedAt: attempt.submittedAt,
-          
-          // Progress information
-          progress: {
-            totalQuestions: progressMetrics.totalQuestions,
-            answeredQuestions: progressMetrics.answeredQuestions,
-            progressPercentage: progressMetrics.progressPercentage,
-            remainingQuestions: progressMetrics.totalQuestions - progressMetrics.answeredQuestions,
-          },
-          
-          // Time remaining calculation
-          timeRemaining: test.timeDuration ? Math.max(0, test.timeDuration - (attempt.timeSpent || 0)) : null,
+      // Test display settings
+      showCorrectAnswer: test.showCorrectAnswer,
+      showQuestionsOverview: test.showQuestionsOverview,
+      questionsShuffle: test.questionsShuffle,
+      answersShuffle: test.answersShuffle,
+      paginationLimit: test.paginationLimit,
+      showThankyouPage: test.showThankyouPage,
+      showAllQuestions: test.showAllQuestions,
+      answerSheet: test.answerSheet,
+      printAnswersheet: test.printAnswersheet,
+
+      // Attempt information with progress
+      attempt: {
+        attemptId: attempt.attemptId,
+        userId: attempt.userId,
+        attempt: attempt.attempt,
+        status: attempt.status,
+        reviewStatus: attempt.reviewStatus,
+        submissionType: attempt.submissionType,
+        result: attempt.result,
+        score: attempt.score,
+        currentPosition: progressMetrics.currentPosition,
+        timeSpent: attempt.timeSpent,
+        startedAt: attempt.startedAt,
+        submittedAt: attempt.submittedAt,
+
+        // Progress information
+        progress: {
+          totalQuestions: progressMetrics.totalQuestions,
+          answeredQuestions: progressMetrics.answeredQuestions,
+          progressPercentage: progressMetrics.progressPercentage,
+          remainingQuestions:
+            progressMetrics.totalQuestions - progressMetrics.answeredQuestions,
         },
-        
-        // Organized questions by sections
-        sections: sectionsWithQuestions,     
+
+        // Time remaining calculation
+        timeRemaining: test.timeDuration
+          ? Math.max(0, test.timeDuration - (attempt.timeSpent || 0))
+          : null,
+      },
+
+      // Organized questions by sections
+      sections: sectionsWithQuestions,
     };
   }
 
-
-  async getAttemptQuestions(attemptId: string, userId: string, authContext: AuthContext): Promise<Question[]> {
+  async getAttemptQuestions(
+    attemptId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<Question[]> {
     const attempt = await this.findAttemptById(attemptId, userId, authContext);
 
     // Get questions from the resolved test (generated test for rule-based)
     const testId = attempt.resolvedTestId || attempt.testId;
-    
+
     const testQuestions = await this.testQuestionRepository.find({
       where: {
         testId,
@@ -725,12 +813,12 @@ export class AttemptsService {
       order: { ordering: 'ASC' },
     });
 
-    const questionIds = testQuestions.map(tq => tq.questionId);
-    
+    const questionIds = testQuestions.map((tq) => tq.questionId);
+
     if (questionIds.length === 0) {
       return [];
     }
-    
+
     return this.questionRepository.find({
       where: {
         questionId: In(questionIds),
@@ -740,164 +828,180 @@ export class AttemptsService {
     });
   }
 
-  async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<any> {
-    // Handle the new format with answers array and optional global timeSpent
-    const answersArray = submitAnswerDto.answers || [];
-    const globalTimeSpent = submitAnswerDto.timeSpent || 0;
-    
-    if (answersArray.length === 0) {
-      return { message: 'No answers provided to submit' };
-    }
-    console.log('authContext.userId', authContext.userId);
+  async submitAnswer(
+    attemptId: string,
+    submitAnswerDto: SubmitMultipleAnswersDto,
+    authContext: AuthContext
+  ): Promise<any> {
+    // Ensure user data exists in Elasticsearch before updating
+    await this.ensureUserDataInElasticsearch(
+      authContext.userId,
+      authContext.tenantId,
+      authContext.organisationId
+    );
 
-    // Verify attempt exists and belongs to user (only once)
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        userId: authContext.userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['test'],
-    });
+    // Validate and retrieve the attempt
+    const attempt = await this.validateAndRetrieveAttempt(
+      attemptId,
+      authContext.userId,
+      authContext
+    );
 
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
-
-    // Get test information to check allowResubmission setting
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
-
-    // Check if attempt is submitted (only for tests without allowResubmission)
-    if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
-      throw new Error('Cannot submit answer to completed attempt');
+    // Check if attempt is in progress
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new BadRequestException(
+        'Cannot submit answers for a completed or submitted attempt'
+      );
     }
 
-    // Get all questions to validate answer formats and determine question types (batch query)
-    const questionIds = answersArray.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
-      where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['options'], // Load options for scoring
-    });
+    // Fetch test and questions data
+    const { test, testQuestions, questions, sections, userAnswers } =
+      await this.fetchTestAndQuestionsData(attempt, authContext);
 
-    if (questions.length !== questionIds.length) {
-      const foundQuestionIds = questions.map(q => q.questionId);
-      const missingQuestionIds = questionIds.filter(id => !foundQuestionIds.includes(id));
-      throw new NotFoundException(`Questions not found: ${missingQuestionIds.join(', ')}`);
-    }
+    // Transform existing user answers
+    const answersMap = this.transformUserAnswers(userAnswers);
 
-    const questionMap = new Map(questions.map(q => [q.questionId, q]));
+    // Process new answers
+    for (const answerData of submitAnswerDto.answers) {
+      const { questionId, answer } = answerData;
 
-    // Get existing answers for this attempt (batch query)
-    const existingAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
-
-    // Prepare answers to save/update
-    const answersToSave = [];
-    const answersToUpdate = [];
-    let totalTimeSpent = globalTimeSpent; // Start with global timeSpent if provided
-
-    for (const answerDto of answersArray) {
-      const answer = JSON.stringify(answerDto.answer);
-      const question = questionMap.get(answerDto.questionId);
-      const existingAnswer = existingAnswersMap.get(answerDto.questionId);
-
-      // Add null check for question object before calculating score
-      if (!question) {
-        throw new NotFoundException(`Question not found`);
+      // Validate question exists in this test
+      const testQuestion = testQuestions.find(
+        (tq) => tq.questionId === questionId
+      );
+      if (!testQuestion) {
+        throw new BadRequestException(
+          `Question ${questionId} is not part of this test`
+        );
       }
 
-      // Calculate score and review status based on question type
-      let score = await this.calculateQuestionScore(answerDto.answer, question);
-      let reviewStatus = AnswerReviewStatus.PENDING;
-      if (attempt.test.isObjective) {
-        reviewStatus = AnswerReviewStatus.REVIEWED
-      } 
-
-      // Improved score validation: check if score is a finite number and default to 0 if not
-      const numericScore = Number(score);
-      const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
-
-      if (existingAnswer) {
-        existingAnswer.answer = answer;
-        existingAnswer.score = finalScore;
-        existingAnswer.reviewStatus = reviewStatus;
-        existingAnswer.updatedAt = new Date();
-        answersToUpdate.push(existingAnswer);
-      } else {
-        const userAnswer = this.testUserAnswerRepository.create({
-          attemptId,
-          questionId: answerDto.questionId,
-          answer: answer,
-          score: finalScore,
-          reviewStatus: reviewStatus,
-          anssOrder: '1', // This could be enhanced to track order
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        });
-        answersToSave.push(userAnswer);
-      }
+      // Find or create user answer
+      let userAnswer = userAnswers.find((ua) => ua.questionId === questionId);
       
-    }
-
-    // Save all answers in batch operations
-    if (answersToSave.length > 0) {
-      await this.testUserAnswerRepository.save(answersToSave);
-    }
-    if (answersToUpdate.length > 0) {
-      await this.testUserAnswerRepository.save(answersToUpdate);
-    }
-
-    // Update attempt time spent
-    if (totalTimeSpent > 0) {
-      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
-    }
-
-    // Update current position based on the last question's ordering
-    if (answersArray.length > 0) {
-      const testId = attempt.resolvedTestId || attempt.testId;
-      const lastQuestionId = answersArray[answersArray.length - 1].questionId;
-      const testQuestion = await this.testQuestionRepository.findOne({
-        where: {
-          testId,
-          questionId: lastQuestionId,
+      if (!userAnswer) {
+        userAnswer = this.testUserAnswerRepository.create({
+          attemptId: attemptId,
+          questionId: questionId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
-        },
-      });
-
-      if (testQuestion) {
-        attempt.currentPosition = testQuestion.ordering;
+          answer: JSON.stringify(answer),
+          score: 0, // Will be calculated later
+          reviewStatus: AnswerReviewStatus.PENDING,
+          anssOrder: testQuestion.ordering.toString(),
+        });
+      } else {
+        userAnswer.answer = JSON.stringify(answer);
+        userAnswer.updatedAt = new Date();
       }
+
+      // Save the answer
+      await this.testUserAnswerRepository.save(userAnswer);
+      
+      // Update the answers map
+      answersMap.set(questionId, answer);
     }
 
-    await this.attemptRepository.save(attempt);
+    // Calculate scores for the submitted answers
+    await this.calculateTotalAttemptScore(attemptId, authContext);
 
-    return { message: 'Answers submitted successfully' };
+    // Update attempt time spent if provided
+    if (submitAnswerDto.timeSpent !== undefined) {
+      attempt.timeSpent = submitAnswerDto.timeSpent;
+      await this.attemptRepository.save(attempt);
+    }
+
+    // --- ELASTICSEARCH SYNC: Update assessment answer submission in user's Elasticsearch document ---
+    try {
+      this.logger.log(
+        `🔄 Starting Elasticsearch assessment answer sync for attemptId: ${attemptId}, userId: ${authContext.userId}, testId: ${attempt.testId}`
+      );
+      this.logger.log(
+        `📊 Answer data - Submitted answers: ${
+          submitAnswerDto.answers.length
+        }, TimeSpent: ${submitAnswerDto.timeSpent || attempt.timeSpent}s`
+      );
+
+      // Transform answers data for the new tracking function
+      const answersData = submitAnswerDto.answers.map(answer => ({
+        questionId: answer.questionId,
+        answer: answer.answer,
+        attemptId: attemptId,
+        score: 0, // Will be calculated later
+        reviewStatus: 'P' // Pending
+      }));
+
+      // Call the NEW Assessment Elasticsearch service function for answer tracking
+      await this.assessmentElasticsearchService.handleAssessmentAttemptAnswersWithTracking(
+          authContext.userId,
+          attemptId,
+        answersData,
+          authContext.tenantId,
+          authContext.organisationId
+        );
+
+      this.logger.log(
+        `✅ Successfully synced assessment answers to Elasticsearch: attemptId=${attemptId}, userId=${authContext.userId}, testId=${attempt.testId}`
+      );
+    } catch (elasticsearchError) {
+      this.logger.error(
+        `❌ Failed to sync assessment answers to Elasticsearch: attemptId=${attemptId}, userId=${authContext.userId}`,
+        elasticsearchError
+      );
+      this.logger.error(`❌ Error details: ${elasticsearchError.message}`);
+      // Don't fail the main operation if Elasticsearch sync fails
+    }
+    // --- END ELASTICSEARCH SYNC ---
+
+    return {
+      message: 'Answers submitted successfully',
+      attemptId: attemptId,
+      submittedAnswers: submitAnswerDto.answers.length,
+    };
+  }
+
+  /**
+   * Ensure user data exists in Elasticsearch before updating specific sections
+   * @param userId The user ID
+   * @param tenantId The tenant ID
+   * @param organisationId The organization ID
+   */
+  private async ensureUserDataInElasticsearch(
+    userId: string,
+    tenantId: string,
+    organisationId: string
+  ): Promise<void> {
+    try {
+      if (!isElasticsearchEnabled()) {
+        this.logger.debug(
+          'Elasticsearch is disabled, skipping user data check'
+        );
+        return;
+      }
+
+      // Don't create empty user documents - let the proper sync mechanism handle user creation
+      // The assessment service should only update existing user documents, not create empty ones
+      this.logger.debug(`User document check completed for userId: ${userId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to ensure user data in Elasticsearch for userId: ${userId}:`,
+        error
+      );
+      // Don't throw error, continue with the operation
+    }
   }
 
   /**
    * Validates that all compulsory questions for a test attempt have been answered.
    * Returns both validation status and detailed information about missing questions.
-   * 
+   *
    * @param attempt - The test attempt to validate
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{isValid: boolean, missingQuestions?: Array<{questionId: string, title: string, ordering: number, sectionId?: string}>}>
    */
-  async validateCompulsoryQuestions(attempt: TestAttempt, authContext: AuthContext): Promise<{
+  async validateCompulsoryQuestions(
+    attempt: TestAttempt,
+    authContext: AuthContext
+  ): Promise<{
     isValid: boolean;
     missingQuestions?: Array<{
       questionId: string;
@@ -912,22 +1016,28 @@ export class AttemptsService {
     const missingCompulsoryQuestions = await this.testQuestionRepository
       .createQueryBuilder('tq')
       .leftJoin('questions', 'q', 'q.questionId = tq.questionId')
-      .leftJoin('testUserAnswers', 'tua', 
-        'tua.questionId = tq.questionId AND tua.attemptId = :attemptId', 
+      .leftJoin(
+        'testUserAnswers',
+        'tua',
+        'tua.questionId = tq.questionId AND tua.attemptId = :attemptId',
         { attemptId: attempt.attemptId }
       )
       .where('tq.testId = :testId', { testId })
       .andWhere('tq.isCompulsory = :isCompulsory', { isCompulsory: true })
       .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('tq.organisationId = :organisationId', {
+              organisationId: authContext.organisationId,
+      })
       .andWhere('q.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('q.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('q.organisationId = :organisationId', {
+        organisationId: authContext.organisationId,
+      })
       .andWhere('tua.questionId IS NULL') // This means no answer exists for this question
       .select([
         'tq.questionId',
         'tq.ordering',
         'tq.sectionId',
-        'q.text as title'
+        'q.text as title',
       ])
       .orderBy('tq.ordering', 'ASC')
       .getRawMany();
@@ -938,7 +1048,7 @@ export class AttemptsService {
     }
 
     // Transform the raw results to match the expected format
-    const missingQuestions = missingCompulsoryQuestions.map(q => ({
+    const missingQuestions = missingCompulsoryQuestions.map((q) => ({
       questionId: q.tq_questionId,
       title: q.title,
       ordering: q.tq_ordering,
@@ -953,33 +1063,43 @@ export class AttemptsService {
 
   /**
    * Submit an attempt and validate compulsory questions.
-   * 
+   *
    * @param attemptId - The ID of the test attempt to validate
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{isValid: boolean, missingQuestions?: Array<{questionId: string, title: string, ordering: number, sectionId?: string}>}>
    */
-  async submitAttempt(attemptId: string, authContext: AuthContext): Promise<any> {
-    const attempt = await this.findAttemptById(attemptId, authContext.userId, authContext);
+  async submitAttempt(
+    attemptId: string,
+    authContext: AuthContext
+  ): Promise<any> {
+    const attempt = await this.findAttemptById(
+        attemptId,
+      authContext.userId,
+      authContext
+    );
 
-    // Get test information to check allowResubmission setting
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
-
-    // Check if attempt is already submitted (only for tests without allowResubmission)
-    if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
+    // Check if attempt is already submitted
+    if (attempt.status === AttemptStatus.SUBMITTED) {
       throw new Error('Attempt is already submitted');
     }
 
     // Validate compulsory questions before allowing submission
-    const compulsoryValidation = await this.validateCompulsoryQuestions(attempt, authContext);
-    
+    const compulsoryValidation = await this.validateCompulsoryQuestions(
+      attempt,
+      authContext
+    );
+
     if (!compulsoryValidation.isValid) {
       throw new BadRequestException({
-        message: `Cannot submit attempt. The following compulsory questions (JSON) must be answered: ${JSON.stringify(compulsoryValidation.missingQuestions)}`,
+        message: `Cannot submit attempt. The following compulsory questions (JSON) must be answered: ${JSON.stringify(
+          compulsoryValidation.missingQuestions
+        )}`,
       });
     }
 
-    // Get test information (already retrieved above)
+    // Get test information
+    const testId = attempt.resolvedTestId || attempt.testId;
+    const test = await this.findTestById(testId, authContext);
 
     // Check if the test itself is a FEEDBACK type test
     if (attempt.test?.gradingType === GradingType.FEEDBACK) {
@@ -987,18 +1107,23 @@ export class AttemptsService {
       attempt.score = null;
       attempt.result = null;
     } else {
-      
       // Calculate sum of all answers score
-      const totalAnswersScore = await this.calculateTotalAttemptScore(attemptId, authContext);
+      const totalAnswersScore = await this.calculateTotalAttemptScore(
+        attemptId,
+        authContext
+      );
       attempt.score = totalAnswersScore;
       if (test.isObjective) {
         attempt.reviewStatus = ReviewStatus.REVIEWED;
-        attempt.result = totalAnswersScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+        attempt.result =
+          totalAnswersScore >= test.passingMarks
+            ? ResultType.PASS
+            : ResultType.FAIL;
       } else {
         // Set review status to pending for manual review
         attempt.reviewStatus = ReviewStatus.PENDING;
       }
-    } 
+    }
 
     // Update attempt status
     attempt.status = AttemptStatus.SUBMITTED;
@@ -1007,34 +1132,95 @@ export class AttemptsService {
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
-    // Trigger plugin event
-    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_SUBMITTED, authContext, {
-      attemptId: savedAttempt.attemptId,
-      testId: savedAttempt.testId,
-      score: savedAttempt.score,
-      result: savedAttempt.result,
-      timeSpent: savedAttempt.timeSpent,
-      reviewStatus: savedAttempt.reviewStatus,
-      isObjective: test.isObjective,
-    });
-    
-    return { 
-      attemptId: savedAttempt.attemptId, 
-      score: savedAttempt.score,
-      reviewStatus: savedAttempt.reviewStatus,
-      result: savedAttempt.result,
-      totalMarks: test.totalMarks
-    };
+    // --- ELASTICSEARCH SYNC: Update assessment attempt submission in user's Elasticsearch document ---
+    try {
+      this.logger.log(
+        `🔄 Starting Elasticsearch assessment attempt submission sync for attemptId: ${savedAttempt.attemptId}, userId: ${authContext.userId}, testId: ${savedAttempt.testId}`
+      );
+      this.logger.log(
+        `📊 Submission data - Score: ${savedAttempt.score}, Status: ${savedAttempt.status}, ReviewStatus: ${savedAttempt.reviewStatus}`
+      );
 
+      // Get the final answers data for submission tracking
+      const finalAnswers = await this.testUserAnswerRepository.find({
+        where: { attemptId: savedAttempt.attemptId }
+      });
+
+      const answersData = finalAnswers.map(answer => ({
+          questionId: answer.questionId,
+        answer: JSON.parse(answer.answer || '{}'),
+        attemptId: savedAttempt.attemptId,
+        score: answer.score || 0,
+        reviewStatus: answer.reviewStatus || 'P'
+      }));
+
+      // Call the NEW Assessment Elasticsearch service function for submission tracking
+      await this.assessmentElasticsearchService.handleAssessmentAttemptSubmissionWithTracking(
+        authContext.userId,
+        savedAttempt.attemptId,
+        answersData,
+        authContext.tenantId,
+        authContext.organisationId,
+        {
+          score: savedAttempt.score,
+          reviewStatus: savedAttempt.reviewStatus,
+          result: savedAttempt.result,
+          totalMarks: test.totalMarks
+        }
+      );
+
+      this.logger.log(
+        `✅ Successfully synced assessment attempt submission to Elasticsearch: attemptId=${savedAttempt.attemptId}, userId=${authContext.userId}, testId=${savedAttempt.testId}`
+      );
+    } catch (elasticsearchError) {
+      this.logger.error(
+        `❌ Failed to sync assessment attempt submission to Elasticsearch: attemptId=${savedAttempt.attemptId}, userId=${authContext.userId}`,
+        elasticsearchError
+      );
+      this.logger.error(`❌ Error details: ${elasticsearchError.message}`);
+      // Don't fail the main operation if Elasticsearch sync fails
+    }
+    // --- END ELASTICSEARCH SYNC ---
+
+    // Trigger plugin event
+    await this.triggerPluginEvent(
+      PluginManagerService.EVENTS.ATTEMPT_SUBMITTED,
+      authContext,
+      {
+            attemptId: savedAttempt.attemptId,
+        testId: savedAttempt.testId,
+        score: savedAttempt.score,
+        result: savedAttempt.result,
+        timeSpent: savedAttempt.timeSpent,
+        reviewStatus: savedAttempt.reviewStatus,
+        isObjective: test.isObjective,
+      }
+    );
+
+    return {
+      attemptId: savedAttempt.attemptId,
+      score: savedAttempt.score,
+      reviewStatus: savedAttempt.reviewStatus,
+      result: savedAttempt.result,
+      totalMarks: test.totalMarks,
+    };
   }
 
-  async reviewAttempt(attemptId: string, reviewDto: ReviewAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
-    const attempt = await this.findAttemptById(attemptId, authContext.userId, authContext);
+  async reviewAttempt(
+    attemptId: string,
+    reviewDto: ReviewAttemptDto,
+    authContext: AuthContext
+  ): Promise<TestAttempt> {
+    const attempt = await this.findAttemptById(
+      attemptId,
+      authContext.userId,
+      authContext
+    );
 
     if (!attempt) {
       throw new NotFoundException('Attempt not found');
     }
-    
+
     // Get test information for passing marks
     const testId = attempt.resolvedTestId || attempt.testId;
     const test = await this.testRepository.findOne({
@@ -1051,9 +1237,11 @@ export class AttemptsService {
 
     // Validate that the test has subjective questions
     if (test.isObjective) {
-      throw new BadRequestException('Objective tests do not require manual review');
+      throw new BadRequestException(
+        'Objective tests do not require manual review'
+      );
     }
-    
+
     // Validate attempt status
     if (attempt.status !== AttemptStatus.SUBMITTED) {
       throw new BadRequestException('Only submitted attempts can be reviewed');
@@ -1062,18 +1250,28 @@ export class AttemptsService {
     // Get all answers for this attempt to validate
     const attemptAnswers = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
-      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
+      .innerJoin(
+        'questions',
+        'question',
+        'question.questionId = answer.questionId'
+      )
       .where('answer.attemptId = :attemptId', { attemptId })
-      .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('question.type IN (:...questionTypes)', { questionTypes: [QuestionType.SUBJECTIVE, QuestionType.ESSAY] })
+      .andWhere('answer.tenantId = :tenantId', {
+        tenantId: authContext.tenantId,
+      })
+      .andWhere('answer.organisationId = :organisationId', {
+        organisationId: authContext.organisationId,
+      })
+      .andWhere('question.type IN (:...questionTypes)', {
+        questionTypes: [QuestionType.SUBJECTIVE, QuestionType.ESSAY],
+      })
       .getMany();
 
     // Update scores for reviewed answers
     for (const answerReview of reviewDto.answers) {
       // Score validation already done in the first loop above
       const validatedScore = Number(answerReview.score) || 0;
-      
+
       await this.testUserAnswerRepository.update(
         {
           attemptId,
@@ -1092,7 +1290,7 @@ export class AttemptsService {
     }
 
     // Check if all pending subjective questions have been reviewed
-    const pendingSubjectiveAnswers = attemptAnswers.filter(answer => {
+    const pendingSubjectiveAnswers = attemptAnswers.filter((answer) => {
       return answer.reviewStatus != AnswerReviewStatus.REVIEWED;
     });
 
@@ -1107,32 +1305,41 @@ export class AttemptsService {
     }
 
     // Calculate final score by preserving existing auto-graded scores and adding reviewed scores
-    const finalScore = await this.calculateTotalAttemptScore(attemptId, authContext);
+    const finalScore = await this.calculateTotalAttemptScore(
+      attemptId,
+      authContext
+    );
 
-    
     // Ensure final score is a proper number
     const validatedFinalScore = Number(finalScore) || 0;
-    
+
     attempt.score = validatedFinalScore;
     attempt.reviewStatus = attemptReviewStatus;
     attempt.updatedBy = authContext.userId;
 
     // Only set result when attempt is fully reviewed
     if (attemptReviewStatus === ReviewStatus.REVIEWED) {
-      attempt.result = validatedFinalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+      attempt.result =
+        validatedFinalScore >= test.passingMarks
+          ? ResultType.PASS
+          : ResultType.FAIL;
     }
 
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     // Trigger plugin event
-    await this.triggerPluginEvent(PluginManagerService.EVENTS.ATTEMPT_REVIEWED, authContext, {
-      attemptId: savedAttempt.attemptId,
-      testId: savedAttempt.testId,
-      score: savedAttempt.score,
-      result: savedAttempt.result,
-      reviewedBy: authContext.userId,
-      answersReviewed: reviewDto.answers.length,
-    });
+    await this.triggerPluginEvent(
+      PluginManagerService.EVENTS.ATTEMPT_REVIEWED,
+      authContext,
+      {
+        attemptId: savedAttempt.attemptId,
+        testId: savedAttempt.testId,
+        score: savedAttempt.score,
+        result: savedAttempt.result,
+        reviewedBy: authContext.userId,
+        answersReviewed: reviewDto.answers.length,
+      }
+    );
 
     return savedAttempt;
   }
@@ -1140,13 +1347,29 @@ export class AttemptsService {
   async getPendingReviews(authContext: AuthContext): Promise<any[]> {
     return this.attemptRepository
       .createQueryBuilder('attempt')
-      .leftJoin('testUserAnswers', 'answers', 'answers.attemptId = attempt.attemptId')
-      .leftJoin('questions', 'question', 'question.questionId = answers.questionId')
+      .leftJoin(
+        'testUserAnswers',
+        'answers',
+        'answers.attemptId = attempt.attemptId'
+      )
+      .leftJoin(
+        'questions',
+        'question',
+        'question.questionId = answers.questionId'
+      )
       .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('attempt.organisationId = :organisationId', { organisationId: authContext.organisationId })
-      .andWhere('attempt.reviewStatus IN (:...reviewStatuses)', { reviewStatuses: [ReviewStatus.PENDING, ReviewStatus.UNDER_REVIEW] })
-      .andWhere('question.gradingType = :gradingType', { gradingType: GradingType.ASSESSMENT })
-      .andWhere('answers.reviewStatus = :answerReviewStatus', { answerReviewStatus: 'P' })
+      .andWhere('attempt.organisationId = :organisationId', {
+        organisationId: authContext.organisationId,
+      })
+      .andWhere('attempt.reviewStatus IN (:...reviewStatuses)', {
+        reviewStatuses: [ReviewStatus.PENDING, ReviewStatus.UNDER_REVIEW],
+      })
+      .andWhere('question.gradingType = :gradingType', {
+        gradingType: GradingType.ASSESSMENT,
+      })
+      .andWhere('answers.reviewStatus = :answerReviewStatus', {
+        answerReviewStatus: 'P',
+      })
       .select([
         'attempt.attemptId',
         'attempt.testId',
@@ -1158,7 +1381,7 @@ export class AttemptsService {
         'question.type',
         'question.marks',
         'question.gradingType',
-        'question.params'
+        'question.params',
       ])
       .getMany();
   }
@@ -1166,19 +1389,23 @@ export class AttemptsService {
   /**
    * Generates questions for a rule-based test attempt by creating a new generated test
    * and populating it with questions based on the test rules.
-   * 
+   *
    * This function:
    * 1. Creates a new generated test instance for the specific attempt
    * 2. Links the attempt to the generated test via resolvedTestId
    * 3. Retrieves all active rules for the original test
    * 4. For each rule, selects questions either from pre-selected pool or dynamic criteria
    * 5. Adds selected questions to the generated test with proper ordering
-   * 
+   *
    * @param attempt - The test attempt that needs questions generated
    * @param originalTest - The original rule-based test
    * @param authContext - Authentication context for tenant/organization filtering
    */
-  private async generateRuleBasedTestQuestions(attempt: TestAttempt, originalTest: Test, authContext: AuthContext): Promise<void> {
+  private async generateRuleBasedTestQuestions(
+    attempt: TestAttempt,
+    originalTest: Test,
+    authContext: AuthContext
+  ): Promise<void> {
     // Create a new generated test for this specific attempt
     const generatedTest = this.testRepository.create({
       title: `Generated Test for ${originalTest.title} - Attempt ${attempt.attempt}`,
@@ -1190,7 +1417,7 @@ export class AttemptsService {
       status: originalTest.status,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
-      createdBy: authContext.userId,
+      createdBy: 'system',
     });
 
     const savedGeneratedTest = await this.testRepository.save(generatedTest);
@@ -1228,7 +1455,9 @@ export class AttemptsService {
         });
 
         if (availableQuestions.length < rule.numberOfQuestions) {
-          throw new Error(`Not enough pre-selected questions for rule ${rule.name}. Found ${availableQuestions.length}, required ${rule.numberOfQuestions}`);
+          throw new Error(
+            `Not enough pre-selected questions for rule ${rule.name}. Found ${availableQuestions.length}, required ${rule.numberOfQuestions}`
+          );
         }
 
         // Select questions based on rule strategy
@@ -1238,13 +1467,18 @@ export class AttemptsService {
           rule.selectionStrategy
         );
 
-        selectedQuestionIds = selectedQuestions.map(q => q.questionId);
+        selectedQuestionIds = selectedQuestions.map((q) => q.questionId);
       } else {
         // Approach B: Dynamic selection based on criteria
-        const questionIds = await this.questionPoolService.generateQuestionPool(rule.ruleId, authContext);
+        const questionIds = await this.questionPoolService.generateQuestionPool(
+          rule.ruleId,
+          authContext
+        );
 
         if (questionIds.length < rule.numberOfQuestions) {
-          throw new Error(`Not enough questions available for rule ${rule.name}. Found ${questionIds.length}, required ${rule.numberOfQuestions}`);
+          throw new Error(
+            `Not enough questions available for rule ${rule.name}. Found ${questionIds.length}, required ${rule.numberOfQuestions}`
+          );
         }
 
         // Select questions based on rule strategy
@@ -1275,13 +1509,17 @@ export class AttemptsService {
 
   /**
    * Selects a specified number of questions from a pool of question IDs based on the given strategy.
-   *    * 
+   *    *
    * @param questionIds - Array of question IDs to select from
    * @param count - Number of questions to select
    * @param strategy - Selection strategy ('random', 'sequential', 'weighted')
    * @returns Array of selected question IDs
    */
-  private selectQuestionsFromPool(questionIds: string[], count: number, strategy: string): string[] {
+  private selectQuestionsFromPool(
+    questionIds: string[],
+    count: number,
+    strategy: string
+  ): string[] {
     switch (strategy) {
       case 'random':
         return this.shuffleArray(questionIds).slice(0, count);
@@ -1298,13 +1536,17 @@ export class AttemptsService {
 
   /**
    * Selects a specified number of questions from pre-selected questions in a rule based on the given strategy.
-   * 
+   *
    * @param availableQuestions - Array of TestQuestion entities to select from
    * @param count - Number of questions to select
    * @param strategy - Selection strategy ('random', 'sequential', 'weighted')
    * @returns Array of selected TestQuestion entities
    */
-  private selectQuestionsFromRule(availableQuestions: TestQuestion[], count: number, strategy: string): TestQuestion[] {
+  private selectQuestionsFromRule(
+    availableQuestions: TestQuestion[],
+    count: number,
+    strategy: string
+  ): TestQuestion[] {
     switch (strategy) {
       case 'random':
         return this.shuffleArray([...availableQuestions]).slice(0, count);
@@ -1321,20 +1563,27 @@ export class AttemptsService {
 
   /**
    * Calculates the total score from all answers for an attempt.
-   * 
+   *
    * This function uses a direct SQL query to sum all scores efficiently.
-   * 
+   *
    * @param attemptId - The ID of the test attempt to calculate total score for
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<number> - The total score from all answers
    */
-  private async calculateTotalAttemptScore(attemptId: string, authContext: AuthContext): Promise<number> {
+  private async calculateTotalAttemptScore(
+    attemptId: string,
+    authContext: AuthContext
+  ): Promise<number> {
     const result = await this.testUserAnswerRepository
       .createQueryBuilder('answer')
       .select('COALESCE(SUM(answer.score), 0)', 'totalScore')
       .where('answer.attemptId = :attemptId', { attemptId })
-      .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .andWhere('answer.tenantId = :tenantId', {
+        tenantId: authContext.tenantId,
+      })
+      .andWhere('answer.organisationId = :organisationId', {
+        organisationId: authContext.organisationId,
+      })
       .getRawOne();
 
     return parseFloat(result?.totalScore || '0');
@@ -1349,45 +1598,52 @@ export class AttemptsService {
    * - FILL_BLANK: Configurable partial scoring for each correct blank with case sensitivity
    * - MATCH: Configurable partial scoring for each correct match
    * - SUBJECTIVE/ESSAY: Returns 0 (scored manually)
-   * 
+   *
    * @param answerData - The parsed user answer data
    * @param question - The question entity with type and marks
    * @returns number - The calculated score for this question
    */
-  private async calculateQuestionScore(answerData: any, question: Question): Promise<number> {
+  private async calculateQuestionScore(
+    answerData: any,
+    question: Question
+  ): Promise<number> {
     // Get question options for validation
     const options = await this.getQuestionOptions(question.questionId);
-    
+
     let score: number;
-    
+
     switch (question.type) {
       case QuestionType.MCQ:
       case QuestionType.TRUE_FALSE:
         score = this.calculateMCQScore(answerData, question, options);
         break;
-        
+
       case QuestionType.MULTIPLE_ANSWER:
-        score = this.calculateMultipleAnswerScore(answerData, question, options);
+        score = this.calculateMultipleAnswerScore(
+          answerData,
+          question,
+          options
+        );
         break;
-        
+
       case QuestionType.FILL_BLANK:
         score = this.calculateFillBlankScore(answerData, question, options);
         break;
-        
+
       case QuestionType.MATCH:
         score = this.calculateMatchScore(answerData, question, options);
         break;
-        
+
       case QuestionType.SUBJECTIVE:
       case QuestionType.ESSAY:
         // Subjective questions are scored manually
         score = 0;
         break;
-        
+
       default:
         score = 0;
     }
-    
+
     // Ensure the score is always a valid number
     const numericScore = Number(score);
     return isNaN(numericScore) ? 0 : numericScore;
@@ -1397,20 +1653,25 @@ export class AttemptsService {
    * Calculates score for MCQ and TRUE_FALSE questions.
    * Full marks if correct option selected, 0 otherwise.
    */
-  private calculateMCQScore(answerData: any, question: Question, options: QuestionOption[]): number {
+  private calculateMCQScore(
+    answerData: any,
+    question: Question,
+    options: QuestionOption[]
+  ): number {
     const selectedOptionIds = answerData.selectedOptionIds || [];
-    
+
     // MCQ should have exactly one correct option
-    const correctOption = options.find(opt => opt.isCorrect);
+    const correctOption = options.find((opt) => opt.isCorrect);
     if (!correctOption) return 0;
     // Check if the selected option is correct
-    const isCorrect = selectedOptionIds.length === 1 && 
-                     selectedOptionIds[0] === correctOption.questionOptionId;
-    
+    const isCorrect =
+      selectedOptionIds.length === 1 &&
+      selectedOptionIds[0] === correctOption.questionOptionId;
+
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
-    
+
     return isCorrect ? safeQuestionMarks : 0;
   }
 
@@ -1418,14 +1679,18 @@ export class AttemptsService {
    * Calculates score for MULTIPLE_ANSWER questions with partial scoring.
    * Supports both full marks for all correct or partial scoring per option.
    */
-  private calculateMultipleAnswerScore(answerData: any, question: Question, options: QuestionOption[]): number {
+  private calculateMultipleAnswerScore(
+    answerData: any,
+    question: Question,
+    options: QuestionOption[]
+  ): number {
     const selectedOptionIds = answerData.selectedOptionIds || [];
-    const correctOptions = options.filter(opt => opt.isCorrect);
-    
+    const correctOptions = options.filter((opt) => opt.isCorrect);
+
     if (correctOptions.length === 0) return 0;
-    
+
     let totalScore = 0;
-    
+
     // Award marks for correct selections
     for (const correctOption of correctOptions) {
       if (selectedOptionIds.includes(correctOption.questionOptionId)) {
@@ -1435,7 +1700,7 @@ export class AttemptsService {
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
-    
+
     // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
       return totalScore;
@@ -1449,36 +1714,44 @@ export class AttemptsService {
    * Calculates score for FILL_BLANK questions.
    * Supports case sensitivity and exact matching with configurable partial scoring.
    */
-  private calculateFillBlankScore(answerData: any, question: Question, options: QuestionOption[]): number {
+  private calculateFillBlankScore(
+    answerData: any,
+    question: Question,
+    options: QuestionOption[]
+  ): number {
     const userBlanks = answerData.blanks || [];
-    const correctOptions = options.filter(opt => opt.isCorrect);
-    
+    const correctOptions = options.filter((opt) => opt.isCorrect);
+
     if (correctOptions.length === 0 || userBlanks.length === 0) return 0;
-    
+
     let totalScore = 0;
-    
-    for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+
+    for (
+      let i = 0;
+      i < Math.min(userBlanks.length, correctOptions.length);
+      i++
+    ) {
       const userAnswer = userBlanks[i]?.trim();
       const correctAnswer = correctOptions[i]?.text?.trim();
-      
+
       if (!userAnswer || !correctAnswer) continue;
-      
+
       // Check case sensitivity
       const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
-      const isCorrect = isCaseSensitive 
+      const isCorrect = isCaseSensitive
         ? userAnswer === correctAnswer
         : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
-      
+
       if (isCorrect) {
         // Use individual option marks instead of equal distribution
         totalScore += Number(correctOptions[i]?.marks || 0);
       }
     }
-    
+
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
-    
+
     // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
       // Partial scoring: award marks for each correct blank using option marks
@@ -1493,30 +1766,35 @@ export class AttemptsService {
    * Calculates score for MATCH questions.
    * Configurable partial scoring for each correct match.
    */
-  private calculateMatchScore(answerData: any, question: Question, options: QuestionOption[]): number {
+  private calculateMatchScore(
+    answerData: any,
+    question: Question,
+    options: QuestionOption[]
+  ): number {
     const userMatches = answerData.matches || [];
-    const correctOptions = options.filter(opt => opt.isCorrect);
-    
+    const correctOptions = options.filter((opt) => opt.isCorrect);
+
     if (correctOptions.length === 0 || userMatches.length === 0) return 0;
-    
+
     let totalScore = 0;
-    
+
     // Process each user match
     for (const userMatch of userMatches) {
       // Find the correct option that matches this user selection
-      const correctOption = correctOptions.find(opt => 
-        opt.questionOptionId === userMatch.optionId && 
-        opt.matchWith === userMatch.matchWith
+      const correctOption = correctOptions.find(
+        (opt) =>
+          opt.questionOptionId === userMatch.optionId &&
+          opt.matchWith === userMatch.matchWith
       );
       if (correctOption) {
         totalScore += Number(correctOption.marks);
       }
     }
-    
+
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
-    
+
     // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
       // Partial scoring: award marks for each correct match using option marks
@@ -1530,7 +1808,9 @@ export class AttemptsService {
   /**
    * Retrieves question options for scoring validation.
    */
-  private async getQuestionOptions(questionId: string): Promise<QuestionOption[]> {
+  private async getQuestionOptions(
+    questionId: string
+  ): Promise<QuestionOption[]> {
     return this.questionOptionRepository.find({
       where: { questionId },
       order: { ordering: 'ASC' },
@@ -1538,17 +1818,76 @@ export class AttemptsService {
   }
 
   /**
+   * Enhance answer with option text from database
+   * Converts "Selected options: optionId" to { answer: "optionId", text: "optionText" }
+   */
+  private async enhanceAnswerWithOptionText(
+    answer: TestUserAnswer
+  ): Promise<any> {
+    try {
+      const answerString = answer.answer;
+      
+      // Check if answer contains "Selected options:" pattern
+      if (answerString && answerString.includes('Selected options:')) {
+        // Extract the option ID from the answer string
+        const optionIdMatch = answerString.match(/Selected options:\s*(.+)/);
+        if (optionIdMatch && optionIdMatch[1]) {
+          const optionId = optionIdMatch[1].trim();
+          
+          // Fetch the option text from database
+          const option = await this.questionOptionRepository.findOne({
+            where: { questionOptionId: optionId },
+          });
+          
+          if (option) {
+            // Return enhanced structure with both ID and text
+            return {
+              answer: optionId,
+              text: option.text,
+            };
+          } else {
+            // If option not found, return original structure
+            return {
+              answer: optionId,
+              text: 'Option not found',
+            };
+          }
+        }
+      }
+      
+      // For other answer types, return as is
+      return {
+        text: answerString,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error enhancing answer with option text: ${error.message}`
+      );
+      // Return original answer if enhancement fails
+      return {
+        text: answer.answer,
+      };
+    }
+  }
+
+  /**
    * Calculates the final score for an attempt after manual review of subjective questions.
-   * 
+   *
    * This is used after manual review when all subjective questions have been scored.
-   * 
+   *
    * @param attemptId - The ID of the test attempt to calculate final score for
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<number> - The final score as a percentage
    */
-  private async calculateFinalScore(attemptId: string, authContext: AuthContext): Promise<number> {
-    const { answers, totalMarks } = await this.getAttemptAnswersWithMarks(attemptId, authContext);
-    
+  private async calculateFinalScore(
+    attemptId: string,
+    authContext: AuthContext
+  ): Promise<number> {
+    const { answers, totalMarks } = await this.getAttemptAnswersWithMarks(
+      attemptId,
+      authContext
+    );
+
     let totalScore = 0;
     for (const answer of answers) {
       totalScore += answer.score || 0;
@@ -1559,17 +1898,20 @@ export class AttemptsService {
 
   /**
    * Retrieves all answers for an attempt along with the total possible marks.
-   * 
+   *
    * This function:
    * 1. Fetches all user answers for the specified attempt
    * 2. For each answer, retrieves the associated question to get its marks
    * 3. Calculates the total possible marks by summing all question marks
-   * 
+   *
    * @param attemptId - The ID of the test attempt
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{answers: TestUserAnswer[], totalMarks: number}> - Object containing answers and total marks
    */
-  private async getAttemptAnswersWithMarks(attemptId: string, authContext: AuthContext): Promise<{ answers: TestUserAnswer[], totalMarks: number }> {
+  private async getAttemptAnswersWithMarks(
+    attemptId: string,
+    authContext: AuthContext
+  ): Promise<{ answers: TestUserAnswer[]; totalMarks: number }> {
     const answers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
@@ -1594,10 +1936,10 @@ export class AttemptsService {
 
   /**
    * Shuffles an array using the Fisher-Yates shuffle algorithm.
-   * 
+   *
    * This function creates a copy of the input array and randomly reorders its elements
    * using the Fisher-Yates (Knuth) shuffle algorithm for unbiased randomization.
-   * 
+   *
    * @param array - The array to shuffle
    * @returns T[] - A new array with the same elements in random order
    */
@@ -1610,7 +1952,11 @@ export class AttemptsService {
     return shuffled;
   }
 
-  private async findAttemptById(attemptId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
+  private async findAttemptById(
+    attemptId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<TestAttempt> {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -1627,7 +1973,10 @@ export class AttemptsService {
     return attempt;
   }
 
-  private async findTestById(testId: string, authContext: AuthContext): Promise<Test> {
+  private async findTestById(
+    testId: string,
+    authContext: AuthContext
+  ): Promise<Test> {
     const test = await this.testRepository.findOne({
       where: {
         testId,
@@ -1650,7 +1999,10 @@ export class AttemptsService {
     return test;
   }
 
-  private async validateAttemptForAnswersheet(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+  private async validateAttemptForAnswersheet(
+    attemptId: string,
+    authContext: AuthContext
+  ): Promise<TestAttempt> {
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -1658,9 +2010,11 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
       },
     });
-     // Only return results if attempt is submitted
-     if (attempt.status !== AttemptStatus.SUBMITTED) {
-      throw new Error('Attempt results are only available for submitted attempts');
+    // Only return results if attempt is submitted
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new Error(
+        'Attempt results are only available for submitted attempts'
+      );
     }
 
     // Don't return results if attempt is under review
@@ -1677,9 +2031,15 @@ export class AttemptsService {
    * @param authContext - Authentication context for tenant and organization validation
    * @returns Complete answersheet with test details, attempt info, and sections with questions
    */
-  async getAttemptAnswersheet(attemptId: string, authContext: AuthContext): Promise<any> {
+  async getAttemptAnswersheet(
+    attemptId: string,
+    authContext: AuthContext
+  ): Promise<any> {
     // Step 1: Validate attempt and its status
-    const attempt = await this.validateAttemptForAnswersheet(attemptId, authContext);
+    const attempt = await this.validateAttemptForAnswersheet(
+      attemptId,
+      authContext
+    );
     const test = await this.testRepository.findOne({
       where: {
         testId: attempt.testId,
@@ -1688,7 +2048,7 @@ export class AttemptsService {
       },
     });
 
-    if(!test.answerSheet){
+    if (!test.answerSheet) {
       throw new Error('Answer sheet is not enabled for this test');
     }
 
@@ -1699,7 +2059,7 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
       },
     });
-    
+
     const answers = [];
     for (const userAnswer of userAnswers) {
       const question = await this.questionRepository.findOne({
@@ -1708,17 +2068,17 @@ export class AttemptsService {
         },
         relations: ['options'],
       });
-      
+
       const parsedAnswer = JSON.parse(userAnswer.answer);
-      
+
       // Get correct answers if test.showCorrectAnswer is true
       let correctAnswers = [];
       if (test.showCorrectAnswer && question.options) {
         correctAnswers = question.options
-          .filter(opt => opt.isCorrect)
-          .map(opt => opt.questionOptionId);
+          .filter((opt) => opt.isCorrect)
+          .map((opt) => opt.questionOptionId);
       }
-      
+
       answers.push({
         questionId: userAnswer.questionId,
         userAnswer: parsedAnswer,
@@ -1726,17 +2086,21 @@ export class AttemptsService {
         correctAnswers: correctAnswers,
       });
     }
-    
+
     // Step 3: Build the complete answersheet structure
     const answersheet = {
-      attempt: attempt,     
+      attempt: attempt,
       answers: answers,
-    }; 
+    };
 
     return answersheet;
   }
- 
-  private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
+
+  private async triggerPluginEvent(
+    eventName: string,
+    authContext: AuthContext,
+    eventData: any
+  ): Promise<void> {
     await this.pluginManager.triggerEvent(
       eventName,
       {
@@ -1747,4 +2111,279 @@ export class AttemptsService {
       eventData
     );
   }
-} 
+
+  /**
+   * Get all attempts for a user
+   */
+  async getUserAttempts(
+    userId: string,
+    authContext: AuthContext
+  ): Promise<TestAttempt[]> {
+    try {
+      // this.logger.log(`Fetching all attempts for userId: ${userId}`); // Assuming logger is available
+
+      const attempts = await this.attemptRepository.find({
+        where: {
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        relations: ['test', 'testUserAnswers', 'testUserAnswers.question'],
+        order: {
+          updatedAt: 'DESC',
+        },
+      });
+
+      // this.logger.log(`Found ${attempts.length} attempts for userId: ${userId}`); // Assuming logger is available
+      return attempts;
+    } catch (error) {
+      // this.logger.error(`Failed to get attempts for userId: ${userId}:`, error); // Assuming logger is available
+      throw error;
+    }
+  }
+
+  /**
+   * Get test status and answers for a user
+   */
+  async getTestStatusForUser(
+    testId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<any> {
+    try {
+      // this.logger.log(`Fetching test status for testId: ${testId}, userId: ${userId}`);
+
+      // Get the latest attempt for this test and user
+      const latestAttempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        relations: ['test', 'testUserAnswers', 'testUserAnswers.question'],
+        order: {
+          updatedAt: 'DESC',
+        },
+      });
+
+      if (!latestAttempt) {
+        return {
+          testId,
+          userId,
+          status: 'not_attempted',
+          attempts: 0,
+          answers: [],
+          score: 0,
+          percentComplete: 0,
+        };
+      }
+
+      // Get all answers for this attempt
+      const answers = await this.testUserAnswerRepository.find({
+        where: {
+          attemptId: latestAttempt.attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        relations: ['question'],
+      });
+
+      // Transform answers to the expected format
+      const transformedAnswers = answers.map((answer) => ({
+        questionId: answer.questionId,
+        type: 'radio', // Default type since we don't have question relation
+        submittedAnswer: answer.answer,
+        score: answer.score || 0,
+        reviewStatus: answer.reviewStatus,
+      }));
+
+      return {
+        testId,
+        userId,
+        attemptId: latestAttempt.attemptId,
+        status: latestAttempt.status,
+        attempts: 1, // Could be enhanced to count all attempts
+        score: latestAttempt.score || 0,
+        questionsAttempted: answers.length,
+        totalQuestions: answers.length, // Use actual answers count
+        percentComplete:
+          latestAttempt.status === AttemptStatus.SUBMITTED ? 100 : 0,
+        timeSpent: latestAttempt.timeSpent || 0,
+        answers: transformedAnswers,
+        submittedAt: latestAttempt.submittedAt,
+        updatedAt: latestAttempt.updatedAt,
+      };
+    } catch (error) {
+      // this.logger.error(`Failed to get test status for testId: ${testId}, userId: ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get attempt answers and sync to LMS with correct lesson mapping
+   * This method handles both scenarios:
+   * 1. First condition: Fetch testId from testAttempts and map to correct lesson
+   * 2. Second condition: If data exists for other contextId/lessonId, fetch and map to correct lesson
+   */
+  async getAttemptAnswersAndSync(
+    attemptId: string,
+    authContext: AuthContext,
+    authorization?: string
+  ): Promise<any> {
+    try {
+      this.logger.log(
+        `Getting attempt answers and syncing for attemptId: ${attemptId}`
+      );
+
+      // Step 1: Get the attempt to find the testId
+      const attempt = await this.attemptRepository.findOne({
+        where: {
+          attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      if (!attempt) {
+        throw new NotFoundException(`Attempt ${attemptId} not found`);
+      }
+
+      const testId = attempt.testId;
+      this.logger.log(`Found testId: ${testId} for attemptId: ${attemptId}`);
+
+      // Step 2: Get all answers for this attempt
+      const answers = await this.testUserAnswerRepository.find({
+        where: {
+          attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { anssOrder: 'ASC' },
+      });
+
+      if (answers.length === 0) {
+        this.logger.warn(`No answers found for attemptId ${attemptId}`);
+        return {
+          success: true,
+          message: 'No answers found for this attempt',
+          data: {
+            attemptId,
+            testId,
+            answers: [],
+            totalQuestions: 0,
+            score: 0,
+          },
+        };
+      }
+
+      // Step 3: Calculate assessment data
+      const totalQuestions = answers.length;
+      const totalScore = answers.reduce(
+        (sum, answer) => sum + (answer.score || 0),
+        0
+      );
+      const timeSpent = attempt.timeSpent || 0;
+      const percentComplete =
+        attempt.status === AttemptStatus.SUBMITTED
+          ? 100
+          : Math.round((answers.length / totalQuestions) * 100);
+
+      // Step 4: Prepare assessment data for Elasticsearch with enhanced answer structure
+      const enhancedAnswers = await Promise.all(
+        answers.map(async (answer) => {
+        const enhancedAnswer = await this.enhanceAnswerWithOptionText(answer);
+        return {
+          questionId: answer.questionId,
+          answer: enhancedAnswer,
+          score: answer.score || 1.0, // Default to 1.0 if score is null
+            reviewStatus: answer.reviewStatus || 'P',
+        };
+        })
+      );
+
+      const assessmentData = {
+        totalQuestions,
+        score: totalScore,
+        timeSpent,
+        percentComplete,
+        questionsAttempted: answers.length,
+        status:
+          attempt.status === AttemptStatus.SUBMITTED
+            ? 'completed'
+            : 'in_progress',
+        answers: enhancedAnswers,
+      };
+
+      // Step 5: Sync assessment data to Elasticsearch using robust LMS pattern
+      if (isElasticsearchEnabled()) {
+        try {
+          this.logger.log(
+            `🔄 Starting Elasticsearch assessment answer sync for attemptId: ${attemptId}, userId: ${attempt.userId}, testId: ${testId}`
+          );
+          this.logger.log(
+            `📊 Assessment data - Total questions: ${totalQuestions}, Score: ${totalScore}, TimeSpent: ${timeSpent}s, Status: ${attempt.status}`
+          );
+
+          // Transform answers data for the new tracking function
+          const answersData = enhancedAnswers.map(answer => ({
+            questionId: answer.questionId,
+            answer: answer.answer,
+            attemptId: attemptId,
+            score: answer.score || 0,
+            reviewStatus: answer.reviewStatus || 'P'
+          }));
+
+          // Call the NEW Assessment Elasticsearch service function for answer tracking
+          await this.assessmentElasticsearchService.handleAssessmentAttemptAnswersWithTracking(
+          attempt.userId,
+          attemptId,
+            answersData,
+          authContext.tenantId,
+            authContext.organisationId
+          );
+
+          this.logger.log(
+            `✅ Successfully synced assessment answers to Elasticsearch: attemptId=${attemptId}, userId=${attempt.userId}, testId=${testId}`
+          );
+        } catch (elasticsearchError) {
+          this.logger.error(
+            `❌ Failed to sync assessment answers to Elasticsearch: attemptId=${attemptId}, userId=${attempt.userId}`,
+            elasticsearchError
+          );
+          this.logger.error(`❌ Error details: ${elasticsearchError.message}`);
+          // Don't fail the main operation if Elasticsearch sync fails
+        }
+      } else {
+        this.logger.debug(
+          'Elasticsearch is disabled, skipping assessment data sync'
+        );
+      }
+
+      this.logger.log(
+        `Successfully synced assessment data for attemptId: ${attemptId}, testId: ${testId}`
+      );
+
+      return {
+        success: true,
+        message: 'Answers retrieved and synced successfully',
+        data: {
+          attemptId,
+          testId,
+          userId: attempt.userId,
+          answers: assessmentData.answers,
+          totalQuestions: assessmentData.totalQuestions,
+          score: assessmentData.score,
+          timeSpent: assessmentData.timeSpent,
+          percentComplete: assessmentData.percentComplete,
+          status: assessmentData.status,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error getting attempt answers and syncing: ${error.message}`
+      );
+      throw error;
+    }
+  }
+}
