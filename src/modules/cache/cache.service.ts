@@ -39,7 +39,6 @@ export class CacheService {
         this.logger.debug(`Cache MISS for key ${key}`);
         return null;
       }
-      return value || null;
     } catch (error) {
       this.logger.error(`Error getting cache for key ${key}: ${error.message}`, error.stack);
       return null;
