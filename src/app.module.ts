@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CacheModule } from '@nestjs/cache-manager';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { HealthModule } from './modules/health/health.module';
@@ -11,8 +10,9 @@ import { AttemptsModule } from './modules/attempts/attempts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PluginModule } from './modules/plugins/plugin.module';
 import { DatabaseConfig } from './config/database.config';
-import { RedisConfig } from './config/redis.config';
 import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
+import { CacheModule } from './modules/cache/cache.module';
+import { ConfigurationModule } from './modules/configuration/configuration.module';
 
 @Module({
   imports: [
@@ -26,13 +26,7 @@ import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
     TypeOrmModule.forRootAsync({
       useClass: DatabaseConfig,
     }),
-    
-    // Cache
-    CacheModule.registerAsync({
-      useClass: RedisConfig,
-      isGlobal: true,
-    }),
-    
+      
     // Rate limiting
     ThrottlerModule.forRoot([
       {
@@ -60,6 +54,8 @@ import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
           }),
         ]
       : []),
+    CacheModule,
+    ConfigurationModule,
     HealthModule,
     AuthModule,
     TestsModule,

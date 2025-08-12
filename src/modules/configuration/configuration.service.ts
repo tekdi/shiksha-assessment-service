@@ -128,7 +128,7 @@ export class ConfigurationService  {
         throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.CONFIG_URL_MISSING);
       }
 
-      const response = await axios.get(`${externalConfigUrl}/tenant/${tenantId}?context=lms`);
+      const response = await axios.get(`${externalConfigUrl}/tenant/${tenantId}?context=assessment`);
       return response.data.result;
     } catch (error) {
       return {};
@@ -137,10 +137,10 @@ export class ConfigurationService  {
 
   private loadLmsConfig() {
     try {
-      const lmsConfigPath = path.join(process.cwd(), this.configService.get('LMS_CONFIG_PATH') || 'src/lms-config.json');
-      this.lmsConfigJson = JSON.parse(fs.readFileSync(lmsConfigPath, 'utf8'));
+      const lmsConfigPath = path.join(process.cwd(), this.configService.get('ASSESSMENT_CONFIG_PATH') || 'src/assessment-config.json');
+      this.lmsConfigJson = JSON.parse(fs.readFileSync(lmsConfigPath, 'utf8')); 
     } catch (error) {
-      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.LMS_CONFIG_LOAD_FAILED);
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ASSESSMENT_CONFIG_LOAD_FAILED);
     }
   }
 

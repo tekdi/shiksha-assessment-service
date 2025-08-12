@@ -1,10 +1,12 @@
-import { Controller, Post, Get, Param } from '@nestjs/common';
+import { Controller, Post, Get, Param, UseInterceptors, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ConfigurationService } from './configuration.service';    
-import { TenantOrg } from '@/common/decorators/tenant-org.decorator';
+import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
+import { AuthContext } from '@/common/interfaces/auth.interface';
 
 @ApiTags('Configuration')
 @Controller('config')
+@UseInterceptors(AuthContextInterceptor)
 export class ConfigController {
   constructor(private readonly configurationService: ConfigurationService) {}
 
@@ -16,10 +18,11 @@ export class ConfigController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   async getConfig(
-    @TenantOrg() tenantOrg: { tenantId: string; organisationId: string },
+    @Req() req: any,
   ) {
+    const authContext: AuthContext = req.user;
     return this.configurationService.getConfig(
-      tenantOrg.tenantId,
+      authContext.tenantId,
     );
   }
 
@@ -31,7 +34,10 @@ export class ConfigController {
   })
   @ApiResponse({ status: 400, description: 'Invalid tenant ID' })
   @ApiResponse({ status: 500, description: 'Failed to sync configuration' })
-  async syncTenantConfig(@TenantOrg() tenantOrg: { tenantId: string; organisationId: string }) {
-    return this.configurationService.syncTenantConfig(tenantOrg.tenantId);
+  async syncTenantConfig(
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    return this.configurationService.syncTenantConfig(authContext.tenantId);
   }
 } 

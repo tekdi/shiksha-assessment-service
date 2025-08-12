@@ -14,6 +14,7 @@ export const RESPONSE_MESSAGES = {
       CONFIG_FAILED: 'Failed to retrieve configuration',
       CONFIG_URL_MISSING: 'External configuration URL is missing',
       LMS_CONFIG_LOAD_FAILED: 'Failed to load LMS configuration',
-      INVALID_UPLOAD_TYPE: 'Invalid upload type specified'
+      INVALID_UPLOAD_TYPE: 'Invalid upload type specified',
+      ASSESSMENT_CONFIG_LOAD_FAILED: 'Failed to load Assessment configuration'
     }
   } as const; 

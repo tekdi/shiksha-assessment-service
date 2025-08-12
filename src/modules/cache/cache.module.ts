@@ -37,6 +37,7 @@ import { redisStore } from 'cache-manager-redis-yet';
           ttl: Number(configService.get('CACHE_DEFAULT_TTL') || 3600),
         };
       },
+      isGlobal: true,
     }),
   ],
   providers: [CacheService, CacheConfigService],
