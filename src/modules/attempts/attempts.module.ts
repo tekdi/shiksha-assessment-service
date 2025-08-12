@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AttemptsController } from './attempts.controller';
 import { AttemptsService } from './attempts.service';
@@ -12,6 +12,7 @@ import { Question } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
 import { PluginModule } from '../plugins/plugin.module';
 import { TestsModule } from '../tests/tests.module';
+import { ElasticsearchModule } from '../../elasticsearch/elasticsearch.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { TestsModule } from '../tests/tests.module';
     ]),
     PluginModule,
     TestsModule,
+    forwardRef(() => ElasticsearchModule),
   ],
   controllers: [AttemptsController],
   providers: [AttemptsService],
