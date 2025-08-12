@@ -16,7 +16,10 @@ import { redisStore } from 'cache-manager-redis-yet';
 
         if (!cacheEnabled) {
           logger.log('Cache is disabled, using memory store');
-          return { ttl: 300, max: 1000 };
+          return {
+            ttl: 300,
+            max: 1000,
+          } as any;
         }
 
         const redisOptions = {
@@ -32,10 +35,11 @@ import { redisStore } from 'cache-manager-redis-yet';
           `Connecting to Redis at ${redisOptions.socket.host}:${redisOptions.socket.port}`
         );
 
+        const store = await redisStore(redisOptions);
         return {
-          store: await redisStore(redisOptions),
+          store,
           ttl: Number(configService.get('CACHE_DEFAULT_TTL') || 3600),
-        };
+        } as any;
       },
       isGlobal: true,
     }),
