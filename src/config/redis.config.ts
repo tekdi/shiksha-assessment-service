@@ -16,3 +16,6 @@ export class RedisConfig implements CacheOptionsFactory {
       ttl: 86400, // 1 day default TTL
       max: 100, // maximum number of items in cache
     };
+    
+  }
+}
