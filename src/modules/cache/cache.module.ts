@@ -24,7 +24,7 @@ import { redisStore } from 'cache-manager-redis-yet';
             host: configService.get('REDIS_HOST'),
             port: Number(configService.get('REDIS_PORT') || '6379'),
           },
-          // password: configService.get('REDIS_PASSWORD'),
+          password: configService.get('REDIS_PASSWORD') || '',
           database: Number(configService.get('REDIS_DB') || '0'),
         };
 
