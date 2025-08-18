@@ -2,119 +2,119 @@
   "$id": "lms-config.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-    "properties": {
-      "General": {
-        "type": "object",
-        "title": "General",
-        "properties": {
-          "date_format": {
-            "type": "string",
-            "title": "Date format to show",
-            "description": "Date format to show",
-            "default": "Y-m-d H:i:s"
-          }
+  "properties": {
+    "General": {
+      "type": "object",
+      "title": "General",
+      "properties": {
+        "date_format": {
+          "type": "string",
+          "title": "Date format to show",
+          "description": "Date format to show",
+          "default": "Y-m-d H:i:s"
         }
-      },
-      "Cloud-Agnostic Settings": {
-        "type": "object",
-        "title": "Cloud-Agnostic Settings",
-        "properties": {
-           "cloud_storage_provider": {
-            "type": "string",
-            "title": "Cloud Storage Provider",
-            "description": "Cloud Storage Provider",
-            "enum": [
-              "azure",
-              "aws",
-              "gcloud"
-            ],
-            "enumNames": [
-              "Local",
-              "Azure",
-              "Aws",
-              "Google Cloud"
-            ],
-            "default": "aws"
-          },
-          "storage_key": {
-            "type": "string",
-            "title": "Storage Key",
-            "description": "Storage Key",
-            "default": ""
-          },
-          "storage_secret": {
-            "type": "string",
-            "title": "Storage Secret",
-            "description": "Storage Secret",
-            "default": ""
-          },
-          "storage_container": {
-            "type": "string",
-            "title": "Storage Container",
-            "description": "Storage Container",
-            "default": ""
-          },
-          "storage_region": {
-            "type": "string",
-            "title": "Storage Region",
-            "description": "Storage Region",
-            "default": ""
-          },
-          "presigned_url_expires_in": {
-            "type": "number",
-            "title": "Presigned URL Expires In",
-            "description": "Presigned URL Expires In",
-            "default": 3600
-          }
+      }
+    },
+    "Cloud-Agnostic Settings": {
+      "type": "object",
+      "title": "Cloud-Agnostic Settings",
+      "properties": {
+         "cloud_storage_provider": {
+          "type": "string",
+          "title": "Cloud Storage Provider",
+          "description": "Cloud Storage Provider",
+          "enum": [
+            "azure",
+            "aws",
+            "gcloud"
+          ],
+          "enumNames": [
+            "Local",
+            "Azure",
+            "Aws",
+            "Google Cloud"
+          ],
+          "default": "aws"
+        },
+        "storage_key": {
+          "type": "string",
+          "title": "Storage Key",
+          "description": "Storage Key",
+          "default": ""
+        },
+        "storage_secret": {
+          "type": "string",
+          "title": "Storage Secret",
+          "description": "Storage Secret",
+          "default": ""
+        },
+        "storage_container": {
+          "type": "string",
+          "title": "Storage Container",
+          "description": "Storage Container",
+          "default": ""
+        },
+        "storage_region": {
+          "type": "string",
+          "title": "Storage Region",
+          "description": "Storage Region",
+          "default": ""
+        },
+        "presigned_url_expires_in": {
+          "type": "number",
+          "title": "Presigned URL Expires In",
+          "description": "Presigned URL Expires In",
+          "default": 3600
         }
-      },
-      "Media Settings": {
-        "type": "object",
-        "title": "Media Settings",
-        "properties": {
-          "image_mime_type": {
-            "type": "string",
-            "title": "Allowed Image Mime types",
-            "description": "Allowed Image Mime types",
-            "default": "image/jpeg, image/jpg, image/png"
-          },
-          "image_filesize": {
-            "type": "number",
-            "title": "Allowed image size in MB",
-            "description": "Allowed image size in MB",
-            "default": "5"
-          },
-          "video_mime_type": {
-            "type": "string",
-            "title": "Allowed Video Mime types",
-            "description": "Allowed Video Mime types",
-            "default": "video/mp4, video/webm"
-          },
-           "video_filesize": {
-            "type": "number",
-            "title": "Allowed video size in MB",
-            "description": "Allowed video size in MB",
-            "default": 50
-          },
-          "document_mime_type": {
-            "type": "string",
-            "title": "Allowed Document Mime types",
-            "description": "Allowed Document Mime types",
-            "default": "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          },
-          "document_filesize": {
-            "type": "number",
-            "title": "Allowed document size in MB",
-            "description": "Allowed document size in MB",
-            "default": 50
-          },
-          "upload_path": {
-            "type": "string",
-            "title": "Assessment Upload Path",
-            "description": "Assessment Upload Path",
-            "default": "assessment/tests"
-          }
+      }
+    },
+    "Media Settings": {
+      "type": "object",
+      "title": "Media Settings",
+      "properties": {
+        "image_mime_type": {
+          "type": "string",
+          "title": "Allowed Image Mime types",
+          "description": "Allowed Image Mime types",
+          "default": "image/jpeg, image/jpg, image/png"
+        },
+        "image_filesize": {
+          "type": "number",
+          "title": "Allowed image size in MB",
+          "description": "Allowed image size in MB",
+          "default": 5
+        },
+        "video_mime_type": {
+          "type": "string",
+          "title": "Allowed Video Mime types",
+          "description": "Allowed Video Mime types",
+          "default": "video/mp4, video/webm"
+        },
+         "video_filesize": {
+          "type": "number",
+          "title": "Allowed video size in MB",
+          "description": "Allowed video size in MB",
+          "default": 50
+        },
+        "document_mime_type": {
+          "type": "string",
+          "title": "Allowed Document Mime types",
+          "description": "Allowed Document Mime types",
+          "default": "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        },
+        "document_filesize": {
+          "type": "number",
+          "title": "Allowed document size in MB",
+          "description": "Allowed document size in MB",
+          "default": 50
+        },
+        "upload_path": {
+          "type": "string",
+          "title": "Assessment Upload Path",
+          "description": "Assessment Upload Path",
+          "default": "assessment/tests"
         }
       }
     }
   }
+}
