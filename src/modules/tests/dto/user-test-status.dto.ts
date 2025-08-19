@@ -26,8 +26,9 @@ export class GradedAttemptDto {
     description: 'Result of the graded attempt',
     enum: ResultType,
     example: 'P',
+    nullable: true,
   })
-  result: ResultType;
+  result: ResultType | null;
 
   @ApiProperty({
     description: 'When the attempt was submitted',
