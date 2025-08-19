@@ -8,7 +8,7 @@ export class QueryQuestionDto extends PaginationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  search?: string;
+  declare search?: string;
 
   @ApiPropertyOptional({ enum: QuestionStatus })
   @IsOptional()

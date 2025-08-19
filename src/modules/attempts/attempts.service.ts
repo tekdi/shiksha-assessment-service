@@ -806,8 +806,8 @@ export class AttemptsService {
     const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
 
     // Prepare answers to save/update
-    const answersToSave = [];
-    const answersToUpdate = [];
+    const answersToSave: TestUserAnswer[] = [];
+    const answersToUpdate: TestUserAnswer[] = [];
     let totalTimeSpent = globalTimeSpent; // Start with global timeSpent if provided
 
     for (const answerDto of answersArray) {
@@ -983,7 +983,7 @@ export class AttemptsService {
 
     // Check if the test itself is a FEEDBACK type test
     if (attempt.test?.gradingType === GradingType.FEEDBACK) {
-      // For feedback tests, set score to null and result to FEEDBACK
+      // For feedback tests, set score to null and result to null (no pass/fail)
       attempt.score = null;
       attempt.result = null;
     } else {
@@ -1658,6 +1658,11 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
       },
     });
+
+    if (!attempt) {
+      throw new Error('Attempt not found');
+    }
+
      // Only return results if attempt is submitted
      if (attempt.status !== AttemptStatus.SUBMITTED) {
       throw new Error('Attempt results are only available for submitted attempts');
@@ -1688,6 +1693,10 @@ export class AttemptsService {
       },
     });
 
+    if (!test) {
+      throw new Error('Test not found');
+    }
+
     if(!test.answerSheet){
       throw new Error('Answer sheet is not enabled for this test');
     }
@@ -1700,7 +1709,13 @@ export class AttemptsService {
       },
     });
     
-    const answers = [];
+    const answers: Array<{
+      questionId: string;
+      userAnswer: any;
+      score: number;
+      correctAnswers: string[];
+    }> = [];
+    
     for (const userAnswer of userAnswers) {
       const question = await this.questionRepository.findOne({
         where: {
@@ -1709,10 +1724,14 @@ export class AttemptsService {
         relations: ['options'],
       });
       
+      if (!question) {
+        continue; // Skip if question not found
+      }
+      
       const parsedAnswer = JSON.parse(userAnswer.answer);
       
       // Get correct answers if test.showCorrectAnswer is true
-      let correctAnswers = [];
+      let correctAnswers: string[] = [];
       if (test.showCorrectAnswer && question.options) {
         correctAnswers = question.options
           .filter(opt => opt.isCorrect)

@@ -4,6 +4,7 @@ import { Repository, QueryRunner, SelectQueryBuilder } from 'typeorm';
 import { TestSection } from '@/modules/tests/entities/test-section.entity';
 import { TestQuestion } from '@/modules/tests/entities/test-question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
+import { ObjectLiteral } from 'typeorm/common/ObjectLiteral';
 
 @Injectable()
 export class OrderingService {
@@ -17,7 +18,7 @@ export class OrderingService {
   /**
    * Private helper method to build and execute ordering queries
    */
-  private async executeOrderingQuery<T>(
+  private async executeOrderingQuery<T extends ObjectLiteral>(
     queryBuilder: SelectQueryBuilder<T>,
     testId: string,
     authContext: AuthContext,
