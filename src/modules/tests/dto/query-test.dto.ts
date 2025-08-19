@@ -14,7 +14,7 @@ export class QueryTestDto extends PaginationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  search?: string;
+  declare search?: string;
 
   @ApiPropertyOptional({ enum: TestStatus })
   @IsOptional()
@@ -41,11 +41,11 @@ export class QueryTestDto extends PaginationDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  sortBy?: string;
+  declare sortBy?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsEnum(SortOrder)
-  sortOrder?: SortOrder;
+  declare sortOrder?: SortOrder;
   
 } 
