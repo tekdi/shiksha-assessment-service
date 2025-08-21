@@ -45,10 +45,7 @@ export class TestsService {
   ) {}
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
-    // Validate test configuration based on type
-    await this.validateTestConfiguration(createTestDto);
-
-
+   
      // Generate a simple alias from the title if none provided
      if (!createTestDto.alias) {
       createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
