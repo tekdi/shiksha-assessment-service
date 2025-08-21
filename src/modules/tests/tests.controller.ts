@@ -77,7 +77,7 @@ export class TestsController {
   }
 
   @Get(':id/hierarchy')
-  @ApiOperation({ summary: 'Get test hierarchy with sections and questions' })
+  @ApiOperation({ summary: 'Get test hierarchy with sections and questions for leaner - with out correct options' })
   @ApiResponse({
     status: 200,
     description: 'Test hierarchy retrieved successfully',
@@ -85,7 +85,23 @@ export class TestsController {
   })
   async getTestHierarchy(@Param('id') id: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
-    return this.testsService.getTestHierarchy(id, authContext);
+    // showCorrectOptions is false by default as we don't want to show correct options to the user
+    let showCorrectOptions = false;
+    return this.testsService.getTestHierarchy(id, showCorrectOptions, authContext);
+  }
+
+  @Get(':id/test-hierarchy')
+  @ApiOperation({ summary: 'Get test hierarchy with sections and questions-options for admin - with correct options' })
+  @ApiResponse({
+    status: 200,
+    description: 'Test hierarchy retrieved successfully',
+    type: ApiSuccessResponseDto,
+  })
+  async getHierarchy(@Param('id') id: string, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    // showCorrectOptions is true as we want to show correct options to the user
+    let showCorrectOptions = true;
+    return this.testsService.getTestHierarchy(id, showCorrectOptions, authContext);
   }
 
   @Patch(':id')

@@ -20,6 +20,7 @@ import { OrderingService } from '@/common/services/ordering.service';
 import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant';
 import { TestStructureDto } from './dto/test-structure.dto';
 import { TestRule } from './entities/test-rule.entity';
+import { ResultType } from './entities/test-attempt.entity';
 
 @Injectable()
 export class TestsService {
@@ -44,10 +45,7 @@ export class TestsService {
   ) {}
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
-    // Validate test configuration based on type
-    await this.validateTestConfiguration(createTestDto);
-
-
+   
      // Generate a simple alias from the title if none provided
      if (!createTestDto.alias) {
       createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
@@ -202,7 +200,7 @@ export class TestsService {
     await this.invalidateTestCache(authContext.tenantId);
   }
 
-  async getTestHierarchy(id: string, authContext: AuthContext) {
+  async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     const test = await this.testRepository.findOne({
       where: {
         testId: id,
@@ -255,7 +253,7 @@ export class TestsService {
       for (const testQuestion of section.questions) {
         const question = questionsMap.get(testQuestion.questionId);
         if (question) {
-          // Transform the question data to exclude isCorrect from options
+          // Transform the question data to conditionally include sensitive fields based on showCorrectOptions
           const transformedQuestion = {
             ...question,
             options: question.options?.map(opt => ({
@@ -266,7 +264,13 @@ export class TestsService {
               marks: opt.marks,
               caseSensitive: opt.caseSensitive,
               createdAt: opt.createdAt,
-              // Exclude blankIndex, matchWith, matchWithMedia and isCorrect for security
+              // Conditionally include sensitive fields based on showCorrectOptions parameter
+              ...(showCorrectOptions && { 
+                isCorrect: opt.isCorrect,
+                blankIndex: opt.blankIndex,
+                matchWith: opt.matchWith,
+                matchWithMedia: opt.matchWithMedia
+              }),
             })) || [],
           };
 
@@ -383,7 +387,15 @@ export class TestsService {
     }
 
     // Process each question
-    const questionsToAdd = [];
+    const questionsToAdd: Array<{
+      testId: string;
+      sectionId: string;
+      questionId: string;
+      ordering: number;
+      isCompulsory: boolean;
+      tenantId: string;
+      organisationId: string;
+    }> = [];
     for (const questionData of questions) {
       if (!foundQuestionIds.has(questionData.questionId)) {
         continue; // Skip questions that don't exist
@@ -437,29 +449,6 @@ export class TestsService {
     } catch (error) {
       // Log error but don't fail the operation
       console.warn('Failed to invalidate test cache:', error);
-    }
-  }
-
-  private async validateTestConfiguration(createTestDto: CreateTestDto): Promise<void> {
-    // Validate test type configuration
-    switch (createTestDto.type) {
-      case TestType.PLAIN:
-        // Plain tests should have basic configuration
-        if (!createTestDto.title || !createTestDto.totalMarks) {
-          throw new BadRequestException('Plain tests require title and total marks');
-        }
-        break;
-
-      case TestType.RULE_BASED:
-      case TestType.GENERATED:
-        // Rule-based and generated tests require additional configuration
-        if (!createTestDto.title || !createTestDto.totalMarks) {
-          throw new BadRequestException(`${createTestDto.type} tests require title and total marks`);
-        }
-        break;
-
-      default:
-        throw new BadRequestException(`Unsupported test type: ${createTestDto.type}`);
     }
   }
 
@@ -526,7 +515,7 @@ export class TestsService {
    
     // Get graded attempt based on grading method
     let finalScore: number = 0;
-    let finalResult: string | null = null;
+    let finalResult: ResultType | null = null;
     let finalAttemptId: string | null = null;
     let gradedAttemptData: TestAttempt | null = null;
 
@@ -565,7 +554,7 @@ export class TestsService {
         const averageData = await this.getAverageScore(testId, userId, authContext, test);
         if (averageData) {
           finalScore = averageData.averageScore;
-          finalResult = finalScore >= test.passingMarks ? 'P' : 'F'; // PASS or FAIL
+          finalResult = finalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL; // PASS or FAIL
           
           // Get the last submitted attempt for attemptId reference
           const lastSubmittedAttempt = await this.getLastCompletedAttempt(testId, userId, authContext, test);
@@ -597,7 +586,13 @@ export class TestsService {
     }
 
     // Build graded attempt object
-    let gradedAttempt = null;
+    let gradedAttempt: {
+      attemptId: string;
+      status: AttemptStatus;
+      score: number;
+      result: ResultType | null;
+      submittedAt: Date;
+    } | null = null;
     if (gradedAttemptData && finalAttemptId) {
       gradedAttempt = {
         attemptId: gradedAttemptData.attemptId,
@@ -609,7 +604,11 @@ export class TestsService {
     }
 
     // Build last attempt object
-    let lastAttemptInfo = null;
+    let lastAttemptInfo: {
+      attemptId: string;
+      status: AttemptStatus;
+      resumeAllowed: boolean;
+    } | null = null;
     if (lastAttempt) {
       lastAttemptInfo = {
         attemptId: lastAttempt.attemptId,
@@ -839,7 +838,7 @@ export class TestsService {
       }
 
       // Validate that all questions belong to the provided sections
-      const allQuestionIds = [];
+      const allQuestionIds: string[] = [];
       testStructureDto.sections.forEach(section => {
         if (section.questions) {
           section.questions.forEach(question => {
@@ -1068,11 +1067,14 @@ export class TestsService {
 
       // Clone test questions
       for (const originalQuestion of originalTest.questions) {
+        const sectionId = originalQuestion.sectionId ? sectionIdMapping.get(originalQuestion.sectionId) : undefined;
+        if (sectionId === null) continue; // Skip questions with invalid section mapping
+        
         const clonedQuestionData = {
           testId: savedClonedTest.testId,
           questionId: originalQuestion.questionId,
           ordering: originalQuestion.ordering,
-          sectionId: originalQuestion.sectionId ? sectionIdMapping.get(originalQuestion.sectionId) : null,
+          sectionId: sectionId,
           ruleId: originalQuestion.ruleId,
           isCompulsory: originalQuestion.isCompulsory,
           tenantId: authContext.tenantId,
@@ -1093,12 +1095,15 @@ export class TestsService {
       });
 
       for (const originalRule of originalRules) {
+        const sectionId = originalRule.sectionId ? sectionIdMapping.get(originalRule.sectionId) : undefined;
+        if (sectionId === null) continue; // Skip rules with invalid section mapping
+        
         const clonedRuleData = {
           name: originalRule.name,
           description: originalRule.description,
           ruleType: originalRule.ruleType,
           testId: savedClonedTest.testId,
-          sectionId: originalRule.sectionId ? sectionIdMapping.get(originalRule.sectionId) : null,
+          sectionId: sectionId,
           numberOfQuestions: originalRule.numberOfQuestions,
           poolSize: originalRule.poolSize,
           minMarks: originalRule.minMarks,

@@ -79,7 +79,7 @@ export class TestAttempt {
 
   @ApiProperty({ required: false })
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
-  score: number;
+  score: number | null;
 
   @ApiProperty({ enum: SubmissionType })
   @Column({ type: 'varchar', default: SubmissionType.SELF })
@@ -87,7 +87,7 @@ export class TestAttempt {
 
   @ApiProperty({ enum: ResultType, required: false })
   @Column({ type: 'text', nullable: true })
-  result: ResultType;
+  result: ResultType | null;
 
   @ApiProperty({ required: false })
   @Column({ type: 'integer', nullable: true })

@@ -15,6 +15,7 @@ export class CreateTestDto {
   type: TestType;
 
   @ApiProperty()
+  @IsNotEmpty({ message: 'Title is required' })
   @IsString()
   title: string;
 
