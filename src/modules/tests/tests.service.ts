@@ -203,7 +203,7 @@ export class TestsService {
     await this.invalidateTestCache(authContext.tenantId);
   }
 
-  async getTestHierarchy(id: string, authContext: AuthContext) {
+  async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     const test = await this.testRepository.findOne({
       where: {
         testId: id,
@@ -256,7 +256,7 @@ export class TestsService {
       for (const testQuestion of section.questions) {
         const question = questionsMap.get(testQuestion.questionId);
         if (question) {
-          // Transform the question data to exclude isCorrect from options
+          // Transform the question data to conditionally include sensitive fields based on showCorrectOptions
           const transformedQuestion = {
             ...question,
             options: question.options?.map(opt => ({
@@ -267,7 +267,13 @@ export class TestsService {
               marks: opt.marks,
               caseSensitive: opt.caseSensitive,
               createdAt: opt.createdAt,
-              // Exclude blankIndex, matchWith, matchWithMedia and isCorrect for security
+              // Conditionally include sensitive fields based on showCorrectOptions parameter
+              ...(showCorrectOptions && { 
+                isCorrect: opt.isCorrect,
+                blankIndex: opt.blankIndex,
+                matchWith: opt.matchWith,
+                matchWithMedia: opt.matchWithMedia
+              }),
             })) || [],
           };
 
@@ -446,29 +452,6 @@ export class TestsService {
     } catch (error) {
       // Log error but don't fail the operation
       console.warn('Failed to invalidate test cache:', error);
-    }
-  }
-
-  private async validateTestConfiguration(createTestDto: CreateTestDto): Promise<void> {
-    // Validate test type configuration
-    switch (createTestDto.type) {
-      case TestType.PLAIN:
-        // Plain tests should have basic configuration
-        if (!createTestDto.title || !createTestDto.totalMarks) {
-          throw new BadRequestException('Plain tests require title and total marks');
-        }
-        break;
-
-      case TestType.RULE_BASED:
-      case TestType.GENERATED:
-        // Rule-based and generated tests require additional configuration
-        if (!createTestDto.title || !createTestDto.totalMarks) {
-          throw new BadRequestException(`${createTestDto.type} tests require title and total marks`);
-        }
-        break;
-
-      default:
-        throw new BadRequestException(`Unsupported test type: ${createTestDto.type}`);
     }
   }
 
