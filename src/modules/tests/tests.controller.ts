@@ -233,6 +233,44 @@ export class TestsController {
     };
   }
 
+  @Delete(':testId/question/:questionId')
+  @ApiOperation({ 
+    summary: 'Remove a question from a test',
+    description: 'Removes a specific question from a test. This operation is only allowed for tests that have no attempts and are not published.'
+  })
+  @ApiParam({
+    name: 'testId',
+    description: 'Unique identifier of the test',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiParam({
+    name: 'questionId',
+    description: 'Unique identifier of the question to remove',
+    example: '123e4567-e89b-12d3-a456-426614174001'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Question removed from test successfully',
+    type: ApiSuccessResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Test has attempts, is published, or invalid request data',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test or question not found',
+  })
+  async removeQuestionFromTest(
+    @Param('testId') testId: string,
+    @Param('questionId') questionId: string,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    await this.testsService.removeQuestionFromTest(testId, questionId, authContext);
+    return { message: 'Question removed from test successfully' };
+  }
+
   @Get(':testId/users/:userId/status')
   @ApiOperation({ 
     summary: 'Check user test status',

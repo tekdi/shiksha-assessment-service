@@ -9,6 +9,8 @@ import { TestStatus, TestType } from './entities/test.entity';
 import { Test } from './entities/test.entity';
 import { TestRule } from './entities/test-rule.entity';
 import { OrderingService } from '@/common/services/ordering.service';
+import { TestAttempt } from './entities/test-attempt.entity';
+import { TestQuestion } from './entities/test-question.entity';
 
 @Injectable()
 export class SectionsService {
@@ -19,6 +21,10 @@ export class SectionsService {
     private readonly testRepository: Repository<Test>,
     @InjectRepository(TestRule)
     private readonly ruleRepository: Repository<TestRule>,
+    @InjectRepository(TestAttempt)
+    private readonly testAttemptRepository: Repository<TestAttempt>,
+    @InjectRepository(TestQuestion)
+    private readonly testQuestionRepository: Repository<TestQuestion>,
     private readonly orderingService: OrderingService,
   ) {}
 
@@ -88,10 +94,43 @@ export class SectionsService {
 
   async remove(id: string, authContext: AuthContext, isHardDelete: boolean = false): Promise<void> {
     const section = await this.findOne(id, authContext);
+    
+    // Check if section's test has any attempts
+    await this.validateNoAttempts(section.testId, authContext);
+    
+    //Remove all test questions
+    await this.testQuestionRepository.delete({
+      sectionId: id,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    });
+
     if (isHardDelete) {
+      // Then remove the section
       await this.sectionRepository.remove(section);
     } else {
+      // Soft delete: Archive the section
       await this.sectionRepository.update(id, { status: TestStatus.ARCHIVED });
+    }
+  }
+
+  /**
+   * Validates that a test has no attempts before allowing section deletion
+   * @param testId - The test ID to check
+   * @param authContext - Authentication context
+   * @throws BadRequestException if test has attempts
+   */
+  private async validateNoAttempts(testId: string, authContext: AuthContext): Promise<void> {
+    const attempt = await this.testAttemptRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (attempt) {
+      throw new BadRequestException('Cannot delete section from test that has attempts. Archive the section instead.');
     }
   }
 

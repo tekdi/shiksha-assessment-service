@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Not } from 'typeorm';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
@@ -50,6 +50,7 @@ export class AttemptsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
     });
 
@@ -79,6 +80,7 @@ export class AttemptsService {
           userId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
+          status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED])
         },
         order: { attempt: 'DESC' }, // Get the most recent attempt
       });
@@ -292,6 +294,7 @@ export class AttemptsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
     });
 
@@ -982,7 +985,7 @@ export class AttemptsService {
     // Get test information (already retrieved above)
 
     // Check if the test itself is a FEEDBACK type test
-    if (attempt.test?.gradingType === GradingType.FEEDBACK) {
+    if (attempt.test?.gradingType === GradingType.FEEDBACK || attempt.test?.gradingType === GradingType.REFLECTION_PROMPT) {
       // For feedback tests, set score to null and result to null (no pass/fail)
       attempt.score = null;
       attempt.result = null;
@@ -1042,6 +1045,7 @@ export class AttemptsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
     });
 
