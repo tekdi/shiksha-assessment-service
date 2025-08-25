@@ -162,6 +162,7 @@ export class TestsService {
         testId: id,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
       relations: ['sections', 'questions'],
     });
@@ -191,13 +192,58 @@ export class TestsService {
 
   async remove(id: string, authContext: AuthContext, isHardDelete: boolean = false): Promise<void> {
     const test = await this.findOne(id, authContext);
+    
+    // Check if test has any attempts
+    await this.validateNoAttempts(id, authContext);
+    
+    await this.testQuestionRepository.delete({
+      testId: id,
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    });
+
     if (isHardDelete) {
+      // Hard delete: Remove all sections and test questions first
+      await this.testSectionRepository.delete({
+        testId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      });
+      // Then remove the test
       await this.testRepository.remove(test);
     } else {
+      // Soft delete: Archive the test and all its sections
       await this.testRepository.update(id, { status: TestStatus.ARCHIVED });
+      
+      // Archive all sections of this test
+      await this.testSectionRepository.update(
+        { testId: id, tenantId: authContext.tenantId, organisationId: authContext.organisationId },
+        { status: TestStatus.ARCHIVED }
+      );
     }
+    
     // Invalidate cache
     await this.invalidateTestCache(authContext.tenantId);
+  }
+
+  /**
+   * Validates that a test has no attempts before allowing deletion
+   * @param testId - The test ID to check
+   * @param authContext - Authentication context
+   * @throws BadRequestException if test has attempts
+   */
+  private async validateNoAttempts(testId: string, authContext: AuthContext): Promise<void> {
+    const attempt = await this.testAttemptRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (attempt) {
+      throw new BadRequestException('Cannot delete test that has attempts. Archive the test instead.');
+    }
   }
 
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
@@ -206,6 +252,7 @@ export class TestsService {
         testId: id,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
       relations: [
         'sections',
@@ -459,6 +506,7 @@ export class TestsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
     });
 
@@ -501,6 +549,7 @@ export class TestsService {
         testId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
       },
     });
 
@@ -767,6 +816,7 @@ export class TestsService {
           testId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
+          status: Not(TestStatus.ARCHIVED)
         },
       });
 
@@ -1138,6 +1188,42 @@ export class TestsService {
       // Release query runner
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Removes a question from a test section
+   * @param testId - The test ID
+   * @param questionId - The question ID to remove
+   * @param authContext - Authentication context
+   * @throws BadRequestException if test has attempts or is published
+   * @throws NotFoundException if test, section, or question not found
+   */
+  async removeQuestionFromTest(testId: string, questionId: string, authContext: AuthContext): Promise<void> {
+    // Check if test exists and user has access
+    const test = await this.findOne(testId, authContext);
+   
+    // Check if test has any attempts
+    await this.validateNoAttempts(testId, authContext);
+    
+    // Find the test question
+    const testQuestion = await this.testQuestionRepository.findOne({
+      where: {
+        testId,
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!testQuestion) {
+      throw new NotFoundException('Question not found in this test');
+    }
+
+    // Remove the question from the test
+    await this.testQuestionRepository.remove(testQuestion);
+    
+    // Invalidate cache
+    await this.invalidateTestCache(authContext.tenantId);
   }
 
 } 
