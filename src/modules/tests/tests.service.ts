@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, Like, Between, In, Not, FindOptionsWhere, DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -21,9 +21,13 @@ import { RESPONSE_MESSAGES } from '@/common/constants/response-messages.constant
 import { TestStructureDto } from './dto/test-structure.dto';
 import { TestRule } from './entities/test-rule.entity';
 import { ResultType } from './entities/test-attempt.entity';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 @Injectable()
 export class TestsService {
+  private readonly logger = new Logger(TestsService.name);
+
   constructor(
     @InjectRepository(Test)
     private readonly testRepository: Repository<Test>,
@@ -42,6 +46,7 @@ export class TestsService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly orderingService: OrderingService,
+    private readonly configService: ConfigService,
   ) {}
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
@@ -1225,5 +1230,360 @@ export class TestsService {
     // Invalidate cache
     await this.invalidateTestCache(authContext.tenantId);
   }
+
+  /**
+   * Generates a question-answer report for a test with pagination
+   * @param testId - The test ID
+   * @param limit - Number of records per page
+   * @param offset - Number of records to skip
+   * @param authContext - Authentication context
+   * @returns QuestionAnswerReportResponseDto with paginated results
+   */
+  async generateQuestionAnswerReport(
+    testId: string,
+    limit: number = 10,
+    offset: number = 0,
+    authContext: AuthContext,
+    authorization: string
+  ) {
+    // Check if test exists and user has access
+    const test = await this.findOne(testId, authContext);
+
+    // Get test questions with proper ordering (sections first, then questions)
+    const questions = await this.dataSource.query(`
+      SELECT 
+        tq."testQuestionId",
+        tq."questionId",
+        tq."sectionId",
+        COALESCE(ts."ordering", 0) as "sectionOrdering",
+        tq."ordering" as "questionOrdering",
+        q."text" as "questionText",
+        q."type" as "questionType",
+        q."marks" as "questionMarks"
+      FROM "testQuestions" tq
+      INNER JOIN questions q ON tq."questionId" = q."questionId"
+      LEFT JOIN "testSections" ts ON tq."sectionId" = ts."sectionId"
+      WHERE tq."testId" = $1
+        AND tq."tenantId" = $2
+        AND tq."organisationId" = $3
+      ORDER BY COALESCE(ts."ordering", 0) ASC, tq."ordering" ASC
+    `, [testId, authContext.tenantId, authContext.organisationId]);
+
+    if (questions.length === 0) {
+      throw new NotFoundException('No questions found for this test');
+    }
+
+    // Get question options for objective questions
+    const questionIds = questions.map(q => q.questionId);
+    const options = await this.dataSource.query(`
+      SELECT 
+        "questionOptionId",
+        "questionId",
+        "text",
+        "ordering",
+        "isCorrect",
+        "marks"
+      FROM "questionOptions"
+      WHERE "questionId" = ANY($1)
+        AND "tenantId" = $2
+        AND "organisationId" = $3
+      ORDER BY "questionId", "ordering" ASC
+    `, [questionIds, authContext.tenantId, authContext.organisationId]);
+
+    // Create options map
+    const optionsMap = new Map();
+    options.forEach(option => {
+      if (!optionsMap.has(option.questionId)) {
+        optionsMap.set(option.questionId, []);
+      }
+      optionsMap.get(option.questionId).push(option);
+    });
+
+    // Get total count of users who attempted the test
+    const totalCountResult = await this.dataSource.query(`
+      SELECT COUNT(DISTINCT ta."userId") as total
+      FROM "testAttempts" ta
+      WHERE ta."testId" = $1
+        AND ta."tenantId" = $2
+        AND ta."organisationId" = $3
+    `, [testId, authContext.tenantId, authContext.organisationId]);
+
+    const totalElements = parseInt(totalCountResult[0]?.total || '0');
+
+    if (totalElements === 0) {
+      const columns = [
+        { key: 'firstName', header: 'First Name', marks: 0, type: 'string' },
+        { key: 'lastName', header: 'Last Name', marks: 0, type: 'string' },
+        { key: 'email', header: 'Email', marks: 0, type: 'string' },
+        { key: 'userId', header: 'User ID', marks: 0, type: 'string' },
+        { key: 'attemptNumber', header: 'Attempt Number', marks: 0, type: 'number' },
+        { key: 'score', header: 'Total Score', marks: 0, type: 'number' },
+        { key: 'timeSpent', header: 'Time Spent (minutes)', marks: 0, type: 'number' },
+        { key: 'status', header: 'Status', marks: 0, type: 'string' },
+        { key: 'startTime', header: 'Start Time', marks: 0, type: 'datetime' },
+        { key: 'submitTime', header: 'Submit Time', marks: 0, type: 'datetime' },
+        ...questions.map(q => ({
+          key: q.questionId,
+          header: `${q.questionText}`,
+          marks: q.questionMarks,
+          type: q.questionType
+        }))
+      ];
+
+      return {
+        testId,
+        testTitle: test.title,
+        metadata: {
+          totalQuestions: questions.length,
+          gradingMethod: test.attemptsGrading,
+          allowResubmission: test.allowResubmission,
+          totalUsers: 0
+        },
+        columns,
+        data: [],
+        pagination: {
+          totalElements: 0,
+          totalPages: 0,
+          currentPage: Math.floor(offset / limit) + 1,
+          size: limit,
+          hasNext: false,
+          hasPrevious: false
+        }
+      };
+    }
+
+    // Get paginated user attempts with consistent ordering by startTime
+    const userAttempts = await this.dataSource.query(`
+      SELECT DISTINCT ON (ta."userId")
+        ta."userId",
+        ta."attempt" as "attemptNumber",
+        ta."status",
+        ta."startedAt" as "startTime",
+        ta."submittedAt" as "submitTime",
+        COALESCE(ta."timeSpent", 0) as "timeSpent",
+        ta."score" as "totalScore"
+      FROM "testAttempts" ta
+      WHERE ta."testId" = $1
+        AND ta."tenantId" = $2
+        AND ta."organisationId" = $3
+      ORDER BY ta."userId", ta."startedAt" DESC
+      LIMIT $4 OFFSET $5
+    `, [testId, authContext.tenantId, authContext.organisationId, limit, offset]);
+
+    // Get all answers for the paginated users
+    const userIds = userAttempts.map(ua => ua.userId);
+    const userAnswers = await this.dataSource.query(`
+      SELECT
+        ta."userId",
+        tua."questionId",
+        tua."answer" as "answerText",
+        tua."score",
+        q."marks" as "maxScore"
+      FROM "testUserAnswers" tua
+      INNER JOIN "testAttempts" ta ON tua."attemptId" = ta."attemptId"
+      INNER JOIN questions q ON tua."questionId" = q."questionId"
+      WHERE ta."testId" = $1
+        AND ta."userId" = ANY($2)
+        AND q."tenantId" = $3
+        AND q."organisationId" = $4
+      ORDER BY ta."userId", tua."questionId"
+    `, [testId, userIds, authContext.tenantId, authContext.organisationId]);
+
+    // Fetch user details from external API
+    const userDetails = await this.fetchUserData(
+      userIds, 
+      authContext.tenantId, 
+      authContext.organisationId, 
+      authorization
+    );
+
+    // Create a map for quick user lookup
+    const userDetailsMap = new Map();
+    userDetails.forEach(user => {
+      userDetailsMap.set(user.userId, user);
+    });
+
+
+
+    // Process answers to extract proper option text or text
+    const userAnswersMap = new Map();
+    userAnswers.forEach(answer => {
+      if (!userAnswersMap.has(answer.userId)) {
+        userAnswersMap.set(answer.userId, new Map());
+      }
+      
+      const userAnswerMap = userAnswersMap.get(answer.userId);
+      let processedAnswer = '';
+      
+      try {
+        // Parse the JSON answer
+        const answerData = JSON.parse(answer.answerText);
+        
+        if (answerData.text) {
+          // Subjective question with text
+          processedAnswer = answerData.text;
+        } else if (answerData.selectedOptionIds && Array.isArray(answerData.selectedOptionIds)) {
+          // Objective question with selected option IDs
+          const options = optionsMap.get(answer.questionId);
+          if (options && answerData.selectedOptionIds.length > 0) {
+            const selectedOptions = answerData.selectedOptionIds.map((optionId: string) => {
+              const option = options.find(opt => opt.questionOptionId === optionId);
+              return option ? option.text : optionId;
+            });
+            processedAnswer = selectedOptions.join('; ');
+          } else {
+            processedAnswer = answerData.selectedOptionIds.join('; ');
+          }
+        } else {
+          // Fallback to original text
+          processedAnswer = answer.answerText;
+        }
+      } catch (error) {
+        // If JSON parsing fails, use original text
+        processedAnswer = answer.answerText;
+      }
+      
+      userAnswerMap.set(answer.questionId, processedAnswer);
+    });
+
+    // Create report rows using the paginated user attempts
+    const reportRows: any[] = [];
+    
+    userAttempts.forEach(userAttempt => {
+      const userAnswers = userAnswersMap.get(userAttempt.userId) || new Map();
+      const answers = {};
+      
+      questions.forEach(q => {
+        const answer = userAnswers.get(q.questionId);
+        answers[q.questionId] = answer || '';
+      });
+
+      // Get user details from the fetched data
+      const userDetail = userDetailsMap.get(userAttempt.userId) || {};
+
+      reportRows.push({
+        firstName: userDetail.firstName || '',
+        lastName: userDetail.lastName || '',
+        email: userDetail.email || '',
+        userId: userAttempt.userId,
+        answers,
+        score: userAttempt.totalScore || 0,
+        timeSpent: Math.round((userAttempt.timeSpent || 0) / 60), // Convert seconds to minutes
+        attemptNumber: userAttempt.attemptNumber,
+        status: userAttempt.status,
+        startTime: userAttempt.startTime,
+        submitTime: userAttempt.submitTime
+      });
+    });
+
+    const totalPages = Math.ceil(totalElements / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    // Create column definitions
+    const columns = [
+      { key: 'firstName', header: 'First Name', marks: 0, type: 'string' },
+      { key: 'lastName', header: 'Last Name', marks: 0, type: 'string' },
+      { key: 'email', header: 'Email', marks: 0, type: 'string' },
+      { key: 'userId', header: 'User ID', marks: 0, type: 'string' },
+      { key: 'attemptNumber', header: 'Attempt Number', marks: 0, type: 'number' },
+      { key: 'score', header: 'Total Score', marks: 0, type: 'number' },
+      { key: 'timeSpent', header: 'Time Spent (minutes)', marks: 0, type: 'number' },
+      { key: 'status', header: 'Status', marks: 0, type: 'string' },
+      { key: 'startTime', header: 'Start Time', marks: 0, type: 'datetime' },
+      { key: 'submitTime', header: 'Submit Time', marks: 0, type: 'datetime' },
+      ...questions.map(q => ({
+        key: q.questionId,
+        header: `${q.questionText}`,
+        marks: q.questionMarks,
+        type: q.questionType
+      }))
+    ];
+
+    // Transform report rows to flat format
+    const flatData = reportRows.map(row => {
+      const flatRow = {
+        firstName: row.firstName,
+        lastName: row.lastName,
+        email: row.email,
+        userId: row.userId,
+        attemptNumber: row.attemptNumber,
+        score: row.score,
+        timeSpent: row.timeSpent,
+        status: row.status,
+        startTime: row.startTime,
+        submitTime: row.submitTime
+      };
+
+      // Add question answers
+      questions.forEach(q => {
+        const answer = row.answers[q.questionId] || '';
+        flatRow[q.questionId] = answer;
+      });
+
+      return flatRow;
+    });
+
+    return {
+      testId,
+      testTitle: test.title,
+      metadata: {
+        totalQuestions: questions.length,
+        gradingMethod: test.attemptsGrading,
+        allowResubmission: test.allowResubmission,
+        totalUsers: totalElements
+      },
+      columns,
+      data: flatData,
+      pagination: {
+        totalElements,
+        totalPages,
+        currentPage,
+        size: limit,
+        hasNext: currentPage < totalPages,
+        hasPrevious: currentPage > 1
+      }
+    };
+  }
+
+
+
+  /**
+   * Fetch user data from external API
+   */
+  private async fetchUserData(userIds: string[], tenantId: string, organisationId: string, authorization: string): Promise<any[]> {
+    try {
+      const userServiceUrl = this.configService.get('USER_SERVICE_URL', '');
+
+      if (!userServiceUrl) {
+        throw new BadRequestException(RESPONSE_MESSAGES.ERROR.USER_SERVICE_URL_NOT_CONFIGURED);
+      }
+
+      const response = await axios.post(`${userServiceUrl}/list`, {
+        filters: { userId: userIds },
+        limit: userIds.length,
+        includeCustomFields: false,
+        }, {
+          headers: {
+            'tenantid': tenantId,
+            'organisationId': organisationId,
+            'Authorization': authorization,
+            'Content-Type': 'application/json'
+          }
+        });
+
+      // Handle the actual response format from the user service
+      const userDetails = response.data.result?.getUserDetails || [];
+      
+      // Filter out audit fields from user data
+      return userDetails.map((user: any) => {
+        const { createdBy, updatedBy, createdAt, updatedAt, ...userWithoutAudit } = user;
+        return userWithoutAudit;
+      });     
+    } catch (error) {
+      this.logger.error('Failed to fetch user data from external API', error);
+      throw new BadRequestException(RESPONSE_MESSAGES.ERROR.FAILED_TO_FETCH_USER_DATA);
+    }
+  }
+
 
 } 
