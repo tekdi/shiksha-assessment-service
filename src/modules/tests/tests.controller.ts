@@ -23,6 +23,8 @@ import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 import { TestStructureDto } from './dto/test-structure.dto';
+import { QuestionAnswerReportDto } from './dto/question-answer-report.dto';
+import { QuestionAnswerReportResponseDto } from './dto/question-answer-report-response.dto';
 
 
 @ApiTags('Tests')
@@ -329,6 +331,58 @@ export class TestsController {
     const authContext: AuthContext = req.user;
     await this.testsService.updateTestStructure(testId, testStructureDto, authContext);
     return { message: 'Test structure updated successfully' };
+  }
+
+  @Get(':testId/question-answer-report')
+  @ApiOperation({ 
+    summary: 'Generate question-answer report for a test',
+    description: 'Generates a comprehensive report showing all user answers to test questions with proper section and question ordering. Includes pagination for efficient data retrieval.'
+  })
+  @ApiParam({
+    name: 'testId',
+    description: 'Unique identifier of the test',
+    example: '1e97ff5b-a2d0-4e44-802f-521f3f097f00'
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Number of records per page',
+    required: false,
+    type: Number,
+    example: 10
+  })
+  @ApiQuery({
+    name: 'userIds',
+    description: 'Array of user IDs to filter the report. If empty or not provided, returns data for all users.',
+    required: false,
+    type: String,
+    isArray: true,
+    example: ['100ba777-ca99-4cea-8ec7-c1ddd763d97b', '1873de9c-4ea1d-4e2b-9b8a-edd570480dd5']
+  })
+  @ApiQuery({
+    name: 'offset',
+    description: 'Number of records to skip',
+    required: false,
+    type: Number,
+    example: 0
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Question-answer report generated successfully',
+    type: QuestionAnswerReportResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Test not found or no questions available',
+  })
+  async generateQuestionAnswerReport(
+    @Param('testId', ParseUUIDPipe) testId: string,
+    @Query() queryDto: QuestionAnswerReportDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const { limit = 10, offset = 0, userIds } = queryDto;
+    const authorization = req.headers.authorization;
+    return this.testsService.generateQuestionAnswerReport(testId, limit, offset, authContext, authorization, userIds);
   }
 
   @Post(':testId/clone')
