@@ -1244,7 +1244,8 @@ export class TestsService {
     limit: number = 10,
     offset: number = 0,
     authContext: AuthContext,
-    authorization: string
+    authorization: string,
+    userIds?: string[]
   ) {
     // Check if test exists and user has access
     const test = await this.findOne(testId, authContext);
@@ -1299,14 +1300,24 @@ export class TestsService {
       optionsMap.get(option.questionId).push(option);
     });
 
-    // Get total count of users who attempted the test
-    const totalCountResult = await this.dataSource.query(`
+    // Get total count of users who attempted the test (with userIds filter if provided)
+    let totalCountQuery = `
       SELECT COUNT(DISTINCT ta."userId") as total
       FROM "testAttempts" ta
       WHERE ta."testId" = $1
         AND ta."tenantId" = $2
         AND ta."organisationId" = $3
-    `, [testId, authContext.tenantId, authContext.organisationId]);
+    `;
+    
+    const totalCountParams: any[] = [testId, authContext.tenantId, authContext.organisationId];
+    
+    // Add userIds filter if provided
+    if (userIds && userIds.length > 0) {
+      totalCountQuery += ` AND ta."userId" = ANY($4)`;
+      totalCountParams.push(userIds);
+    }
+    
+    const totalCountResult = await this.dataSource.query(totalCountQuery, totalCountParams);
 
     const totalElements = parseInt(totalCountResult[0]?.total || '0');
 
@@ -1345,15 +1356,13 @@ export class TestsService {
           totalElements: 0,
           totalPages: 0,
           currentPage: Math.floor(offset / limit) + 1,
-          size: limit,
-          hasNext: false,
-          hasPrevious: false
+          size: limit
         }
       };
     }
 
     // Get paginated user attempts with consistent ordering by startTime
-    const userAttempts = await this.dataSource.query(`
+    let userAttemptsQuery = `
       SELECT DISTINCT ON (ta."userId")
         ta."userId",
         ta."attempt" as "attemptNumber",
@@ -1366,12 +1375,33 @@ export class TestsService {
       WHERE ta."testId" = $1
         AND ta."tenantId" = $2
         AND ta."organisationId" = $3
-      ORDER BY ta."userId", ta."startedAt" DESC
-      LIMIT $4 OFFSET $5
-    `, [testId, authContext.tenantId, authContext.organisationId, limit, offset]);
+    `;
+
+    const queryParams: any[] = [testId, authContext.tenantId, authContext.organisationId];
+    let paramIndex = 4;
+
+    // Add userIds filter if provided
+    if (userIds && userIds.length > 0) {
+      // Handle both array format and comma-separated string format
+      let filteredUserIds = userIds;
+      
+      // If it's a single string with commas, split it
+      if (userIds.length === 1 && typeof userIds[0] === 'string' && userIds[0].includes(',')) {
+        filteredUserIds = userIds[0].split(',').map(id => id.trim());
+      }
+      
+      userAttemptsQuery += ` AND ta."userId" = ANY($${paramIndex})`;
+      queryParams.push(filteredUserIds);
+      paramIndex++;
+    }
+
+    userAttemptsQuery += ` ORDER BY ta."userId", ta."startedAt" DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryParams.push(limit, offset);
+
+    const userAttempts = await this.dataSource.query(userAttemptsQuery, queryParams);
 
     // Get all answers for the paginated users
-    const userIds = userAttempts.map(ua => ua.userId);
+    const fetchedUserIds = userAttempts.map(ua => ua.userId);
     const userAnswers = await this.dataSource.query(`
       SELECT
         ta."userId",
@@ -1387,11 +1417,11 @@ export class TestsService {
         AND q."tenantId" = $3
         AND q."organisationId" = $4
       ORDER BY ta."userId", tua."questionId"
-    `, [testId, userIds, authContext.tenantId, authContext.organisationId]);
+    `, [testId, fetchedUserIds, authContext.tenantId, authContext.organisationId]);
 
     // Fetch user details from external API
     const userDetails = await this.fetchUserData(
-      userIds, 
+      fetchedUserIds, 
       authContext.tenantId, 
       authContext.organisationId, 
       authorization
@@ -1538,9 +1568,7 @@ export class TestsService {
         totalElements,
         totalPages,
         currentPage,
-        size: limit,
-        hasNext: currentPage < totalPages,
-        hasPrevious: currentPage > 1
+        size: limit
       }
     };
   }
