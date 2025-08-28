@@ -7,31 +7,56 @@ import { randomInt } from 'crypto';
 
 @ValidatorConstraint({ name: 'validateDatetimeConstraints', async: false })
 export class ValidateDatetimeConstraints implements ValidatorConstraintInterface {
-  validate(endDateValue: string, args: ValidationArguments): boolean {
-    const startDateStr = (args.object as any).startDate;
-    if (!startDateStr) return true; // let other validators handle required
-
-    const startDate = new Date(startDateStr);
-    const endDate = new Date(endDateValue);
-    const now = new Date();
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+  validate(value: string, args: ValidationArguments): boolean {
+    const object = args.object as any;
+    const startDateStr = object.startDate;
+    const endDateStr = object.endDate;
+    
+    // If this field is not provided, validation passes (handled by other validators)
+    if (!value) return true;
+    
+    // Validate date format
+    const currentDate = new Date(value);
+    if (isNaN(currentDate.getTime())) {
       return false;
     }
-
-    if (startDate <= now) {
-      return false;
+    
+    // If only startDate is provided, it's valid
+    if (args.property === 'startDate' && !endDateStr) {
+      return true;
     }
-
-    if (endDate <= startDate) {
-      return false;
+    
+    // If only endDate is provided, it's valid
+    if (args.property === 'endDate' && !startDateStr) {
+      return true;
     }
-
+    
+    // If both dates are provided, validate the relationship
+    if (startDateStr && endDateStr) {
+      const startDate = new Date(startDateStr);
+      const endDate = new Date(endDateStr);
+      
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return false;
+      }
+      
+      // endDate must be greater than startDate
+      if (endDate <= startDate) {
+        return false;
+      }
+    }
+    
     return true;
   }
 
   defaultMessage(args: ValidationArguments) {
-    return 'Invalid datetime constraints: Start date must be in the future, and end date must follow start date.';
+    if (args.property === 'startDate') {
+      return 'Start date is invalid or conflicts with end date';
+    }
+    if (args.property === 'endDate') {
+      return 'End date is invalid or must be greater than start date';
+    }
+    return 'Invalid datetime constraints';
   }
 }
 
