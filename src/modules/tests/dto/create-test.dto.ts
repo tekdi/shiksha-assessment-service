@@ -77,6 +77,7 @@ export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
+  @Validate(ValidateDatetimeConstraints)
   startDate?: string;
 
   @ApiPropertyOptional()
