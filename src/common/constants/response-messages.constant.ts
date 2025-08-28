@@ -15,6 +15,8 @@ export const RESPONSE_MESSAGES = {
       CONFIG_URL_MISSING: 'External configuration URL is missing',
       LMS_CONFIG_LOAD_FAILED: 'Failed to load LMS configuration',
       INVALID_UPLOAD_TYPE: 'Invalid upload type specified',
-      ASSESSMENT_CONFIG_LOAD_FAILED: 'Failed to load Assessment configuration'
+      ASSESSMENT_CONFIG_LOAD_FAILED: 'Failed to load Assessment configuration',
+      USER_SERVICE_URL_NOT_CONFIGURED: 'User service URL not configured',
+      FAILED_TO_FETCH_USER_DATA: 'Failed to fetch user data from external service',
     }
   } as const; 

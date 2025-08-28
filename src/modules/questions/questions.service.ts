@@ -592,8 +592,9 @@ export class QuestionsService {
     if (createQuestionDto.text && createQuestionDto.text.trim().length === 0) {
       throw new BadRequestException('Question text cannot be empty.');
     }
+    //Removed this validation  - we need this for product.
     // validate duplicate question text
-    await this.validateDuplicateQuestionText(createQuestionDto, authContext);
+    //await this.validateDuplicateQuestionText(createQuestionDto, authContext);
     
     // Validate question marks are positive if specified
     if (questionMarks !== undefined && questionMarks <= 0) {
