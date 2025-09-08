@@ -12,7 +12,7 @@ Response:
 ```
 
 ### Get Attempt Questions
-```json
+```json 
 GET /attempts/{attemptId}/questions
 Response:
 [
