@@ -1053,7 +1053,7 @@ export class TestsService {
         title: `${originalTest.title} (Copy)`,
         description: originalTest.description,
         reviewers: originalTest.reviewers,
-        status: TestStatus.DRAFT, // Always set to DRAFT for cloned tests
+        status: TestStatus.PUBLISHED,
         showTime: originalTest.showTime,
         timeDuration: originalTest.timeDuration,
         showTimeFinished: originalTest.showTimeFinished,
