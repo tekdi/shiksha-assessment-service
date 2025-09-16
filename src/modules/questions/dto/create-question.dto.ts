@@ -41,6 +41,51 @@ export class RubricCriteriaDto {
   description: string;
 }
 
+export class RatingScaleDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  min?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(2)
+  max?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  step?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  showLabels?: boolean;
+
+  @ApiPropertyOptional({ 
+    enum: ['full_marks', 'proportional', 'threshold', 'target_rating'],
+    description: 'Scoring strategy for rating questions'
+  })
+  @IsOptional()
+  @IsEnum(['full_marks', 'proportional', 'threshold', 'target_rating'])
+  scoringStrategy?: 'full_marks' | 'proportional' | 'threshold' | 'target_rating';
+}
+
+export class DropdownConfigDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allowMultiple?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  placeholder?: string;
+}
+
 export class QuestionParamsDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -71,6 +116,18 @@ export class QuestionParamsDto {
   @IsOptional()
   @IsBoolean()
   allowPartialScoring?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RatingScaleDto)
+  ratingScale?: RatingScaleDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DropdownConfigDto)
+  dropdownConfig?: DropdownConfigDto;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -143,6 +200,11 @@ export class CreateQuestionOptionDto {
   @IsOptional()
   @IsBoolean()
   caseSensitive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  ratingValue?: number;
 }
 
 export class CreateQuestionDto {
@@ -222,7 +284,7 @@ export class CreateQuestionDto {
 
   @ApiPropertyOptional({ 
     type: [CreateQuestionOptionDto],
-    description: 'Question options. Required for MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, MATCH. Optional for SUBJECTIVE and ESSAY (for reference correct answers - shown in answersheet but not used for auto-evaluation).'
+    description: 'Question options. Required for MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, MATCH, DROPDOWN. Optional for SUBJECTIVE and ESSAY (for reference correct answers - shown in answersheet but not used for auto-evaluation). Optional for RATING questions (recommended for labels and custom scoring per rating level).'
   })
   @IsOptional()
   @IsArray()

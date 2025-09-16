@@ -18,6 +18,8 @@ export enum QuestionType {
   MATCH = 'match',
   SUBJECTIVE = 'subjective', //short answer, requires manual review and scoring
   ESSAY = 'essay', //long answer, requires manual review and scoring
+  DROPDOWN = 'dropdown', //dropdown selection question
+  RATING = 'rating', //star rating question
 }
 
 export enum QuestionLevel {
@@ -46,6 +48,22 @@ export interface QuestionParams {
   wordLimit?: number;
   caseSensitive?: boolean;
   allowPartialScoring?: boolean;
+  // Rating-specific parameters
+  ratingScale?: {
+    min: number;           // Minimum rating value (default: 1)
+    max: number;           // Maximum rating value (default: 5)
+    step?: number;         // Step increment (default: 1)
+    showLabels?: boolean;  // Whether to show labels (labels stored in options)
+    scoringStrategy?: 'full_marks' | 'proportional' | 'threshold' | 'target_rating'; // Scoring strategy
+    threshold?: number;    // Threshold for threshold scoring strategy
+    targetRating?: number; // Target rating for target_rating scoring strategy
+  };
+  // Dropdown-specific parameters
+  dropdownConfig?: {
+    allowMultiple?: boolean;    // Allow multiple selections
+    searchable?: boolean;       // Enable search functionality
+    placeholder?: string;       // Placeholder text
+  };
   rubric?: {
     criteria: Array<{
       name: string;

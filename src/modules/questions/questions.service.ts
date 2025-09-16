@@ -539,6 +539,19 @@ export class QuestionsService {
           this.validateMatchOptions(options);
           break;
         }
+          
+        case QuestionType.DROPDOWN: {
+          this.validateDropdownOptions(options, questionDto);
+          break;
+        }
+      }
+    }
+
+    // Special validation for rating questions
+    if (type === QuestionType.RATING) {
+      this.validateRatingQuestion(questionDto);
+      if (options && options.length > 0) {
+        this.validateRatingOptions(options, questionDto);
       }
     }
 
@@ -914,6 +927,116 @@ export class QuestionsService {
 
     if (duplicateMatchWith.length > 0) {
       throw new BadRequestException(`Duplicate matchWith values found: ${duplicateMatchWith.join(', ')}`);
+    }
+  }
+
+  /**
+   * Validates dropdown question options
+   * Ensures proper option structure and correct answer distribution
+   * @param options - Array of option objects to validate
+   * @param questionDto - The complete question DTO for validation context
+   */
+  private validateDropdownOptions(options: any[], questionDto: CreateQuestionDto): void {
+    // Dropdown questions must have at least 2 options
+    if (options.length < 2) {
+      throw new BadRequestException('Dropdown questions must have at least 2 options.');
+    }
+
+    // Validate at least one correct option
+    const correctOptions = options.filter(option => option.isCorrect);
+    if (correctOptions.length === 0) {
+      throw new BadRequestException('Dropdown questions must have at least one correct answer.');
+    }
+
+    // For single-select dropdown, only one correct option
+    const dropdownConfig = questionDto.params?.dropdownConfig;
+    if (!dropdownConfig?.allowMultiple && correctOptions.length > 1) {
+      throw new BadRequestException('Single-select dropdown questions must have exactly one correct answer.');
+    }
+
+    // Validate option texts are unique
+    this.validateDuplicateTexts(options);
+  }
+
+  /**
+   * Validates rating question parameters
+   * Ensures rating scale configuration is valid
+   * @param questionDto - The complete question DTO for validation context
+   */
+  private validateRatingQuestion(questionDto: CreateQuestionDto): void {
+    const ratingScale = questionDto.params?.ratingScale;
+    
+    if (ratingScale) {
+      // Validate rating scale parameters
+      if (ratingScale.min !== undefined && ratingScale.max !== undefined && ratingScale.min >= ratingScale.max) {
+        throw new BadRequestException('Rating minimum value must be less than maximum value.');
+      }
+      
+      if (ratingScale.step && ratingScale.step <= 0) {
+        throw new BadRequestException('Rating step must be greater than 0.');
+      }
+    }
+    
+    // If no ratingScale is defined, we'll use defaults (min=1, max=5, step=1)
+    // This is valid and will be handled in the scoring logic
+  }
+
+  /**
+   * Validates rating question options
+   * Ensures proper rating scale structure with options
+   * @param options - Array of option objects to validate
+   * @param questionDto - The complete question DTO for validation context
+   */
+  private validateRatingOptions(options: any[], questionDto: CreateQuestionDto): void {
+    const ratingScale = questionDto.params?.ratingScale;
+    
+    // Use default values if ratingScale is not defined
+    const min = ratingScale?.min ?? 1;
+    const max = ratingScale?.max ?? 5;
+    const step = ratingScale?.step ?? 1;
+    const expectedCount = Math.floor((max - min) / step) + 1;
+
+    // Validate minimum number of options (at least 2)
+    if (options.length < 2) {
+      throw new BadRequestException('Rating questions must have at least 2 options.');
+    }
+
+    // Validate each option has ratingValue
+    const optionsWithRatingValue = options.filter(option => option.ratingValue !== undefined);
+    if (optionsWithRatingValue.length !== options.length) {
+      throw new BadRequestException('All rating options must have ratingValue specified.');
+    }
+
+    // Validate ratingValue uniqueness
+    const ratingValues = options.map(option => option.ratingValue);
+    const uniqueRatingValues = [...new Set(ratingValues)];
+    if (uniqueRatingValues.length !== ratingValues.length) {
+      throw new BadRequestException('Rating values must be unique.');
+    }
+
+    // Validate ratingValue range
+    const minRating = Math.min(...ratingValues);
+    const maxRating = Math.max(...ratingValues);
+    if (minRating < min || maxRating > max) {
+      throw new BadRequestException(`Rating values must be within range ${min}-${max}.`);
+    }
+
+    // Validate ratingValue follows step pattern (if ratingScale is defined)
+    if (ratingScale) {
+      const invalidValues = ratingValues.filter(value => (value - min) % step !== 0);
+      if (invalidValues.length > 0) {
+        throw new BadRequestException(`Rating values must follow step pattern: ${invalidValues.join(', ')} are invalid.`);
+      }
+    }
+
+    // Validate option texts are unique
+    this.validateDuplicateTexts(options);
+
+    // Validate that options are properly ordered by ratingValue
+    const sortedOptions = [...options].sort((a, b) => a.ratingValue - b.ratingValue);
+    const isOrdered = JSON.stringify(options.map(o => o.ratingValue)) === JSON.stringify(sortedOptions.map(o => o.ratingValue));
+    if (!isOrdered) {
+      throw new BadRequestException('Rating options should be ordered by ratingValue from lowest to highest.');
     }
   }
 
