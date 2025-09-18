@@ -1655,6 +1655,8 @@ export class AttemptsService {
   }
 
   private async validateAttemptForAnswersheet(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    
+    console.log("vinayak",attemptId);
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -1663,6 +1665,8 @@ export class AttemptsService {
       },
     });
 
+    // console.log(attempt);
+
     if (!attempt) {
       throw new Error('Attempt not found');
     }
@@ -1670,11 +1674,6 @@ export class AttemptsService {
      // Only return results if attempt is submitted
      if (attempt.status !== AttemptStatus.SUBMITTED) {
       throw new Error('Attempt results are only available for submitted attempts');
-    }
-
-    // Don't return results if attempt is under review
-    if (attempt.reviewStatus != ReviewStatus.REVIEWED) {
-      throw new Error('Attempt results are not available while under review');
     }
 
     return attempt;
@@ -1717,7 +1716,6 @@ export class AttemptsService {
       questionId: string;
       userAnswer: any;
       score: number;
-      correctAnswers: string[];
     }> = [];
     
     for (const userAnswer of userAnswers) {
@@ -1742,11 +1740,28 @@ export class AttemptsService {
           .map(opt => opt.questionOptionId);
       }
       
+      // Transform selectedOptionIds into selectedOptions array with isCorrect property
+      let selectedOptions: Array<{optionId: string, isCorrect?: boolean}> = [];
+      if (parsedAnswer.selectedOptionIds && Array.isArray(parsedAnswer.selectedOptionIds)) {
+        selectedOptions = parsedAnswer.selectedOptionIds.map((selectedId: string) => {
+          const option: {optionId: string, isCorrect?: boolean} = { optionId: selectedId };
+          // Only add isCorrect if showCorrectAnswer is true
+          if (test.showCorrectAnswer) {
+            option.isCorrect = correctAnswers.includes(selectedId);
+          }
+          return option;
+        });
+      }
+      
+      // Create the new userAnswer structure
+      const transformedUserAnswer = {
+        selectedOptions: selectedOptions
+      };
+      
       answers.push({
         questionId: userAnswer.questionId,
-        userAnswer: parsedAnswer,
+        userAnswer: transformedUserAnswer,
         score: userAnswer.score,
-        correctAnswers: correctAnswers,
       });
     }
     
