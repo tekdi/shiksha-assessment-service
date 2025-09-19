@@ -89,27 +89,27 @@ export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  answerSheet?: boolean;
+  answerSheet?: boolean = true;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  showCorrectAnswer?: boolean;
+  showCorrectAnswer?: boolean = true;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  printAnswersheet?: boolean;
+  printAnswersheet?: boolean = true;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  questionsShuffle?: boolean;
+  questionsShuffle?: boolean = true;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  answersShuffle?: boolean;
+  answersShuffle?: boolean = true;
 
   @ApiPropertyOptional({ enum: GradingType })
   @IsNotEmpty()
@@ -124,12 +124,12 @@ export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  showThankyouPage?: boolean;
+  showThankyouPage?: boolean = true;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  showAllQuestions?: boolean;
+  showAllQuestions?: boolean = true;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -139,7 +139,7 @@ export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  showQuestionsOverview?: boolean;
+  showQuestionsOverview?: boolean = true;
 
   @ApiPropertyOptional({ 
     description: 'Allow users to resubmit the same attempt multiple times. When true, users can only have one attempt and can submit it multiple times.',
