@@ -542,16 +542,9 @@ export class QuestionsService {
       }
     }
 
-    // Validate partial scoring
+    // Validate partial scoring for all question types that support it
     if (questionDto.allowPartialScoring && options) {
-      if (type === QuestionType.MULTIPLE_ANSWER) {
-        this.validateMultipleAnswerPartialScoring(options, questionMarks);
-      } else if (type === QuestionType.FILL_BLANK) {
-        // For fill blank, we need to group options by blankIndex first
-        const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
-        const optionsByBlankIndex = this.groupOptionsByBlankIndex(optionsWithBlankIndex);
-        this.validateFillBlankPartialScoring(optionsByBlankIndex, questionMarks);
-      }
+      this.validatePartialScoring(questionDto, options, questionMarks);
     }
   }
 
@@ -692,10 +685,67 @@ export class QuestionsService {
     if (correctOptions.length === 0) {
       throw new BadRequestException('Multiple answer questions must have at least one correct answer.');
     }
+  }
 
-    // Validate marks consistency for multiple answer questions
-    if (questionDto.allowPartialScoring) {
-      this.validateMultipleAnswerPartialScoring(options, questionDto.marks);
+  /**
+   * Validates partial scoring for all question types that support it
+   * Ensures question marks equal sum of correct option marks when partial scoring is enabled
+   * @param questionDto - The complete question DTO for validation context
+   * @param options - Array of option objects to validate
+   * @param questionMarks - The total question marks to validate against
+   */
+  private validatePartialScoring(questionDto: CreateQuestionDto, options: any[], questionMarks?: number): void {
+    const { type } = questionDto;
+
+    switch (type) {
+      case QuestionType.MCQ:
+      case QuestionType.TRUE_FALSE:
+        throw new BadRequestException(`Partial scoring is not supported for question type: ${type}`);
+        break;
+        
+      case QuestionType.MULTIPLE_ANSWER:
+        this.validateMultipleAnswerPartialScoring(options, questionMarks);
+        break;
+        
+      case QuestionType.FILL_BLANK:
+        // For fill blank, we need to group options by blankIndex first
+        const optionsWithBlankIndex = options.filter(option => option.blankIndex !== undefined);
+        const optionsByBlankIndex = this.groupOptionsByBlankIndex(optionsWithBlankIndex);
+        this.validateFillBlankPartialScoring(optionsByBlankIndex, questionMarks);
+        break;
+        
+      case QuestionType.MATCH:
+        this.validateMatchPartialScoring(options, questionMarks);
+        break;
+        
+      case QuestionType.SUBJECTIVE:
+      case QuestionType.ESSAY:
+        // These question types don't support partial scoring with options
+        // They use rubric-based scoring instead
+        break;
+        
+      default:
+        throw new BadRequestException(`Partial scoring is not supported for question type: ${type}`);
+    }
+  }
+
+  /**
+   * Validates partial scoring consistency for match questions
+   * Ensures all correct matches have marks and sum equals question marks
+   * @param options - Array of option objects to validate
+   * @param questionMarks - The total question marks to validate against
+   */
+  private validateMatchPartialScoring(options: any[], questionMarks?: number): void {
+    const correctOptions = options.filter(option => option.isCorrect);
+    const optionsWithMarks = correctOptions.filter(option => option.marks !== undefined);
+    
+    if (optionsWithMarks.length !== correctOptions.length) {
+      throw new BadRequestException('All correct matches must have marks specified when partial scoring is enabled.');
+    }
+
+    const totalOptionMarks = correctOptions.reduce((sum, option) => sum + (option.marks || 0), 0);
+    if (questionMarks !== undefined && totalOptionMarks !== questionMarks) {
+      throw new BadRequestException(`Sum of match marks (${totalOptionMarks}) must equal question marks (${questionMarks}) when partial scoring is enabled.`);
     }
   }
 
@@ -738,11 +788,6 @@ export class QuestionsService {
     // Validate each blank has at least one correct answer
     const optionsByBlankIndex = this.groupOptionsByBlankIndex(optionsWithBlankIndex);
     this.validateEachBlankHasCorrectAnswer(optionsByBlankIndex);
-
-    // Additional validation for partial scoring
-    if (questionDto.allowPartialScoring && options && options.length > 0) {
-      this.validateFillBlankPartialScoring(optionsByBlankIndex, questionDto.marks);
-    }
   }
 
   /**

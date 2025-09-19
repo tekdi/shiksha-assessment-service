@@ -1428,24 +1428,31 @@ export class AttemptsService {
     
     if (correctOptions.length === 0) return 0;
     
-    let totalScore = 0;
-    
-    // Award marks for correct selections
-    for (const correctOption of correctOptions) {
-      if (selectedOptionIds.includes(correctOption.questionOptionId)) {
-        totalScore += Number(correctOption.marks);
-      }
-    }
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
     
-    // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
+      // For partial scoring: sum of marks for selected correct options
+      let totalScore = 0;
+      for (const correctOption of correctOptions) {
+        if (selectedOptionIds.includes(correctOption.questionOptionId)) {
+          const optionMarks = Number(correctOption.marks);
+          totalScore += isNaN(optionMarks) ? 0 : optionMarks;
+        }
+      }
       return totalScore;
     } else {
-      // Full marks only if all correct options selected and no incorrect ones
-      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+      // For non-partial scoring: all-or-nothing based on question marks
+      // Check if all correct options are selected and no incorrect options are selected
+      const allCorrectSelected = correctOptions.every(opt => 
+        selectedOptionIds.includes(opt.questionOptionId)
+      );
+      const noIncorrectSelected = selectedOptionIds.every(selectedId => 
+        correctOptions.some(opt => opt.questionOptionId === selectedId)
+      );
+      
+      return (allCorrectSelected && noIncorrectSelected) ? safeQuestionMarks : 0;
     }
   }
 
@@ -1459,37 +1466,57 @@ export class AttemptsService {
     
     if (correctOptions.length === 0 || userBlanks.length === 0) return 0;
     
-    let totalScore = 0;
-    
-    for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
-      const userAnswer = userBlanks[i]?.trim();
-      const correctAnswer = correctOptions[i]?.text?.trim();
-      
-      if (!userAnswer || !correctAnswer) continue;
-      
-      // Check case sensitivity
-      const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
-      const isCorrect = isCaseSensitive 
-        ? userAnswer === correctAnswer
-        : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
-      
-      if (isCorrect) {
-        // Use individual option marks instead of equal distribution
-        totalScore += Number(correctOptions[i]?.marks || 0);
-      }
-    }
-    
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
     
-    // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
-      // Partial scoring: award marks for each correct blank using option marks
+      // For partial scoring: sum of marks for correct blanks using option marks
+      let totalScore = 0;
+      for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+        const userAnswer = userBlanks[i]?.trim();
+        const correctAnswer = correctOptions[i]?.text?.trim();
+        
+        if (!userAnswer || !correctAnswer) continue;
+        
+        // Check case sensitivity
+        const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
+        const isCorrect = isCaseSensitive 
+          ? userAnswer === correctAnswer
+          : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+        
+        if (isCorrect) {
+          const optionMarks = Number(correctOptions[i]?.marks || 0);
+          totalScore += isNaN(optionMarks) ? 0 : optionMarks;
+        }
+      }
       return totalScore;
     } else {
-      // All-or-nothing: full marks only if all blanks are correct
-      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+      // For non-partial scoring: all-or-nothing based on question marks
+      // Check if all blanks are correct
+      let allCorrect = true;
+      for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+        const userAnswer = userBlanks[i]?.trim();
+        const correctAnswer = correctOptions[i]?.text?.trim();
+        
+        if (!userAnswer || !correctAnswer) {
+          allCorrect = false;
+          break;
+        }
+        
+        // Check case sensitivity
+        const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
+        const isCorrect = isCaseSensitive 
+          ? userAnswer === correctAnswer
+          : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+        
+        if (!isCorrect) {
+          allCorrect = false;
+          break;
+        }
+      }
+      
+      return allCorrect ? safeQuestionMarks : 0;
     }
   }
 
@@ -1503,31 +1530,36 @@ export class AttemptsService {
     
     if (correctOptions.length === 0 || userMatches.length === 0) return 0;
     
-    let totalScore = 0;
-    
-    // Process each user match
-    for (const userMatch of userMatches) {
-      // Find the correct option that matches this user selection
-      const correctOption = correctOptions.find(opt => 
-        opt.questionOptionId === userMatch.optionId && 
-        opt.matchWith === userMatch.matchWith
-      );
-      if (correctOption) {
-        totalScore += Number(correctOption.marks);
-      }
-    }
-    
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
     
-    // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
-      // Partial scoring: award marks for each correct match using option marks
+      // For partial scoring: sum of marks for correct matches using option marks
+      let totalScore = 0;
+      for (const userMatch of userMatches) {
+        // Find the correct option that matches this user selection
+        const correctOption = correctOptions.find(opt => 
+          opt.questionOptionId === userMatch.optionId && 
+          opt.matchWith === userMatch.matchWith
+        );
+        if (correctOption) {
+          const optionMarks = Number(correctOption.marks);
+          totalScore += isNaN(optionMarks) ? 0 : optionMarks;
+        }
+      }
       return totalScore;
     } else {
-      // All-or-nothing: full marks only if all matches are correct
-      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+      // For non-partial scoring: all-or-nothing based on question marks
+      // Check if all matches are correct
+      const allMatchesCorrect = correctOptions.every(correctOption => {
+        return userMatches.some(userMatch => 
+          userMatch.optionId === correctOption.questionOptionId && 
+          userMatch.matchWith === correctOption.matchWith
+        );
+      });
+      
+      return allMatchesCorrect ? safeQuestionMarks : 0;
     }
   }
 
@@ -1716,6 +1748,7 @@ export class AttemptsService {
       questionId: string;
       userAnswer: any;
       score: number;
+      isCorrect: boolean;
     }> = [];
     
     for (const userAnswer of userAnswers) {
@@ -1734,23 +1767,51 @@ export class AttemptsService {
       
       // Get correct answers if test.showCorrectAnswer is true
       let correctAnswers: string[] = [];
+      let correctOptionMarks: number = 0;
       if (test.showCorrectAnswer && question.options) {
         correctAnswers = question.options
           .filter(opt => opt.isCorrect)
           .map(opt => opt.questionOptionId);
+        
+        // Calculate total marks for correct options (for partial scoring)
+        correctOptionMarks = question.options
+          .filter(opt => opt.isCorrect)
+          .reduce((sum, opt) => sum + (opt.marks || 0), 0);
       }
       
       // Transform selectedOptionIds into selectedOptions array with isCorrect property
       let selectedOptions: Array<{optionId: string, isCorrect?: boolean}> = [];
+      let selectedCorrectOptions: string[] = [];
       if (parsedAnswer.selectedOptionIds && Array.isArray(parsedAnswer.selectedOptionIds)) {
         selectedOptions = parsedAnswer.selectedOptionIds.map((selectedId: string) => {
           const option: {optionId: string, isCorrect?: boolean} = { optionId: selectedId };
           // Only add isCorrect if showCorrectAnswer is true
           if (test.showCorrectAnswer) {
-            option.isCorrect = correctAnswers.includes(selectedId);
+            const isCorrect = correctAnswers.includes(selectedId);
+            option.isCorrect = isCorrect;
+            if (isCorrect) {
+              selectedCorrectOptions.push(selectedId);
+            }
           }
           return option;
         });
+      }
+      
+      // Calculate question-level isCorrect based on allowPartialScoring
+      let questionIsCorrect = false;
+      if (question.allowPartialScoring) {
+        // For partial scoring: if any correct option is selected, question is correct
+        questionIsCorrect = selectedCorrectOptions.length > 0;
+      } else {
+        // For non-partial scoring: user must select all correct options to get full marks
+        // Check if all correct options are selected and no incorrect options are selected
+        const allCorrectSelected = correctAnswers.every(correctId => 
+          parsedAnswer.selectedOptionIds?.includes(correctId)
+        );
+        const noIncorrectSelected = parsedAnswer.selectedOptionIds?.every(selectedId => 
+          correctAnswers.includes(selectedId)
+        ) ?? true;
+        questionIsCorrect = allCorrectSelected && noIncorrectSelected;
       }
       
       // Create the new userAnswer structure
@@ -1762,6 +1823,7 @@ export class AttemptsService {
         questionId: userAnswer.questionId,
         userAnswer: transformedUserAnswer,
         score: userAnswer.score,
+        isCorrect: questionIsCorrect,
       });
     }
     
