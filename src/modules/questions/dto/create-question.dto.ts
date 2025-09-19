@@ -70,7 +70,7 @@ export class QuestionParamsDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  allowPartialScoring?: boolean;
+  allowPartialScoring?: boolean = false;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -212,7 +212,7 @@ export class CreateQuestionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  allowPartialScoring?: boolean;
+  allowPartialScoring?: boolean = false;
 
   @ApiPropertyOptional()
   @IsOptional()
