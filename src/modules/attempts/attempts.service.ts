@@ -12,6 +12,7 @@ import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
+import { ReviewTestAttemptDto } from './dto/review-test-attempt.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
 import { ResumeAttemptDto } from './dto/resume-attempt.dto';
@@ -1836,6 +1837,109 @@ export class AttemptsService {
     return answersheet;
   }
  
+  async reviewTestAttempt(testId: string, reviewDto: ReviewTestAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
+    // Get test information
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Find the attempt based on allowResubmission and gradingType logic
+    let attempt: TestAttempt | null = null;
+
+    if (test.allowResubmission) {
+      // For tests with allowResubmission, find the existing attempt
+      attempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId: reviewDto.userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { attempt: 'DESC' }, // Get the most recent attempt
+      });
+    } else {
+      // For tests without allowResubmission, find the most recent submitted attempt
+      attempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId: reviewDto.userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: AttemptStatus.SUBMITTED
+        },
+        order: { attempt: 'DESC' }, // Get the most recent attempt
+      });
+    }
+
+    if (!attempt) {
+      throw new NotFoundException('No attempt found for review');
+    }
+
+    // Validate attempt status - should be submitted for review
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new BadRequestException('Only submitted attempts can be reviewed');
+    }
+
+    // Get all answers for this attempt to validate and update
+    const attemptAnswers = await this.testUserAnswerRepository
+      .createQueryBuilder('answer')
+      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
+      .where('answer.attemptId = :attemptId', { attemptId: attempt.attemptId })
+      .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .getMany();
+
+    // Update scores for reviewed answers
+    for (const answerReview of reviewDto.answers) {
+
+      const existingAnswer = attemptAnswers.find(
+        answer => answer.questionId === answerReview.questionId
+      );
+
+      if (existingAnswer) {
+        // Update the answer with review score
+        existingAnswer.score = Number(answerReview.score) || 0;
+        existingAnswer.reviewStatus = AnswerReviewStatus.REVIEWED;
+        existingAnswer.reviewedAt = new Date();
+        existingAnswer.reviewedBy = authContext.userId;
+        
+        if (answerReview.remarks) {
+          existingAnswer.remarks = answerReview.remarks;
+        }
+
+        await this.testUserAnswerRepository.save(existingAnswer);
+      }
+      else
+      {
+        throw new NotFoundException('User answers not found');
+      }
+    }
+
+    const totalScore = await this.calculateTotalAttemptScore(attempt.attemptId, authContext);
+
+    // Determine result based on passing marks
+    const result = totalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+
+    // Update attempt with new score and result
+    attempt.score = Number(totalScore) || 0;
+    attempt.result = result;
+    attempt.reviewStatus = ReviewStatus.REVIEWED;
+    attempt.updatedBy = authContext.userId;
+
+    const savedAttempt = await this.attemptRepository.save(attempt);
+
+    return savedAttempt;
+  }
+
   private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
     await this.pluginManager.triggerEvent(
       eventName,
