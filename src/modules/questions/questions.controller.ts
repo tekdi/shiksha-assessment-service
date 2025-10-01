@@ -16,6 +16,7 @@ import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionDto } from './dto/query-question.dto';
 import { RulePreviewDto } from './dto/rule-preview.dto';
+import { CreateQuestionAssociationDto } from './dto/create-question-association.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
