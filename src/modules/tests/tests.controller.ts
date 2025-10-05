@@ -103,7 +103,7 @@ export class TestsController {
     const authContext: AuthContext = req.user;
     // showCorrectOptions is true as we want to show correct options to the user
     let showCorrectOptions = true;
-    return this.testsService.getTestHierarchy(id, showCorrectOptions, authContext);
+    return this.testsService.getTestHierarchyAdmin(id, showCorrectOptions, authContext);
   }
 
   @Patch(':id')
