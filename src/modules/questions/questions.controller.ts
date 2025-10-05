@@ -143,41 +143,14 @@ export class QuestionsController {
   @ApiResponse({
     status: 201,
     description: 'Question successfully associated with option',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: true },
-        message: { type: 'string', example: 'Question successfully associated with option' },
-        data: { type: 'object', nullable: true },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   @ApiResponse({
     status: 400,
     description: 'Bad request - validation failed or association already exists',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: false },
-        message: { type: 'string', example: 'Question parentId must match the option\'s questionId' },
-        errors: { type: 'array', items: { type: 'string' } },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   @ApiResponse({
     status: 404,
     description: 'Question or option not found',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: false },
-        message: { type: 'string', example: 'Question not found' },
-        errors: { type: 'array', items: { type: 'string' } },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   async associateQuestionWithOption(@Body() associateDto: AssociateQuestionOptionDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
@@ -207,28 +180,10 @@ export class QuestionsController {
   @ApiResponse({
     status: 200,
     description: 'Question successfully disassociated from option',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: true },
-        message: { type: 'string', example: 'Question successfully disassociated from option' },
-        data: { type: 'object', nullable: true },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   @ApiResponse({
     status: 404,
     description: 'Association not found',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: false },
-        message: { type: 'string', example: 'Question-option association not found' },
-        errors: { type: 'array', items: { type: 'string' } },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   async removeQuestionOptionAssociation(@Body() associateDto: AssociateQuestionOptionDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
@@ -254,66 +209,10 @@ export class QuestionsController {
   @ApiResponse({
     status: 200,
     description: 'Child questions retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: true },
-        message: { type: 'string', example: 'Child questions retrieved successfully' },
-        data: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              questionId: { type: 'string', example: 'q-123e4567-e89b-12d3-a456-426614174000' },
-              text: { type: 'string', example: 'What additional information would you like to provide?' },
-              type: { type: 'string', example: 'mcq' },
-              marks: { type: 'number', example: 2 },
-              parentId: { type: 'string', example: 'parent-q-123e4567-e89b-12d3-a456-426614174000' },
-              status: { type: 'string', example: 'draft' },
-              associatedOptionIds: { 
-                type: 'array', 
-                items: { type: 'string' },
-                example: ['opt-123e4567-e89b-12d3-a456-426614174000', 'opt-223e4567-e89b-12d3-a456-426614174001']
-              },
-              options: { 
-                type: 'array', 
-                items: { type: 'object' },
-                description: 'Question options (if includeOptions=true)'
-              },
-              associatedOptions: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    optionId: { type: 'string' },
-                    optionText: { type: 'string' },
-                    ordering: { type: 'number' },
-                    isActive: { type: 'boolean' }
-                  }
-                },
-                description: 'Associated option details (if includeAssociatedOptions=true)'
-              },
-              createdAt: { type: 'string', format: 'date-time' },
-              updatedAt: { type: 'string', format: 'date-time' }
-            }
-          }
-        },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   @ApiResponse({
     status: 404,
     description: 'Parent question not found',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: false },
-        message: { type: 'string', example: 'Parent question not found' },
-        errors: { type: 'array', items: { type: 'string' } },
-        timestamp: { type: 'string', format: 'date-time' }
-      }
-    }
   })
   async getChildQuestions(
     @Param('id') parentQuestionId: string,
