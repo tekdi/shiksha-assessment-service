@@ -18,6 +18,7 @@ import { QueryQuestionDto } from './dto/query-question.dto';
 import { RulePreviewDto } from './dto/rule-preview.dto';
 import { CreateQuestionAssociationDto } from './dto/create-question-association.dto';
 import { AssociateQuestionOptionDto } from './dto/associate-question-option.dto';
+import { GetChildQuestionsQueryDto, ChildQuestionDto } from './dto/get-child-questions.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
@@ -241,6 +242,96 @@ export class QuestionsController {
       success: true,
       message: 'Question successfully disassociated from option',
       data: null,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  @Get(':id/child-questions')
+  @ApiOperation({
+    summary: 'Get child questions of a parent question',
+    description: 'Retrieves all conditional child questions associated with a parent question'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Child questions retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Child questions retrieved successfully' },
+        data: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              questionId: { type: 'string', example: 'q-123e4567-e89b-12d3-a456-426614174000' },
+              text: { type: 'string', example: 'What additional information would you like to provide?' },
+              type: { type: 'string', example: 'mcq' },
+              marks: { type: 'number', example: 2 },
+              parentId: { type: 'string', example: 'parent-q-123e4567-e89b-12d3-a456-426614174000' },
+              status: { type: 'string', example: 'draft' },
+              associatedOptionIds: { 
+                type: 'array', 
+                items: { type: 'string' },
+                example: ['opt-123e4567-e89b-12d3-a456-426614174000', 'opt-223e4567-e89b-12d3-a456-426614174001']
+              },
+              options: { 
+                type: 'array', 
+                items: { type: 'object' },
+                description: 'Question options (if includeOptions=true)'
+              },
+              associatedOptions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    optionId: { type: 'string' },
+                    optionText: { type: 'string' },
+                    ordering: { type: 'number' },
+                    isActive: { type: 'boolean' }
+                  }
+                },
+                description: 'Associated option details (if includeAssociatedOptions=true)'
+              },
+              createdAt: { type: 'string', format: 'date-time' },
+              updatedAt: { type: 'string', format: 'date-time' }
+            }
+          }
+        },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Parent question not found',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: false },
+        message: { type: 'string', example: 'Parent question not found' },
+        errors: { type: 'array', items: { type: 'string' } },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  async getChildQuestions(
+    @Param('id') parentQuestionId: string,
+    @Query() queryDto: GetChildQuestionsQueryDto,
+    @Req() req: any
+  ) {
+    const authContext: AuthContext = req.user;
+    const childQuestions = await this.questionsService.getChildQuestions(
+      parentQuestionId,
+      authContext,
+      queryDto.includeOptions,
+      queryDto.includeAssociatedOptions
+    );
+    
+    return {
+      success: true,
+      message: 'Child questions retrieved successfully',
+      data: childQuestions,
       timestamp: new Date().toISOString()
     };
   }

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, QueryRunner, IsNull, Not } from 'typeorm';
+import { Repository, QueryRunner, IsNull, Not, In } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -1170,6 +1170,129 @@ export class QuestionsService {
 
     // Invalidate cache
     await this.invalidateQuestionCache(authContext.tenantId);
+  }
+
+  /**
+   * Gets all child questions of a parent question
+   * @param parentQuestionId - The ID of the parent question
+   * @param authContext - Authentication context
+   * @param includeOptions - Whether to include question options
+   * @param includeAssociatedOptions - Whether to include associated option details
+   * @returns Promise<ChildQuestionDto[]>
+   */
+  async getChildQuestions(
+    parentQuestionId: string, 
+    authContext: AuthContext,
+    includeOptions: boolean = true,
+    includeAssociatedOptions: boolean = true
+  ): Promise<any[]> {
+    // Validate that the parent question exists
+    const parentQuestion = await this.questionRepository.findOne({
+      where: {
+        questionId: parentQuestionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!parentQuestion) {
+      throw new NotFoundException('Parent question not found');
+    }
+
+    // Get all child questions (questions with parentId matching the parent question)
+    const childQuestions = await this.questionRepository.find({
+      where: {
+        parentId: parentQuestionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (childQuestions.length === 0) {
+      return [];
+    }
+
+    // Get option-question associations for all child questions
+    const childQuestionIds = childQuestions.map(q => q.questionId);
+    const optionAssociations = await this.optionQuestionRepository.find({
+      where: {
+        questionId: In(childQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      relations: includeAssociatedOptions ? ['option'] : [],
+    });
+
+    // Group associations by question ID
+    const associationsByQuestion = new Map<string, any[]>();
+    optionAssociations.forEach(assoc => {
+      if (!associationsByQuestion.has(assoc.questionId)) {
+        associationsByQuestion.set(assoc.questionId, []);
+      }
+      associationsByQuestion.get(assoc.questionId)!.push(assoc);
+    });
+
+    // Get question options if requested
+    let questionOptions: any[] = [];
+    if (includeOptions) {
+      questionOptions = await this.questionOptionRepository.find({
+        where: {
+          questionId: In(childQuestionIds),
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { ordering: 'ASC' },
+      });
+    }
+
+    // Group options by question ID
+    const optionsByQuestion = new Map<string, any[]>();
+    questionOptions.forEach(option => {
+      if (!optionsByQuestion.has(option.questionId)) {
+        optionsByQuestion.set(option.questionId, []);
+      }
+      optionsByQuestion.get(option.questionId)!.push(option);
+    });
+
+    // Build the response
+    const result = childQuestions.map(question => {
+      const associations = associationsByQuestion.get(question.questionId) || [];
+      const options = optionsByQuestion.get(question.questionId) || [];
+      
+      const childQuestionDto: any = {
+        questionId: question.questionId,
+        text: question.text,
+        type: question.type,
+        marks: question.marks,
+        parentId: question.parentId,
+        status: question.status,
+        createdAt: question.createdAt,
+        updatedAt: question.updatedAt,
+      };
+
+      // Only include associatedOptionIds if includeAssociatedOptions is false
+      if (!includeAssociatedOptions) {
+        childQuestionDto.associatedOptionIds = associations.map(assoc => assoc.optionId);
+      }
+
+      if (includeOptions) {
+        childQuestionDto.options = options;
+      }
+
+      if (includeAssociatedOptions) {
+        childQuestionDto.associatedOptions = associations.map(assoc => ({
+          optionId: assoc.optionId,
+          optionText: assoc.option?.text || null,
+          ordering: assoc.ordering,
+          isActive: assoc.isActive,
+        }));
+      }
+
+      return childQuestionDto;
+    });
+
+    return result;
   }
 
 
