@@ -29,6 +29,10 @@ export class ReviewTestAttemptDto {
   userId: string;
 
   @ApiPropertyOptional()
+  @IsUUID()
+  testId: string;
+
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   overallRemarks?: string;

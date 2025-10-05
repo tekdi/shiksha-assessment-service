@@ -144,19 +144,18 @@ export class AttemptsController {
   }
 
 
-  @Post('review/:testId')
+  @Post('review')
   @ApiOperation({ 
     summary: 'Review a test attempt by testId',
     description: 'Find the attempt for the given testId based on allowResubmission and gradingType, then review and score the attempt'
   })
   @ApiResponse({ status: 200, description: 'Attempt reviewed successfully', type: ApiSuccessResponseDto })
   async reviewTestAttempt(
-    @Param('testId') testId: string,
     @Body() reviewDto: ReviewTestAttemptDto,
     @Req() req: any,
   ) {
     const authContext: AuthContext = req.user;
-    const attempt = await this.attemptsService.reviewTestAttempt(testId, reviewDto, authContext);
+    const attempt = await this.attemptsService.reviewTestAttempt(reviewDto.testId, reviewDto, authContext);
     return { 
       attemptId: attempt.attemptId, 
       score: attempt.score,
