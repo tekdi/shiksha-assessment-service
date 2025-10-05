@@ -40,18 +40,17 @@ export class QuestionsService {
     private readonly orderingService: OrderingService,
   ) {}
 
-  async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
-    const { options, testId, sectionId, isCompulsory, optionId, parentId, ...questionData } = createQuestionDto;
-    
-    // Validate input parameters first
-    if (testId && !sectionId) {
-      throw new BadRequestException('sectionId is required when testId is provided');
-    }
-    if (!testId && sectionId) {
-      throw new BadRequestException('testId is required when sectionId is provided');
-    }
-
-    // Validate conditional question parameters
+  /**
+   * Validates conditional question parameters
+   * @param optionId - The option ID to validate
+   * @param parentId - The parent question ID to validate
+   * @param authContext - Authentication context
+   */
+  private async validateConditionalQuestionParameters(
+    optionId: string | undefined,
+    parentId: string | undefined,
+    authContext: AuthContext
+  ): Promise<void> {
     if (optionId && !parentId) {
       throw new BadRequestException('parentQuestionId is required when optionId is provided');
     }
@@ -81,6 +80,21 @@ export class QuestionsService {
         throw new BadRequestException('Option does not belong to the specified parent question');
       }
     }
+  }
+
+  async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
+    const { options, testId, sectionId, isCompulsory, optionId, parentId, ...questionData } = createQuestionDto;
+    
+    // Validate input parameters first
+    if (testId && !sectionId) {
+      throw new BadRequestException('sectionId is required when testId is provided');
+    }
+    if (!testId && sectionId) {
+      throw new BadRequestException('testId is required when sectionId is provided');
+    }
+
+    // Validate conditional question parameters
+    await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
 
     // Validate question data (includes duplicate text check)
     await this.validateQuestionData(createQuestionDto, authContext);
@@ -379,35 +393,7 @@ export class QuestionsService {
     const { options, optionId, parentId, ...questionData } = updateQuestionDto;
 
     // Validate conditional question parameters
-    if (optionId && !parentId) {
-      throw new BadRequestException('parentQuestionId is required when optionId is provided');
-    }
-    if (parentId && optionId) {
-      // Validate that the parent question exists
-      const parentQuestion = await this.questionRepository.findOne({
-        where: {
-          questionId: parentId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
-      if (!parentQuestion) {
-        throw new NotFoundException('Parent question not found');
-      }
-
-      // Validate that the option belongs to the parent question
-      const option = await this.questionOptionRepository.findOne({
-        where: {
-          questionOptionId: optionId,
-          questionId: parentId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
-      if (!option) {
-        throw new BadRequestException('Option does not belong to the specified parent question');
-      }
-    }
+    await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
 
     // Create a merged DTO for validation
     const mergedDto = { ...question, ...updateQuestionDto };

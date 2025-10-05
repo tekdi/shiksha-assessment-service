@@ -52,6 +52,179 @@ export class TestsService {
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Common logic for fetching test hierarchy data
+   * @param id - Test ID
+   * @param authContext - Authentication context
+   * @returns Promise<{test: Test, testQuestions: TestQuestion[], questionsMap: Map<string, Question>, childQuestionsByParent: Map<string, Question[]>}>
+   */
+  private async fetchTestHierarchyData(id: string, authContext: AuthContext) {
+    // First, get the test with sections
+    const test = await this.testRepository.findOne({
+      where: {
+        testId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
+      },
+      relations: ['sections'],
+      order: {
+        sections: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Then, get test questions with explicit field selection
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      select: [
+        'testQuestionId',
+        'tenantId',
+        'organisationId',
+        'testId',
+        'questionId',
+        'ordering',
+        'sectionId',
+        'ruleId',
+        'isCompulsory',
+        'isConditional'
+      ],
+      order: { ordering: 'ASC' },
+    });
+
+    // Group test questions by section, filtering out conditional questions
+    const questionsBySection = new Map<string, any[]>();
+    testQuestions
+      .filter(tq => !tq.isConditional) // Filter out conditional questions
+      .forEach(tq => {
+        if (!questionsBySection.has(tq.sectionId)) {
+          questionsBySection.set(tq.sectionId, []);
+        }
+        questionsBySection.get(tq.sectionId)!.push(tq);
+      });
+
+    // Attach filtered test questions to sections
+    test.sections.forEach(section => {
+      section.questions = questionsBySection.get(section.sectionId) || [];
+    });
+
+    // Extract question IDs from test questions, filtering out conditional questions
+    const questionIds = testQuestions
+      .filter(testQuestion => !testQuestion.isConditional) // Filter out conditional questions
+      .map(testQuestion => testQuestion.questionId);
+
+    if (questionIds.length === 0) {
+      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map() };
+    }
+
+    // Fetch only parent questions (non-conditional) with options
+    const questions = await this.questionRepository.find({
+      where: { 
+        questionId: In(questionIds),
+        parentId: IsNull() // Only fetch parent questions
+      },
+      relations: ['options'],
+      order: {
+        options: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    // Create a map for quick lookup
+    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Fetch all child questions for conditional display
+    const childQuestions = await this.questionRepository.find({
+      where: { 
+        parentId: Not(IsNull()) // Only fetch child questions
+      },
+      relations: ['options'],
+      order: {
+        options: {
+          ordering: 'ASC',
+        },
+      },
+    });
+    
+    // Create a map of child questions by parent ID
+    const childQuestionsByParent = new Map<string, any[]>();
+    childQuestions.forEach(child => {
+      if (!childQuestionsByParent.has(child.parentId!)) {
+        childQuestionsByParent.set(child.parentId!, []);
+      }
+      childQuestionsByParent.get(child.parentId!)!.push(child);
+    });
+
+    return { test, testQuestions, questionsMap, childQuestionsByParent };
+  }
+
+  /**
+   * Common logic for transforming and attaching questions to test hierarchy
+   * @param test - Test object with sections
+   * @param questionsMap - Map of questions by ID
+   * @param childQuestionsByParent - Map of child questions by parent ID
+   * @param showCorrectOptions - Whether to show correct options
+   * @param authContext - Authentication context
+   * @param transformMethod - Method to use for transformation
+   */
+  private async transformAndAttachQuestions(
+    test: Test,
+    questionsMap: Map<string, Question>,
+    childQuestionsByParent: Map<string, Question[]>,
+    showCorrectOptions: boolean,
+    authContext: AuthContext,
+    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>) => Promise<any>
+  ) {
+    // Transform questions and attach to test questions
+    for (const section of test.sections) {
+      for (const testQuestion of section.questions) {
+        // Skip conditional questions as they should not appear in main structure
+        if (testQuestion.isConditional) {
+          continue;
+        }
+        
+        const question = questionsMap.get(testQuestion.questionId);
+        if (question) {
+
+          // Transform the question data with conditional child questions
+          const transformedQuestion = await transformMethod(
+            question, 
+            showCorrectOptions, 
+            authContext,
+            childQuestionsByParent
+          );
+
+          // For matching questions, add a separate array of matchWith options
+          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
+            const matchWithOptions = question.options
+              .filter(opt => opt.matchWith) // Only include options that have matchWith
+              .map(opt => ({
+                matchWith: opt.matchWith,
+                matchWithMedia: opt.matchWithMedia,
+                ordering: opt.ordering,
+              }))
+              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
+
+            (transformedQuestion as any).matchWithOptions = matchWithOptions;
+          }
+
+          // Replace the test question with the complete question data
+          Object.assign(testQuestion, transformedQuestion);
+        }
+      }
+    }
+  }
+
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
    
      // Generate a simple alias from the title if none provided
@@ -257,300 +430,36 @@ export class TestsService {
   // Learner view
 
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
-    // First, get the test with sections
-    const test = await this.testRepository.findOne({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        status: Not(TestStatus.ARCHIVED)
-      },
-      relations: ['sections'],
-      order: {
-        sections: {
-          ordering: 'ASC',
-        },
-      },
-    });
+    // Fetch common test hierarchy data
+    const { test, questionsMap, childQuestionsByParent } = await this.fetchTestHierarchyData(id, authContext);
 
-    if (!test) {
-      throw new NotFoundException('Test not found');
-    }
-
-    // Then, get test questions with explicit field selection
-    const testQuestions = await this.testQuestionRepository.find({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      select: [
-        'testQuestionId',
-        'tenantId',
-        'organisationId',
-        'testId',
-        'questionId',
-        'ordering',
-        'sectionId',
-        'ruleId',
-        'isCompulsory',
-        'isConditional'
-      ],
-      order: { ordering: 'ASC' },
-    });
-
-    // Group test questions by section, filtering out conditional questions
-    const questionsBySection = new Map<string, any[]>();
-    testQuestions
-      .filter(tq => !tq.isConditional) // Filter out conditional questions
-      .forEach(tq => {
-        if (!questionsBySection.has(tq.sectionId)) {
-          questionsBySection.set(tq.sectionId, []);
-        }
-        questionsBySection.get(tq.sectionId)!.push(tq);
-      });
-
-    // Attach filtered test questions to sections
-    test.sections.forEach(section => {
-      section.questions = questionsBySection.get(section.sectionId) || [];
-    });
-
-    // Extract question IDs from test questions, filtering out conditional questions
-    const questionIds = testQuestions
-      .filter(testQuestion => !testQuestion.isConditional) // Filter out conditional questions
-      .map(testQuestion => testQuestion.questionId);
-
-    if (questionIds.length === 0) {
-      return test;
-    }
-
-    // Fetch only parent questions (non-conditional) with options
-    const questions = await this.questionRepository.find({
-      where: { 
-        questionId: In(questionIds),
-        parentId: IsNull() // Only fetch parent questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
-
-    // Create a map for quick lookup
-    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Fetch all child questions for conditional display
-    const childQuestions = await this.questionRepository.find({
-      where: { 
-        parentId: Not(IsNull()) // Only fetch child questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
-    
-    // Create a map of child questions by parent ID
-    const childQuestionsByParent = new Map<string, any[]>();
-    childQuestions.forEach(child => {
-      if (!childQuestionsByParent.has(child.parentId!)) {
-        childQuestionsByParent.set(child.parentId!, []);
-      }
-      childQuestionsByParent.get(child.parentId!)!.push(child);
-    });
-
-    // Transform questions and attach to test questions
-    for (const section of test.sections) {
-      for (const testQuestion of section.questions) {
-        // Skip conditional questions as they should not appear in main structure
-        if (testQuestion.isConditional) {
-          continue;
-        }
-        
-        const question = questionsMap.get(testQuestion.questionId);
-        if (question) {
-
-          // Transform the question data with conditional child questions
-          const transformedQuestion = await this.transformQuestionWithConditionals(
-            question, 
-            showCorrectOptions, 
-            authContext,
-            childQuestionsByParent
-          );
-
-          // For matching questions, add a separate array of matchWith options
-          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
-            const matchWithOptions = question.options
-              .filter(opt => opt.matchWith) // Only include options that have matchWith
-              .map(opt => ({
-                matchWith: opt.matchWith,
-                matchWithMedia: opt.matchWithMedia,
-                ordering: opt.ordering,
-              }))
-              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
-
-            (transformedQuestion as any).matchWithOptions = matchWithOptions;
-          }
-
-          // Replace the test question with the complete question data
-          Object.assign(testQuestion, transformedQuestion);
-        }
-      }
-    }
+    // Transform and attach questions using learner transformation method
+    await this.transformAndAttachQuestions(
+      test,
+      questionsMap,
+      childQuestionsByParent,
+      showCorrectOptions,
+      authContext,
+      this.transformQuestionWithConditionals.bind(this)
+    );
 
     return test;
   }
 
   // Admin view
   async getTestHierarchyAdmin(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
-    // First, get the test with sections
-    const test = await this.testRepository.findOne({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        status: Not(TestStatus.ARCHIVED)
-      },
-      relations: ['sections'],
-      order: {
-        sections: {
-          ordering: 'ASC',
-        },
-      },
-    });
+    // Fetch common test hierarchy data
+    const { test, questionsMap, childQuestionsByParent } = await this.fetchTestHierarchyData(id, authContext);
 
-    if (!test) {
-      throw new NotFoundException('Test not found');
-    }
-
-    // Then, get test questions with explicit field selection
-    const testQuestions = await this.testQuestionRepository.find({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      select: [
-        'testQuestionId',
-        'tenantId',
-        'organisationId',
-        'testId',
-        'questionId',
-        'ordering',
-        'sectionId',
-        'ruleId',
-        'isCompulsory',
-        'isConditional'
-      ],
-      order: { ordering: 'ASC' },
-    });
-
-    // Group test questions by section, filtering out conditional questions
-    const questionsBySection = new Map<string, any[]>();
-    testQuestions
-      .filter(tq => !tq.isConditional) // Filter out conditional questions
-      .forEach(tq => {
-        if (!questionsBySection.has(tq.sectionId)) {
-          questionsBySection.set(tq.sectionId, []);
-        }
-        questionsBySection.get(tq.sectionId)!.push(tq);
-      });
-
-    // Attach filtered test questions to sections
-    test.sections.forEach(section => {
-      section.questions = questionsBySection.get(section.sectionId) || [];
-    });
-
-    // Extract question IDs from test questions, filtering out conditional questions
-    const questionIds = testQuestions
-      .filter(testQuestion => !testQuestion.isConditional) // Filter out conditional questions
-      .map(testQuestion => testQuestion.questionId);
-
-    if (questionIds.length === 0) {
-      return test;
-    }
-
-    // Fetch only parent questions (non-conditional) with options
-    const questions = await this.questionRepository.find({
-      where: { 
-        questionId: In(questionIds),
-        parentId: IsNull() // Only fetch parent questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
-
-    // Create a map for quick lookup
-    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Fetch all child questions for conditional display
-    const childQuestions = await this.questionRepository.find({
-      where: { 
-        parentId: Not(IsNull()) // Only fetch child questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
-    
-    // Create a map of child questions by parent ID
-    const childQuestionsByParent = new Map<string, any[]>();
-    childQuestions.forEach(child => {
-      if (!childQuestionsByParent.has(child.parentId!)) {
-        childQuestionsByParent.set(child.parentId!, []);
-      }
-      childQuestionsByParent.get(child.parentId!)!.push(child);
-    });
-
-    // Transform questions and attach to test questions
-    for (const section of test.sections) {
-      for (const testQuestion of section.questions) {
-        // Skip conditional questions as they should not appear in main structure
-        if (testQuestion.isConditional) {
-          continue;
-        }
-        
-        const question = questionsMap.get(testQuestion.questionId);
-        if (question) {
-
-          // Transform the question data with conditional child questions
-          const transformedQuestion = await this.transformQuestionWithConditionalsAdmin(
-            question, 
-            showCorrectOptions, 
-            authContext,
-            childQuestionsByParent
-          );
-
-          // For matching questions, add a separate array of matchWith options
-          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
-            const matchWithOptions = question.options
-              .filter(opt => opt.matchWith) // Only include options that have matchWith
-              .map(opt => ({
-                matchWith: opt.matchWith,
-                matchWithMedia: opt.matchWithMedia,
-                ordering: opt.ordering,
-              }))
-              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
-
-            (transformedQuestion as any).matchWithOptions = matchWithOptions;
-          }
-
-          // Replace the test question with the complete question data
-          Object.assign(testQuestion, transformedQuestion);
-        }
-      }
-    }
+    // Transform and attach questions using admin transformation method
+    await this.transformAndAttachQuestions(
+      test,
+      questionsMap,
+      childQuestionsByParent,
+      showCorrectOptions,
+      authContext,
+      this.transformQuestionWithConditionalsAdmin.bind(this)
+    );
 
     return test;
   }
