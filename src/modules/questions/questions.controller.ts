@@ -17,6 +17,7 @@ import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionDto } from './dto/query-question.dto';
 import { RulePreviewDto } from './dto/rule-preview.dto';
 import { CreateQuestionAssociationDto } from './dto/create-question-association.dto';
+import { AssociateQuestionOptionDto } from './dto/associate-question-option.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
@@ -128,4 +129,119 @@ export class QuestionsController {
     const authContext: AuthContext = req.user;
     return this.questionsService.getQuestionsForRulePreview(ruleCriteria, authContext);
   }
-} 
+
+  @Post('associate-option')
+  @ApiOperation({
+    summary: 'Associate a question with an option',
+    description: 'Creates a conditional question relationship by associating a question with an option'
+  })
+  @ApiBody({
+    type: AssociateQuestionOptionDto,
+    description: 'Question and option IDs for association'
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Question successfully associated with option',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Question successfully associated with option' },
+        data: { type: 'object', nullable: true },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation failed or association already exists',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: false },
+        message: { type: 'string', example: 'Question parentId must match the option\'s questionId' },
+        errors: { type: 'array', items: { type: 'string' } },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Question or option not found',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: false },
+        message: { type: 'string', example: 'Question not found' },
+        errors: { type: 'array', items: { type: 'string' } },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  async associateQuestionWithOption(@Body() associateDto: AssociateQuestionOptionDto, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    await this.questionsService.associateQuestionWithOption(
+      associateDto.questionId,
+      associateDto.optionId,
+      authContext
+    );
+    
+    return {
+      success: true,
+      message: 'Question successfully associated with option',
+      data: null,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  @Post('disassociate-option')
+  @ApiOperation({
+    summary: 'Remove association between a question and an option',
+    description: 'Removes the conditional question relationship between a question and an option'
+  })
+  @ApiBody({
+    type: AssociateQuestionOptionDto,
+    description: 'Question and option IDs for disassociation'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Question successfully disassociated from option',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        message: { type: 'string', example: 'Question successfully disassociated from option' },
+        data: { type: 'object', nullable: true },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Association not found',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: false },
+        message: { type: 'string', example: 'Question-option association not found' },
+        errors: { type: 'array', items: { type: 'string' } },
+        timestamp: { type: 'string', format: 'date-time' }
+      }
+    }
+  })
+  async removeQuestionOptionAssociation(@Body() associateDto: AssociateQuestionOptionDto, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    await this.questionsService.removeQuestionOptionAssociation(
+      associateDto.questionId,
+      associateDto.optionId,
+      authContext
+    );
+    
+    return {
+      success: true,
+      message: 'Question successfully disassociated from option',
+      data: null,
+      timestamp: new Date().toISOString()
+    };
+  }
+}

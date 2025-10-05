@@ -1056,5 +1056,121 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Associates a question with an option (creates conditional question relationship)
+   * @param questionId - The ID of the question to associate
+   * @param optionId - The ID of the option to associate with
+   * @param authContext - Authentication context
+   * @returns Promise<void>
+   */
+  async associateQuestionWithOption(questionId: string, optionId: string, authContext: AuthContext): Promise<void> {
+    // Validate that the question exists
+    const question = await this.questionRepository.findOne({
+      where: {
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
 
-} 
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    // Validate that the option exists
+    const option = await this.questionOptionRepository.findOne({
+      where: {
+        questionOptionId: optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!option) {
+      throw new NotFoundException('Option not found');
+    }
+
+    // Validate that the question's parentId matches the option's questionId
+    if (!question.parentId) {
+      throw new BadRequestException('Question must have a parentId to be associated with an option');
+    }
+
+    if (question.parentId !== option.questionId) {
+      throw new BadRequestException('Question parentId must match the option\'s questionId');
+    }
+
+    // Check if association already exists
+    const existingAssociation = await this.optionQuestionRepository.findOne({
+      where: {
+        questionId,
+        optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (existingAssociation) {
+      throw new BadRequestException('Question is already associated with this option');
+    }
+
+    // Create the association
+    const optionQuestion = new OptionQuestion();
+    optionQuestion.questionId = questionId;
+    optionQuestion.optionId = optionId;
+    optionQuestion.tenantId = authContext.tenantId;
+    optionQuestion.organisationId = authContext.organisationId;
+    optionQuestion.ordering = 0;
+    optionQuestion.isActive = true;
+
+    await this.optionQuestionRepository.save(optionQuestion);
+
+    // Update testQuestion isConditional flag if question is in any tests
+    await this.updateTestQuestionConditionalFlag(questionId, true, authContext);
+
+    // Invalidate cache
+    await this.invalidateQuestionCache(authContext.tenantId);
+  }
+
+  /**
+   * Removes association between a question and an option
+   * @param questionId - The ID of the question
+   * @param optionId - The ID of the option
+   * @param authContext - Authentication context
+   * @returns Promise<void>
+   */
+  async removeQuestionOptionAssociation(questionId: string, optionId: string, authContext: AuthContext): Promise<void> {
+    // Find the association
+    const association = await this.optionQuestionRepository.findOne({
+      where: {
+        questionId,
+        optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!association) {
+      throw new NotFoundException('Question-option association not found');
+    }
+
+    // Remove the association
+    await this.optionQuestionRepository.remove(association);
+
+    // Check if question has any remaining associations
+    const remainingAssociations = await this.optionQuestionRepository.count({
+      where: {
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Update testQuestion isConditional flag based on remaining associations
+    await this.updateTestQuestionConditionalFlag(questionId, remainingAssociations > 0, authContext);
+
+    // Invalidate cache
+    await this.invalidateQuestionCache(authContext.tenantId);
+  }
+
+
+}
