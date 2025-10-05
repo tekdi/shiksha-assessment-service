@@ -67,6 +67,19 @@ export class QuestionsService {
       if (!parentQuestion) {
         throw new NotFoundException('Parent question not found');
       }
+
+      // Validate that the option belongs to the parent question
+      const option = await this.questionOptionRepository.findOne({
+        where: {
+          questionOptionId: optionId,
+          questionId: parentId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!option) {
+        throw new BadRequestException('Option does not belong to the specified parent question');
+      }
     }
 
     // Validate question data (includes duplicate text check)
@@ -380,6 +393,19 @@ export class QuestionsService {
       });
       if (!parentQuestion) {
         throw new NotFoundException('Parent question not found');
+      }
+
+      // Validate that the option belongs to the parent question
+      const option = await this.questionOptionRepository.findOne({
+        where: {
+          questionOptionId: optionId,
+          questionId: parentId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!option) {
+        throw new BadRequestException('Option does not belong to the specified parent question');
       }
     }
 
