@@ -143,6 +143,23 @@ export class CreateQuestionOptionDto {
   @IsOptional()
   @IsBoolean()
   caseSensitive?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Whether this option has a child question',
+    example: false
+  })
+  @IsOptional()
+  @IsBoolean()
+  hasChildQuestion?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Child question to be created when this option is selected',
+    type: 'object'
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => Object)
+  childQuestion?: any;
 }
 
 export class CreateQuestionDto {
@@ -254,4 +271,20 @@ export class CreateQuestionDto {
   @IsOptional()
   @IsBoolean()
   isCompulsory?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'ID of the parent question (for conditional questions)',
+    example: 'q-123e4567-e89b-12d3-a456-426614174000'
+  })
+  @IsOptional()
+  @IsUUID()
+  parentId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID of the option that triggers this conditional question',
+    example: 'opt-123e4567-e89b-12d3-a456-426614174000'
+  })
+  @IsOptional()
+  @IsUUID()
+  optionId?: string;
 } 

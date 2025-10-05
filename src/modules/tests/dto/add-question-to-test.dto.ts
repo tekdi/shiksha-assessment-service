@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsUUID, IsOptional, IsBoolean } from 'class-validator';
 
 export class AddQuestionToTestDto {
@@ -24,4 +24,12 @@ export class AddQuestionToTestDto {
   @IsOptional()
   @IsBoolean()
   isCompulsory?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Whether this is a conditional question',
+    example: false
+  })
+  @IsOptional()
+  @IsBoolean()
+  isConditional?: boolean;
 } 

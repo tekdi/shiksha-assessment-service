@@ -5,9 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { QuestionOption } from './question-option.entity';
+import { OptionQuestion } from './option-question.entity';
 import { GradingType } from '../../tests/entities/test.entity';
 
 export enum QuestionType {
@@ -138,11 +141,7 @@ export class Question {
 
   @ApiProperty({ required: false })
   @Column({ type: 'uuid', nullable: true })
-  checkedOut: string;
-
-  @ApiProperty({ required: false })
-  @Column({ type: 'timestamp with time zone', nullable: true })
-  checkedOutTime: Date;
+  parentId: string;
 
   @ApiProperty()
   @Column({ type: 'uuid' })
@@ -163,6 +162,16 @@ export class Question {
   // Relations
   @OneToMany(() => QuestionOption, option => option.question)
   options: QuestionOption[];
+
+  @ManyToOne(() => Question, question => question.childQuestions)
+  @JoinColumn({ name: 'parentId' })
+  parent: Question;
+
+  @OneToMany(() => Question, question => question.parent)
+  childQuestions: Question[];
+
+  @OneToMany(() => OptionQuestion, optionQuestion => optionQuestion.question)
+  optionQuestions: OptionQuestion[];
 
   // Alias for compatibility with existing code
   get id(): string {
