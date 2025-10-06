@@ -1,14 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, QueryRunner } from 'typeorm';
+import { Repository, QueryRunner, IsNull, Not, In } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Question, QuestionStatus, QuestionType } from './entities/question.entity';
 import { QuestionOption } from './entities/question-option.entity';
+import { OptionQuestion } from './entities/option-question.entity';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionDto } from './dto/query-question.dto';
+import { CreateQuestionAssociationDto } from './dto/create-question-association.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestsService } from '../tests/tests.service';
 import { DataSource } from 'typeorm';
@@ -25,10 +27,14 @@ export class QuestionsService {
     private readonly questionRepository: Repository<Question>,
     @InjectRepository(QuestionOption)
     private readonly questionOptionRepository: Repository<QuestionOption>,
+    @InjectRepository(OptionQuestion)
+    private readonly optionQuestionRepository: Repository<OptionQuestion>,
     @InjectRepository(TestSection)
     private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Test)
     private readonly testRepository: Repository<Test>,
+    @InjectRepository(TestQuestion)
+    private readonly testQuestionRepository: Repository<TestQuestion>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly testsService: TestsService,
@@ -36,8 +42,50 @@ export class QuestionsService {
     private readonly orderingService: OrderingService,
   ) {}
 
+  /**
+   * Validates conditional question parameters
+   * @param optionId - The option ID to validate
+   * @param parentId - The parent question ID to validate
+   * @param authContext - Authentication context
+   */
+  private async validateConditionalQuestionParameters(
+    optionId: string | undefined,
+    parentId: string | undefined,
+    authContext: AuthContext
+  ): Promise<void> {
+    if (optionId && !parentId) {
+      throw new BadRequestException('parentQuestionId is required when optionId is provided');
+    }
+    if (parentId && optionId) {
+      // Validate that the parent question exists
+      const parentQuestion = await this.questionRepository.findOne({
+        where: {
+          questionId: parentId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!parentQuestion) {
+        throw new NotFoundException('Parent question not found');
+      }
+
+      // Validate that the option belongs to the parent question
+      const option = await this.questionOptionRepository.findOne({
+        where: {
+          questionOptionId: optionId,
+          questionId: parentId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!option) {
+        throw new BadRequestException('Option does not belong to the specified parent question');
+      }
+    }
+  }
+
   async create(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<Question> {
-    const { options, testId, sectionId, isCompulsory, ...questionData } = createQuestionDto;
+    const { options, testId, sectionId, isCompulsory, optionId, parentId, ...questionData } = createQuestionDto;
     
     // Validate input parameters first
     if (testId && !sectionId) {
@@ -46,6 +94,9 @@ export class QuestionsService {
     if (!testId && sectionId) {
       throw new BadRequestException('testId is required when sectionId is provided');
     }
+
+    // Validate conditional question parameters
+    await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
 
     // Validate question data (includes duplicate text check)
     await this.validateQuestionData(createQuestionDto, authContext);
@@ -97,14 +148,16 @@ export class QuestionsService {
     
    
     try {
-      // Create question
+      // Create question with parentId if provided
       const question = this.questionRepository.create({
         ...questionData,
+        parentId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
         createdBy: authContext.userId,
       });
       const savedQuestion = await queryRunner.manager.save(Question, question);
+      
       // Create options if provided
       if (options && options.length > 0) {
         const questionOptions = options.map(optionData =>
@@ -118,15 +171,29 @@ export class QuestionsService {
         await queryRunner.manager.save(QuestionOption, questionOptions);
       }
       
+      // Create option-question relationship if optionId is provided
+      if (optionId && savedQuestion.questionId) {
+        const optionQuestion = new OptionQuestion();
+        optionQuestion.optionId = optionId;
+        optionQuestion.questionId = savedQuestion.questionId;
+        optionQuestion.tenantId = authContext.tenantId;
+        optionQuestion.organisationId = authContext.organisationId;
+        optionQuestion.ordering = 0;
+        optionQuestion.isActive = true;
+        
+        await queryRunner.manager.save(OptionQuestion, optionQuestion);
+      }
+      
       if (testId && sectionId) {
         const testQuestionRepo = queryRunner.manager.getRepository(TestQuestion);
-        // Add question to test
+        // Add question to test with isConditional flag based on parentId
         const testQuestion = testQuestionRepo.create({
           testId,
           sectionId,
           questionId: savedQuestion.questionId,
           ordering: await this.orderingService.getNextQuestionOrderWithRunner(queryRunner, testId, sectionId, authContext),
           isCompulsory: isCompulsory || false,
+          isConditional: !!parentId, // Set isConditional based on whether question has parentId
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         });
@@ -325,7 +392,10 @@ export class QuestionsService {
 
   async update(id: string, updateQuestionDto: UpdateQuestionDto, authContext: AuthContext): Promise<Question> {
     const question = await this.findOne(id, authContext);
-    const { options, ...questionData } = updateQuestionDto;
+    const { options, optionId, parentId, ...questionData } = updateQuestionDto;
+
+    // Validate conditional question parameters
+    await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
 
     // Create a merged DTO for validation
     const mergedDto = { ...question, ...updateQuestionDto };
@@ -350,6 +420,7 @@ export class QuestionsService {
 
     Object.assign(question, {
       ...questionData,
+      parentId,
       updatedBy: authContext.userId,
     });
 
@@ -375,6 +446,30 @@ export class QuestionsService {
       }
     }
 
+    // Handle option-question relationship updates
+    if (optionId !== undefined) {
+      // Remove existing option-question relationships for this question
+      await this.optionQuestionRepository.delete({ questionId: id });
+      
+      // Create new relationship if optionId is provided
+      if (optionId) {
+        const optionQuestion = new OptionQuestion();
+        optionQuestion.optionId = optionId;
+        optionQuestion.questionId = id;
+        optionQuestion.tenantId = authContext.tenantId;
+        optionQuestion.organisationId = authContext.organisationId;
+        optionQuestion.ordering = 0;
+        optionQuestion.isActive = true;
+        
+        await this.optionQuestionRepository.save(optionQuestion);
+      }
+    }
+
+    // Update testQuestion isConditional flag if question is in any tests
+    if (parentId !== undefined) {
+      await this.updateTestQuestionConditionalFlag(id, !!parentId, authContext);
+    }
+
     // Invalidate cache
     await this.invalidateQuestionCache(authContext.tenantId);
     
@@ -392,6 +487,40 @@ export class QuestionsService {
     
     // Invalidate cache
     await this.invalidateQuestionCache(authContext.tenantId);
+  }
+
+  /**
+   * Updates the isConditional flag for a question in all tests
+   * @param questionId - ID of the question
+   * @param isConditional - Whether the question is conditional
+   * @param authContext - Authentication context
+   */
+  private async updateTestQuestionConditionalFlag(questionId: string, isConditional: boolean, authContext: AuthContext): Promise<void> {
+    try {
+      // Update all TestQuestion records for this question within the current tenant/organization
+      const updateResult = await this.testQuestionRepository.update(
+        {
+          questionId: questionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        {
+          isConditional: isConditional,
+        }
+      );
+
+      // Log the update for monitoring purposes
+      console.log(`Updated isConditional flag for question ${questionId} to ${isConditional} in ${updateResult.affected} test questions`);
+    } catch (error) {
+      // Log the error but don't throw to avoid breaking the main operation
+      console.error(`Failed to update isConditional flag for question ${questionId}:`, error);
+      
+      // In a production environment, you might want to:
+      // 1. Send this to a monitoring service
+      // 2. Queue a retry operation
+      // 3. Or throw the error if this is critical for data consistency
+      throw new Error(`Failed to update conditional flag for question ${questionId}: ${error.message}`);
+    }
   }
 
   /**
@@ -962,5 +1091,244 @@ export class QuestionsService {
     }
   }
 
+  /**
+   * Associates a question with an option (creates conditional question relationship)
+   * @param questionId - The ID of the question to associate
+   * @param optionId - The ID of the option to associate with
+   * @param authContext - Authentication context
+   * @returns Promise<void>
+   */
+  async associateQuestionWithOption(questionId: string, optionId: string, authContext: AuthContext): Promise<void> {
+    // Validate that the question exists
+    const question = await this.questionRepository.findOne({
+      where: {
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
 
-} 
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    // Validate that the option exists
+    const option = await this.questionOptionRepository.findOne({
+      where: {
+        questionOptionId: optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!option) {
+      throw new NotFoundException('Option not found');
+    }
+
+    // Validate that the question's parentId matches the option's questionId
+    if (!question.parentId) {
+      throw new BadRequestException('Question must have a parentId to be associated with an option');
+    }
+
+    if (question.parentId !== option.questionId) {
+      throw new BadRequestException('Question parentId must match the option\'s questionId');
+    }
+
+    // Check if association already exists
+    const existingAssociation = await this.optionQuestionRepository.findOne({
+      where: {
+        questionId,
+        optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (existingAssociation) {
+      throw new BadRequestException('Question is already associated with this option');
+    }
+
+    // Create the association
+    const optionQuestion = new OptionQuestion();
+    optionQuestion.questionId = questionId;
+    optionQuestion.optionId = optionId;
+    optionQuestion.tenantId = authContext.tenantId;
+    optionQuestion.organisationId = authContext.organisationId;
+    optionQuestion.ordering = 0;
+    optionQuestion.isActive = true;
+
+    await this.optionQuestionRepository.save(optionQuestion);
+
+    // Update testQuestion isConditional flag if question is in any tests
+    await this.updateTestQuestionConditionalFlag(questionId, true, authContext);
+
+    // Invalidate cache
+    await this.invalidateQuestionCache(authContext.tenantId);
+  }
+
+  /**
+   * Removes association between a question and an option
+   * @param questionId - The ID of the question
+   * @param optionId - The ID of the option
+   * @param authContext - Authentication context
+   * @returns Promise<void>
+   */
+  async removeQuestionOptionAssociation(questionId: string, optionId: string, authContext: AuthContext): Promise<void> {
+    // Find the association
+    const association = await this.optionQuestionRepository.findOne({
+      where: {
+        questionId,
+        optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!association) {
+      throw new NotFoundException('Question-option association not found');
+    }
+
+    // Remove the association
+    await this.optionQuestionRepository.remove(association);
+
+    // Check if question has any remaining associations
+    const remainingAssociations = await this.optionQuestionRepository.count({
+      where: {
+        questionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Update testQuestion isConditional flag based on remaining associations
+    await this.updateTestQuestionConditionalFlag(questionId, remainingAssociations > 0, authContext);
+
+    // Invalidate cache
+    await this.invalidateQuestionCache(authContext.tenantId);
+  }
+
+  /**
+   * Gets all child questions of a parent question
+   * @param parentQuestionId - The ID of the parent question
+   * @param authContext - Authentication context
+   * @param includeOptions - Whether to include question options
+   * @param includeAssociatedOptions - Whether to include associated option details
+   * @returns Promise<ChildQuestionDto[]>
+   */
+  async getChildQuestions(
+    parentQuestionId: string, 
+    authContext: AuthContext,
+    includeOptions: boolean = true,
+    includeAssociatedOptions: boolean = true
+  ): Promise<any[]> {
+    // Validate that the parent question exists
+    const parentQuestion = await this.questionRepository.findOne({
+      where: {
+        questionId: parentQuestionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!parentQuestion) {
+      throw new NotFoundException('Parent question not found');
+    }
+
+    // Get all child questions (questions with parentId matching the parent question)
+    const childQuestions = await this.questionRepository.find({
+      where: {
+        parentId: parentQuestionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (childQuestions.length === 0) {
+      return [];
+    }
+
+    // Get option-question associations for all child questions
+    const childQuestionIds = childQuestions.map(q => q.questionId);
+    const optionAssociations = await this.optionQuestionRepository.find({
+      where: {
+        questionId: In(childQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      relations: includeAssociatedOptions ? ['option'] : [],
+    });
+
+    // Group associations by question ID
+    const associationsByQuestion = new Map<string, any[]>();
+    optionAssociations.forEach(assoc => {
+      if (!associationsByQuestion.has(assoc.questionId)) {
+        associationsByQuestion.set(assoc.questionId, []);
+      }
+      associationsByQuestion.get(assoc.questionId)!.push(assoc);
+    });
+
+    // Get question options if requested
+    let questionOptions: any[] = [];
+    if (includeOptions) {
+      questionOptions = await this.questionOptionRepository.find({
+        where: {
+          questionId: In(childQuestionIds),
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { ordering: 'ASC' },
+      });
+    }
+
+    // Group options by question ID
+    const optionsByQuestion = new Map<string, any[]>();
+    questionOptions.forEach(option => {
+      if (!optionsByQuestion.has(option.questionId)) {
+        optionsByQuestion.set(option.questionId, []);
+      }
+      optionsByQuestion.get(option.questionId)!.push(option);
+    });
+
+    // Build the response
+    const result = childQuestions.map(question => {
+      const associations = associationsByQuestion.get(question.questionId) || [];
+      const options = optionsByQuestion.get(question.questionId) || [];
+      
+      const childQuestionDto: any = {
+        questionId: question.questionId,
+        text: question.text,
+        type: question.type,
+        marks: question.marks,
+        parentId: question.parentId,
+        status: question.status,
+        createdAt: question.createdAt,
+        updatedAt: question.updatedAt,
+      };
+
+      // Only include associatedOptionIds if includeAssociatedOptions is false
+      if (!includeAssociatedOptions) {
+        childQuestionDto.associatedOptionIds = associations.map(assoc => assoc.optionId);
+      }
+
+      if (includeOptions) {
+        childQuestionDto.options = options;
+      }
+
+      if (includeAssociatedOptions) {
+        childQuestionDto.associatedOptions = associations.map(assoc => ({
+          optionId: assoc.optionId,
+          optionText: assoc.option?.text || null,
+          ordering: assoc.ordering,
+          isActive: assoc.isActive,
+        }));
+      }
+
+      return childQuestionDto;
+    });
+
+    return result;
+  }
+
+
+}
