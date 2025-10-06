@@ -30,7 +30,7 @@ export class ConfigurationService  {
     private readonly cacheService: CacheService,
   ) {
     // Load LMS config
-    this.loadLmsConfig();
+    //this.loadLmsConfig();
   }
 
   /**
