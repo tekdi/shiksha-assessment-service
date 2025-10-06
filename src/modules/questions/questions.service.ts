@@ -185,6 +185,14 @@ export class QuestionsService {
       }
       
       if (testId && sectionId) {
+        const isTestObjective = await this.testsService.checkIfTestIsObjective(testId, authContext);
+
+        let isObjective = false;
+        if(isTestObjective && savedQuestion.type !== QuestionType.SUBJECTIVE && savedQuestion.type !== QuestionType.ESSAY) {
+          isObjective = true;
+        }
+
+        await this.testRepository.update(testId, { isObjective });
         const testQuestionRepo = queryRunner.manager.getRepository(TestQuestion);
         // Add question to test with isConditional flag based on parentId
         const testQuestion = testQuestionRepo.create({
