@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { AttemptsController } from './attempts.controller';
 import { AttemptsService } from './attempts.service';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
@@ -25,6 +26,7 @@ import { TestsModule } from '../tests/tests.module';
       Question,
       QuestionOption,
     ]),
+    ConfigModule,
     PluginModule,
     TestsModule,
   ],
