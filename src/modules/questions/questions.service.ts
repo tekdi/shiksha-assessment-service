@@ -33,6 +33,8 @@ export class QuestionsService {
     private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Test)
     private readonly testRepository: Repository<Test>,
+    @InjectRepository(TestQuestion)
+    private readonly testQuestionRepository: Repository<TestQuestion>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly testsService: TestsService,
@@ -494,10 +496,31 @@ export class QuestionsService {
    * @param authContext - Authentication context
    */
   private async updateTestQuestionConditionalFlag(questionId: string, isConditional: boolean, authContext: AuthContext): Promise<void> {
-    // Note: This would require access to TestQuestion repository
-    // For now, we'll skip this update as it's handled in the test service
-    // In a real implementation, you might want to inject TestQuestion repository
-    console.log(`Updating isConditional flag for question ${questionId} to ${isConditional}`);
+    try {
+      // Update all TestQuestion records for this question within the current tenant/organization
+      const updateResult = await this.testQuestionRepository.update(
+        {
+          questionId: questionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        {
+          isConditional: isConditional,
+        }
+      );
+
+      // Log the update for monitoring purposes
+      console.log(`Updated isConditional flag for question ${questionId} to ${isConditional} in ${updateResult.affected} test questions`);
+    } catch (error) {
+      // Log the error but don't throw to avoid breaking the main operation
+      console.error(`Failed to update isConditional flag for question ${questionId}:`, error);
+      
+      // In a production environment, you might want to:
+      // 1. Send this to a monitoring service
+      // 2. Queue a retry operation
+      // 3. Or throw the error if this is critical for data consistency
+      throw new Error(`Failed to update conditional flag for question ${questionId}: ${error.message}`);
+    }
   }
 
   /**
