@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Not } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
@@ -23,6 +25,8 @@ import { QuestionStatus } from '../questions/entities/question.entity';
 
 @Injectable()
 export class AttemptsService {
+  private readonly logger = new Logger(AttemptsService.name);
+
   constructor(
     @InjectRepository(TestAttempt)
     private readonly attemptRepository: Repository<TestAttempt>,
@@ -42,6 +46,7 @@ export class AttemptsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
+    private readonly configService: ConfigService,
   ) {}
 
   async startAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
@@ -995,9 +1000,14 @@ export class AttemptsService {
       // Calculate sum of all answers score
       const totalAnswersScore = await this.calculateTotalAttemptScore(attemptId, authContext);
       attempt.score = totalAnswersScore;
+      // check if the test have only objective questions that is question type is mcq or true_false, multiple_answer or match, fill_blank
+
       if (test.isObjective) {
         attempt.reviewStatus = ReviewStatus.REVIEWED;
         attempt.result = totalAnswersScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+        if(attempt.result === ResultType.PASS) {
+          await this.updateLmsTestProgress(attempt, authContext);
+        }
       } else {
         // Set review status to pending for manual review
         attempt.reviewStatus = ReviewStatus.PENDING;
@@ -1935,9 +1945,99 @@ export class AttemptsService {
     attempt.reviewStatus = ReviewStatus.REVIEWED;
     attempt.updatedBy = authContext.userId;
 
+    // Call LMS service to update test progress before saving attempt locally
+    const lmsUpdateSuccess = await this.updateLmsTestProgress(attempt, authContext);
+    
+    if (!lmsUpdateSuccess) {
+      this.logger.error(`Failed to update LMS service for attempt ${attempt.attemptId}, rolling back attempt update`);
+      throw new BadRequestException('Failed to update test progress in LMS service. Please try again.');
+    }
+
+    // Save attempt locally only after successful LMS update
     const savedAttempt = await this.attemptRepository.save(attempt);
 
     return savedAttempt;
+  }
+
+  /**
+   * Updates test progress in the LMS service
+   * @param attempt - The test attempt to update
+   * @param authContext - Authentication context
+   * @returns Promise<boolean> - Success status
+   */
+  private async updateLmsTestProgress(attempt: TestAttempt, authContext: AuthContext): Promise<boolean> {
+    try {
+      const lmsServiceUrl = this.configService.get<string>('LMS_SERVICE_URL');
+      
+      if (!lmsServiceUrl) {
+        this.logger.warn('LMS_SERVICE_URL not configured, skipping LMS update');
+        return true; // Return true to not block the process if LMS is not configured
+      }
+
+      const payload = {
+        testId: attempt.testId,
+        userId: attempt.userId,
+        score: attempt.score,
+        result: attempt.result,
+        reviewedBy: authContext.userId,
+      };
+
+      this.logger.log(`Updating LMS test progress for attempt ${attempt.attemptId}`, {
+        attemptId: attempt.attemptId,
+        testId: attempt.testId,
+        userId: attempt.userId,
+        score: attempt.score,
+        result: attempt.result,
+      });
+
+      const response = await axios.patch(lmsServiceUrl + '/course/tracking/update_test_progress', payload, {
+        timeout: 10000, // 10 second timeout
+        headers: {
+          'Content-Type': 'application/json',
+          'tenantId': authContext.tenantId,
+          'organisationId': authContext.organisationId,
+        },
+      });
+
+      // Check both HTTP status and API response status
+      if (response.status >= 200 && response.status < 300) {
+        const responseData = response.data;
+        
+        // Validate API response structure
+        if (responseData && responseData.params && responseData.params.status === 'successful') {
+          this.logger.log(`Successfully updated LMS test progress for attempt ${attempt.attemptId}`, {
+            attemptId: attempt.attemptId,
+            lessonTrackId: responseData.result?.lessonTrackId,
+            score: responseData.result?.score,
+            status: responseData.result?.status,
+            completionPercentage: responseData.result?.completionPercentage,
+          });
+          return true;
+        } else {
+          this.logger.error(`LMS API returned unsuccessful status`, {
+            attemptId: attempt.attemptId,
+            apiStatus: responseData.params?.status,
+            errorMessage: responseData.params?.errmsg,
+            responseCode: responseData.responseCode,
+          });
+          return false;
+        }
+      } else {
+        this.logger.error(`LMS service returned HTTP error status: ${response.status}`, {
+          attemptId: attempt.attemptId,
+          status: response.status,
+          response: response.data,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.logger.error(`Failed to update LMS test progress for attempt ${attempt.attemptId}`, {
+        attemptId: attempt.attemptId,
+        error: error.message,
+        stack: error.stack,
+      });
+      return false;
+    }
   }
 
   private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {

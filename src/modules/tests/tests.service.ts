@@ -749,6 +749,16 @@ export class TestsService {
     });
 
     await this.testQuestionRepository.save(testQuestion);
+    const isTestObjective = await this.checkIfTestIsObjective(testId, authContext);
+
+    let isObjective = false;
+    if(isTestObjective) {
+      isObjective = true;
+    }
+
+    await this.testRepository.update(testId, { isObjective });
+
+    
   }
 
   async addQuestionsBulkToTest(testId: string, sectionId: string, questions: Array<{ questionId: string; ordering?: number; isCompulsory?: boolean }>, authContext: AuthContext): Promise<{ added: number; skipped: number; errors: string[] }> {
@@ -855,6 +865,14 @@ export class TestsService {
         .execute();
       result.added = questionsToAdd.length;
     }
+
+    const isTestObjective = await this.checkIfTestIsObjective(testId, authContext);
+    let isObjective = false;
+    if(isTestObjective){
+      isObjective = true;
+    }
+
+    await this.testRepository.update(testId, { isObjective });
 
     return result;
   }
@@ -1980,5 +1998,44 @@ export class TestsService {
     }
   }
 
+  /**
+   * Check if a test contains only objective questions
+   * @param testId - The test ID to check
+   * @param authContext - Authentication context
+   * @returns Promise<boolean> - true if all questions are objective, false otherwise
+   */
+  async checkIfTestIsObjective(testId: string, authContext: AuthContext): Promise<boolean> {
+    try {
+      // Get all questions for this test through test questions
+      const testQuestions = await this.testQuestionRepository
+        .createQueryBuilder('tq')
+        .innerJoin('questions', 'q', 'q.questionId = tq.questionId')
+        .select('q.type')
+        .where('tq.testId = :testId', { testId })
+        .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+        .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+        .getRawMany();
+
+      if (testQuestions.length === 0) {
+        // If no questions found, consider it objective (edge case)
+        return true;
+      }
+
+      // Check if all questions are objective types
+      const objectiveTypes = [
+        QuestionType.MCQ,
+        QuestionType.TRUE_FALSE,
+        QuestionType.MULTIPLE_ANSWER,
+        QuestionType.FILL_BLANK,
+        QuestionType.MATCH
+      ];
+
+      return testQuestions.every(tq => objectiveTypes.includes(tq.type));
+    } catch (error) {
+      this.logger.error(`Error checking if test is objective: ${error.message}`, error.stack);
+      // Return false as safe default (requires manual review)
+      return false;
+    }
+  }
 
 } 
