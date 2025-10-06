@@ -81,8 +81,8 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  const configurationService = app.get(ConfigurationService);
-  await configurationService.syncTenantConfig(process.env.TENANT_ID || "");
+  // const configurationService = app.get(ConfigurationService);
+  // await configurationService.syncTenantConfig(process.env.TENANT_ID || "");
 
 
   const port = process.env.PORT || 6000;
