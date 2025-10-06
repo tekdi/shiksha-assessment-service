@@ -1945,12 +1945,14 @@ export class AttemptsService {
     attempt.reviewStatus = ReviewStatus.REVIEWED;
     attempt.updatedBy = authContext.userId;
 
-    // Call LMS service to update test progress before saving attempt locally
-    const lmsUpdateSuccess = await this.updateLmsTestProgress(attempt, authContext);
-    
-    if (!lmsUpdateSuccess) {
-      this.logger.error(`Failed to update LMS service for attempt ${attempt.attemptId}, rolling back attempt update`);
-      throw new BadRequestException('Failed to update test progress in LMS service. Please try again.');
+    if(result === ResultType.PASS) {
+      // Call LMS service to update test progress before saving attempt locally
+      const lmsUpdateSuccess = await this.updateLmsTestProgress(attempt, authContext);
+      
+      if (!lmsUpdateSuccess) {
+        this.logger.error(`Failed to update LMS service for attempt ${attempt.attemptId}, rolling back attempt update`);
+        throw new BadRequestException('Failed to update test progress in LMS service. Please try again.');
+      }
     }
 
     // Save attempt locally only after successful LMS update
