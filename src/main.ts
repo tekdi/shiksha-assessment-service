@@ -10,6 +10,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor';
+import { ConfigurationService } from './modules/configuration/configuration.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -79,6 +80,10 @@ async function bootstrap() {
   
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
+
+  // const configurationService = app.get(ConfigurationService);
+  // await configurationService.syncTenantConfig(process.env.TENANT_ID || "");
+
 
   const port = process.env.PORT || 6000;
   await app.listen(port);
