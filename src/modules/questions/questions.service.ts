@@ -94,19 +94,6 @@ export class QuestionsService {
     if (!testId && sectionId) {
       throw new BadRequestException('testId is required when sectionId is provided');
     }
-
-    // Validate conditional question parameters
-    await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
-
-    // Validate question data (includes duplicate text check)
-    await this.validateQuestionData(createQuestionDto, authContext);
-
-    // Validate question options
-    this.validateQuestionOptions(createQuestionDto);
-
-    // Validate question parameters
-    this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
-
     // Validate test and section existence before starting transaction
     let test: Test | null = null;
     let section: TestSection | null = null;
@@ -123,6 +110,7 @@ export class QuestionsService {
       if (!test) {
         throw new NotFoundException('Test not found');
       }
+      createQuestionDto.gradingType = test.gradingType;
       
       // Validate section exists
       section = await this.testSectionRepository.findOne({
@@ -136,12 +124,25 @@ export class QuestionsService {
       if (!section) {
         throw new NotFoundException('Section not found');
       }
-      
-      if (test.status === TestStatus.PUBLISHED) {
-        throw new BadRequestException('Cannot modify questions of a published test');
-      }
     }
+
+    // Validate conditional question parameters
+    await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
+
+    // Validate question data (includes duplicate text check)
+    await this.validateQuestionData(createQuestionDto, authContext);
+
+    // Skip validation of correct answers and marks for reflection.prompt and feedback grading types
+    const shouldSkipAnswerValidation = createQuestionDto.gradingType === 'reflection.prompt' || createQuestionDto.gradingType === 'feedback';
     
+    if (!shouldSkipAnswerValidation) {
+      // Validate question options
+      this.validateQuestionOptions(createQuestionDto);
+
+      // Validate question parameters
+      this.validateQuestionParams(createQuestionDto.type, createQuestionDto.params, createQuestionDto.marks);
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -411,20 +412,25 @@ export class QuestionsService {
     // Validate question data
     this.validateQuestionData(mergedDto, authContext);
 
-    // If question type is being updated, validate the new type with options
-    if (questionData.type && questionData.type !== question.type) {
-      this.validateQuestionOptions(mergedDto);
-    } else if (options !== undefined) {
-      // If options are being updated but type isn't changing, validate with current type
-      const currentQuestionDto = {
-        ...mergedDto,
-        type: question.type
-      };
-      this.validateQuestionOptions(currentQuestionDto);
-    }
+    // Skip validation of correct answers and marks for reflection.prompt and feedback grading types
+    const shouldSkipAnswerValidation = mergedDto.gradingType === 'reflection.prompt' || mergedDto.gradingType === 'feedback';
+    
+    if (!shouldSkipAnswerValidation) {
+      // If question type is being updated, validate the new type with options
+      if (questionData.type && questionData.type !== question.type) {
+        this.validateQuestionOptions(mergedDto);
+      } else if (options !== undefined) {
+        // If options are being updated but type isn't changing, validate with current type
+        const currentQuestionDto = {
+          ...mergedDto,
+          type: question.type
+        };
+        this.validateQuestionOptions(currentQuestionDto);
+      }
 
-    // Validate question parameters
-    this.validateQuestionParams(mergedDto.type, mergedDto.params, mergedDto.marks);
+      // Validate question parameters
+      this.validateQuestionParams(mergedDto.type, mergedDto.params, mergedDto.marks);
+    }
 
     Object.assign(question, {
       ...questionData,
