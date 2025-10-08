@@ -407,7 +407,7 @@ export class QuestionsService {
     await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
 
     // Create a merged DTO for validation
-    const mergedDto = { ...question, ...updateQuestionDto };
+    const mergedDto = { ...updateQuestionDto, ...question };
     
     // Validate question data
     this.validateQuestionData(mergedDto, authContext);
