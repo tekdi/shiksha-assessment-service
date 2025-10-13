@@ -832,107 +832,218 @@ export class AttemptsService {
    * @param existingAnswers - Already fetched existing answers
    * @param authContext - Authentication context
    */
+  /**
+   * SIMPLIFIED TEST VERSION - Debug orphaned cleanup
+   */
   private async handleOrphanedChildAnswersOptimized(
     attemptId: string, 
     newAnswers: any[], 
     existingAnswers: TestUserAnswer[],
     authContext: AuthContext
   ): Promise<void> {
-    // Get all questions (both existing and new) to identify parent-child relationships
+
+    // SIMPLIFIED APPROACH: Check if we have any conditional questions at all
     const allQuestionIds = [
       ...existingAnswers.map(a => a.questionId),
       ...newAnswers.map(a => a.questionId)
     ];
-
-    // Remove duplicates
     const uniqueQuestionIds = [...new Set(allQuestionIds)];
 
-    const allQuestions = await this.questionRepository.find({
+
+
+    // Check if any of these questions have child questions
+    const questionsWithChildren = await this.questionRepository.find({
       where: {
-        questionId: In(uniqueQuestionIds),
+        parentId: In(uniqueQuestionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
     });
 
-    // Identify parent questions (questions with parentId = null)
-    const parentQuestions = allQuestions.filter(q => !q.parentId);
-    const parentQuestionIds = parentQuestions.map(q => q.questionId);
-
-    if (parentQuestionIds.length === 0) {
-      return; // No parent questions, nothing to clean up
+    
+    if (questionsWithChildren.length === 0) {
+      return;
     }
 
-    // Create maps for efficient lookup
-    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
-
-    // Collect all orphaned question IDs to delete in batch
+    // For each child question, check if its parent's selection has changed
     const orphanedQuestionIds: string[] = [];
 
-    // Process each parent question
-    for (const parentQuestionId of parentQuestionIds) {
-      // Find the new answer for this parent question
-      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
-      const existingAnswer = existingAnswersMap.get(parentQuestionId);
+    for (const childQuestion of questionsWithChildren) {
+      
+      // Find parent's new and old answers
+      const newParentAnswer = newAnswers.find(a => a.questionId === childQuestion.parentId);
+      const oldParentAnswer = existingAnswers.find(a => a.questionId === childQuestion.parentId);
 
-      if (!newAnswer || !existingAnswer) {
-        continue; // Skip if no new answer or no existing answer
+      if (!newParentAnswer || !oldParentAnswer) {
+        continue;
       }
 
-      // Parse the answers to get selected options
+      // Parse answers
       let newSelectedOptions: string[] = [];
       let oldSelectedOptions: string[] = [];
 
       try {
-        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
-        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
+        const newAnswerData = typeof newParentAnswer.answer === 'string' ? JSON.parse(newParentAnswer.answer) : newParentAnswer.answer;
+        const oldAnswerData = typeof oldParentAnswer.answer === 'string' ? JSON.parse(oldParentAnswer.answer) : oldParentAnswer.answer;
 
-        // Extract selected option IDs based on answer format
+
+        // Extract selected options
         if (newAnswerData.selectedOptions) {
           newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        } else if (newAnswerData.selectedOptionIds) {
+          newSelectedOptions = newAnswerData.selectedOptionIds;
         }
+        
         if (oldAnswerData.selectedOptions) {
           oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        } else if (oldAnswerData.selectedOptionIds) {
+          oldSelectedOptions = oldAnswerData.selectedOptionIds;
         }
+
+
+        // Check if selection changed
+        const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
+
+        if (hasSelectionChanged) {
+          // Check if this child question is still relevant
+          const isStillRelevant = await this.isChildQuestionStillRelevant(childQuestion.questionId, newSelectedOptions, authContext);
+          
+          if (!isStillRelevant) {
+            orphanedQuestionIds.push(childQuestion.questionId);
+          }
+        }
+
       } catch (error) {
-        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
+      }
+    }
+
+    // Delete orphaned answers
+    if (orphanedQuestionIds.length > 0) {
+      await this.deleteOrphanedAnswers(attemptId, orphanedQuestionIds, authContext);
+    } else {
+    }
+    
+  }
+
+  /**
+   * MANUAL CLEANUP METHOD - For testing specific scenarios
+   */
+  private async manualCleanupTest(attemptId: string, authContext: AuthContext): Promise<void> {
+    
+    // Get all answers for this attempt
+    const allAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    
+    if (allAnswers.length === 0) {
+      return;
+    }
+
+    // Get all question IDs from answers
+    const questionIds = allAnswers.map(a => a.questionId);
+    
+    // Get all questions to identify parent-child relationships
+    const allQuestions = await this.questionRepository.find({
+      where: {
+        questionId: In(questionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Create maps for efficient lookup
+    const questionsMap = new Map(allQuestions.map(q => [q.questionId, q]));
+    const answersMap = new Map(allAnswers.map(a => [a.questionId, a]));
+
+    // Identify parent questions (questions with parentId = null)
+    const parentQuestions = allQuestions.filter(q => !q.parentId);
+
+    // Identify child questions (questions with parentId != null)
+    const childQuestions = allQuestions.filter(q => q.parentId);
+
+    if (parentQuestions.length === 0 || childQuestions.length === 0) {
+      return;
+    }
+
+    // Process each parent question
+    for (const parentQuestion of parentQuestions) {
+      
+      const parentAnswer = answersMap.get(parentQuestion.questionId);
+      if (!parentAnswer) {
         continue;
       }
 
-      // Check if parent selection has changed
-      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
-
-      if (hasSelectionChanged) {
-        // Get child questions for old and new selections
-        const oldChildQuestions = new Set<string>();
-        const newChildQuestions = new Set<string>();
-
-        // Get child questions for old selections
-        for (const oldOptionId of oldSelectedOptions) {
-          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
-          childQuestions.forEach(childId => oldChildQuestions.add(childId));
+      // Parse parent answer
+      let parentSelectedOptions: string[] = [];
+      try {
+        const parentAnswerData = typeof parentAnswer.answer === 'string' ? JSON.parse(parentAnswer.answer) : parentAnswer.answer;
+        
+        // Extract selected options based on format
+        if (parentAnswerData.selectedOptions) {
+          parentSelectedOptions = parentAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        } else if (parentAnswerData.selectedOptionIds) {
+          parentSelectedOptions = parentAnswerData.selectedOptionIds;
         }
 
-        // Get child questions for new selections
-        for (const newOptionId of newSelectedOptions) {
-          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
-          childQuestions.forEach(childId => newChildQuestions.add(childId));
+
+        if (parentSelectedOptions.length === 0) {
+          continue;
         }
 
-        // Find orphaned child questions (in old but not in new)
-        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
-          childId => !newChildQuestions.has(childId)
-        );
+        // Get all child questions for this parent
+        const parentChildQuestions = childQuestions.filter(cq => cq.parentId === parentQuestion.questionId);
 
-        // Add to batch delete list
-        orphanedQuestionIds.push(...orphanedChildQuestions);
+        // For each child question, check if it's still relevant
+        for (const childQuestion of parentChildQuestions) {
+          
+          // Check if this child question is still relevant based on current parent selections
+          const isStillRelevant = await this.isChildQuestionStillRelevant(childQuestion.questionId, parentSelectedOptions, authContext);
+          
+          if (!isStillRelevant) {
+            await this.testUserAnswerRepository.delete({
+              attemptId,
+              questionId: childQuestion.questionId,
+              tenantId: authContext.tenantId,
+              organisationId: authContext.organisationId,
+            });
+          } else {
+          }
+        }
+
+      } catch (error) {
+      }
+    }
+    
+  }
+
+  /**
+   * Check if a child question is still relevant based on current parent selections
+   */
+  private async isChildQuestionStillRelevant(childQuestionId: string, currentParentOptions: string[], authContext: AuthContext): Promise<boolean> {
+    // Get all option-question mappings for this child question
+    const mappings = await this.optionQuestionRepository.find({
+      where: {
+        questionId: childQuestionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        isActive: true,
+      },
+    });
+
+    
+    // Check if any of the current parent options still trigger this child question
+    for (const mapping of mappings) {
+      if (currentParentOptions.includes(mapping.optionId)) {
+        return true;
       }
     }
 
-    // Delete all orphaned answers in a single batch operation
-    if (orphanedQuestionIds.length > 0) {
-      await this.deleteOrphanedAnswers(attemptId, orphanedQuestionIds, authContext);
-    }
+    return false;
   }
 
   /**
@@ -994,9 +1105,14 @@ export class AttemptsService {
         // Extract selected option IDs based on answer format
         if (newAnswerData.selectedOptions) {
           newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        } else if (newAnswerData.selectedOptionIds) {
+          newSelectedOptions = newAnswerData.selectedOptionIds;
         }
+        
         if (oldAnswerData.selectedOptions) {
           oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        } else if (oldAnswerData.selectedOptionIds) {
+          oldSelectedOptions = oldAnswerData.selectedOptionIds;
         }
       } catch (error) {
         console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
@@ -1163,6 +1279,9 @@ export class AttemptsService {
 
     // Handle cleanup of orphaned child question answers - OPTIMIZED VERSION
     await this.handleOrphanedChildAnswersOptimized(attemptId, answersArray, existingAnswers, authContext);
+    
+    // MANUAL TEST - For debugging specific scenario
+    await this.manualCleanupTest(attemptId, authContext);
 
     // Update attempt time spent
     if (totalTimeSpent > 0) {
