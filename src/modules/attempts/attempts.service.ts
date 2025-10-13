@@ -10,6 +10,7 @@ import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
+import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
@@ -44,6 +45,8 @@ export class AttemptsService {
     private readonly questionRepository: Repository<Question>,
     @InjectRepository(QuestionOption)
     private readonly questionOptionRepository: Repository<QuestionOption>,
+    @InjectRepository(OptionQuestion)
+    private readonly optionQuestionRepository: Repository<OptionQuestion>,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
     private readonly configService: ConfigService,
@@ -749,6 +752,290 @@ export class AttemptsService {
     });
   }
 
+  /**
+   * Gets child questions associated with a specific option
+   * @param optionId - The option ID to check for child questions
+   * @param authContext - Authentication context
+   * @returns Promise<string[]> - Array of child question IDs
+   */
+  private async getChildQuestionsForOption(optionId: string, authContext: AuthContext): Promise<string[]> {
+    const optionQuestions = await this.optionQuestionRepository.find({
+      where: {
+        optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        isActive: true,
+      },
+    });
+
+    return optionQuestions.map(oq => oq.questionId);
+  }
+
+  /**
+   * Gets all child questions for multiple parent questions
+   * @param parentQuestionIds - Array of parent question IDs
+   * @param authContext - Authentication context
+   * @returns Promise<Map<string, string[]>> - Map of parent question ID to child question IDs
+   */
+  private async getChildQuestionsForParents(parentQuestionIds: string[], authContext: AuthContext): Promise<Map<string, string[]>> {
+    const childQuestionsMap = new Map<string, string[]>();
+
+    for (const parentQuestionId of parentQuestionIds) {
+      // Get all options for this parent question
+      const options = await this.questionOptionRepository.find({
+        where: {
+          questionId: parentQuestionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      const allChildQuestions = new Set<string>();
+
+      // Get child questions for each option
+      for (const option of options) {
+        const childQuestions = await this.getChildQuestionsForOption(option.questionOptionId, authContext);
+        childQuestions.forEach(childId => allChildQuestions.add(childId));
+      }
+
+      childQuestionsMap.set(parentQuestionId, Array.from(allChildQuestions));
+    }
+
+    return childQuestionsMap;
+  }
+
+  /**
+   * Deletes orphaned child question answers
+   * @param attemptId - The attempt ID
+   * @param orphanedQuestionIds - Array of orphaned question IDs to delete
+   * @param authContext - Authentication context
+   */
+  private async deleteOrphanedAnswers(attemptId: string, orphanedQuestionIds: string[], authContext: AuthContext): Promise<void> {
+    if (orphanedQuestionIds.length === 0) {
+      return;
+    }
+
+    await this.testUserAnswerRepository.delete({
+      attemptId,
+      questionId: In(orphanedQuestionIds),
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    });
+
+    console.log(`Deleted ${orphanedQuestionIds.length} orphaned child question answers for attempt ${attemptId}`);
+  }
+
+  /**
+   * Optimized method to handle orphaned child answers with shared data
+   * @param attemptId - The attempt ID
+   * @param newAnswers - Array of new answers being submitted
+   * @param existingAnswers - Already fetched existing answers
+   * @param authContext - Authentication context
+   */
+  private async handleOrphanedChildAnswersOptimized(
+    attemptId: string, 
+    newAnswers: any[], 
+    existingAnswers: TestUserAnswer[],
+    authContext: AuthContext
+  ): Promise<void> {
+    // Get all questions (both existing and new) to identify parent-child relationships
+    const allQuestionIds = [
+      ...existingAnswers.map(a => a.questionId),
+      ...newAnswers.map(a => a.questionId)
+    ];
+
+    // Remove duplicates
+    const uniqueQuestionIds = [...new Set(allQuestionIds)];
+
+    const allQuestions = await this.questionRepository.find({
+      where: {
+        questionId: In(uniqueQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Identify parent questions (questions with parentId = null)
+    const parentQuestions = allQuestions.filter(q => !q.parentId);
+    const parentQuestionIds = parentQuestions.map(q => q.questionId);
+
+    if (parentQuestionIds.length === 0) {
+      return; // No parent questions, nothing to clean up
+    }
+
+    // Create maps for efficient lookup
+    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+
+    // Collect all orphaned question IDs to delete in batch
+    const orphanedQuestionIds: string[] = [];
+
+    // Process each parent question
+    for (const parentQuestionId of parentQuestionIds) {
+      // Find the new answer for this parent question
+      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
+      const existingAnswer = existingAnswersMap.get(parentQuestionId);
+
+      if (!newAnswer || !existingAnswer) {
+        continue; // Skip if no new answer or no existing answer
+      }
+
+      // Parse the answers to get selected options
+      let newSelectedOptions: string[] = [];
+      let oldSelectedOptions: string[] = [];
+
+      try {
+        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
+        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
+
+        // Extract selected option IDs based on answer format
+        if (newAnswerData.selectedOptions) {
+          newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+        if (oldAnswerData.selectedOptions) {
+          oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+      } catch (error) {
+        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
+        continue;
+      }
+
+      // Check if parent selection has changed
+      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
+
+      if (hasSelectionChanged) {
+        // Get child questions for old and new selections
+        const oldChildQuestions = new Set<string>();
+        const newChildQuestions = new Set<string>();
+
+        // Get child questions for old selections
+        for (const oldOptionId of oldSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
+          childQuestions.forEach(childId => oldChildQuestions.add(childId));
+        }
+
+        // Get child questions for new selections
+        for (const newOptionId of newSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
+          childQuestions.forEach(childId => newChildQuestions.add(childId));
+        }
+
+        // Find orphaned child questions (in old but not in new)
+        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
+          childId => !newChildQuestions.has(childId)
+        );
+
+        // Add to batch delete list
+        orphanedQuestionIds.push(...orphanedChildQuestions);
+      }
+    }
+
+    // Delete all orphaned answers in a single batch operation
+    if (orphanedQuestionIds.length > 0) {
+      await this.deleteOrphanedAnswers(attemptId, orphanedQuestionIds, authContext);
+    }
+  }
+
+  /**
+   * Handles cleanup of orphaned child question answers when parent selections change
+   * @param attemptId - The attempt ID
+   * @param newAnswers - Array of new answers being submitted
+   * @param authContext - Authentication context
+   */
+  private async handleOrphanedChildAnswers(attemptId: string, newAnswers: any[], authContext: AuthContext): Promise<void> {
+    // Get all existing answers for this attempt
+    const existingAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Get all questions (both existing and new) to identify parent-child relationships
+    const allQuestionIds = [
+      ...existingAnswers.map(a => a.questionId),
+      ...newAnswers.map(a => a.questionId)
+    ];
+
+    const allQuestions = await this.questionRepository.find({
+      where: {
+        questionId: In(allQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Identify parent questions (questions with parentId = null)
+    const parentQuestions = allQuestions.filter(q => !q.parentId);
+    const parentQuestionIds = parentQuestions.map(q => q.questionId);
+
+    if (parentQuestionIds.length === 0) {
+      return; // No parent questions, nothing to clean up
+    }
+
+    // Process each parent question
+    for (const parentQuestionId of parentQuestionIds) {
+      // Find the new answer for this parent question
+      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
+      const existingAnswer = existingAnswers.find(a => a.questionId === parentQuestionId);
+
+      if (!newAnswer || !existingAnswer) {
+        continue; // Skip if no new answer or no existing answer
+      }
+
+      // Parse the answers to get selected options
+      let newSelectedOptions: string[] = [];
+      let oldSelectedOptions: string[] = [];
+
+      try {
+        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
+        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
+
+        // Extract selected option IDs based on answer format
+        if (newAnswerData.selectedOptions) {
+          newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+        if (oldAnswerData.selectedOptions) {
+          oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+      } catch (error) {
+        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
+        continue;
+      }
+
+      // Check if parent selection has changed
+      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
+
+      if (hasSelectionChanged) {
+        // Get child questions for old and new selections
+        const oldChildQuestions = new Set<string>();
+        const newChildQuestions = new Set<string>();
+
+        // Get child questions for old selections
+        for (const oldOptionId of oldSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
+          childQuestions.forEach(childId => oldChildQuestions.add(childId));
+        }
+
+        // Get child questions for new selections
+        for (const newOptionId of newSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
+          childQuestions.forEach(childId => newChildQuestions.add(childId));
+        }
+
+        // Find orphaned child questions (in old but not in new)
+        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
+          childId => !newChildQuestions.has(childId)
+        );
+
+        // Delete orphaned child question answers
+        if (orphanedChildQuestions.length > 0) {
+          await this.deleteOrphanedAnswers(attemptId, orphanedChildQuestions, authContext);
+        }
+      }
+    }
+  }
+
   async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<any> {
     // Handle the new format with answers array and optional global timeSpent
     const answersArray = submitAnswerDto.answers || [];
@@ -802,17 +1089,21 @@ export class AttemptsService {
 
     const questionMap = new Map(questions.map(q => [q.questionId, q]));
 
-    // Get existing answers for this attempt (batch query)
+    // Get existing answers for this attempt (batch query) - OPTIMIZED: Get ALL answers for orphaned cleanup
     const existingAnswers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
-        questionId: In(questionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
     });
 
-    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+    // Filter existing answers for current questions only
+    const existingAnswersForCurrentQuestions = existingAnswers.filter(a => 
+      questionIds.includes(a.questionId)
+    );
+
+    const existingAnswersMap = new Map(existingAnswersForCurrentQuestions.map(a => [a.questionId, a]));
 
     // Prepare answers to save/update
     const answersToSave: TestUserAnswer[] = [];
@@ -869,6 +1160,9 @@ export class AttemptsService {
     if (answersToUpdate.length > 0) {
       await this.testUserAnswerRepository.save(answersToUpdate);
     }
+
+    // Handle cleanup of orphaned child question answers - OPTIMIZED VERSION
+    await this.handleOrphanedChildAnswersOptimized(attemptId, answersArray, existingAnswers, authContext);
 
     // Update attempt time spent
     if (totalTimeSpent > 0) {
