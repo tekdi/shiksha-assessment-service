@@ -43,19 +43,7 @@ export class QuestionsController {
   async create(@Body() createQuestionDto: CreateQuestionDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
     const question = await this.questionsService.create(createQuestionDto, authContext);
-    
-    const response: any = { questionId: question.questionId };
-    
-    // Add information about test assignment if provided
-    if (createQuestionDto.testId && createQuestionDto.sectionId) {
-      response.addedToTest = {
-        testId: createQuestionDto.testId,
-        sectionId: createQuestionDto.sectionId,
-        isCompulsory: createQuestionDto.isCompulsory || false
-      };
-    }
-    
-    return response;
+    return question;
   }
 
   @Get()
@@ -96,7 +84,7 @@ export class QuestionsController {
   ) {
     const authContext: AuthContext = req.user;
     const question = await this.questionsService.update(id, updateQuestionDto, authContext);
-    return { questionId: question.questionId };
+    return question;
   }
 
   @Delete(':id')
