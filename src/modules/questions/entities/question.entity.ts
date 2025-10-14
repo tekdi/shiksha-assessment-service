@@ -20,6 +20,7 @@ export enum QuestionType {
   ESSAY = 'essay', //long answer, requires manual review and scoring
   DROPDOWN = 'dropdown', //dropdown selection question
   RATING = 'rating', //star rating question
+  CHECKBOX = 'checkbox', //checkbox question
 }
 
 export enum QuestionLevel {
