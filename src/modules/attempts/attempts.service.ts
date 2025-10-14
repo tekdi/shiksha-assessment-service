@@ -1693,6 +1693,14 @@ export class AttemptsService {
         score = 0;
         break;
         
+      case QuestionType.DROPDOWN:
+        score = this.calculateMCQScore(answerData, question, options);
+        break;
+        
+      case QuestionType.RATING:
+        score = 0;
+        break;
+        
       default:
         score = 0;
     }
@@ -2347,4 +2355,5 @@ export class AttemptsService {
       eventData
     );
   }
+
 } 
