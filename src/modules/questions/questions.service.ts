@@ -1223,6 +1223,9 @@ export class QuestionsService {
     if (!isOrdered) {
       throw new BadRequestException('Rating options should be ordered by ratingValue from lowest to highest.');
     }
+  }
+
+  /**
    * Associates a question with an option (creates conditional question relationship)
    * @param questionId - The ID of the question to associate
    * @param optionId - The ID of the option to associate with
