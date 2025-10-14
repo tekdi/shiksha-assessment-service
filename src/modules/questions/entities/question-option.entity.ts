@@ -84,10 +84,6 @@ export class QuestionOption {
   @Column({ type: 'boolean', default: false })
   caseSensitive: boolean;
 
-  @ApiProperty({ required: false })
-  @Column({ type: 'integer', nullable: true })
-  ratingValue: number;
-
   @ApiProperty()
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

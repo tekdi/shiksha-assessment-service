@@ -41,39 +41,6 @@ export class RubricCriteriaDto {
   description: string;
 }
 
-export class RatingScaleDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  min?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @Min(2)
-  max?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @Min(0.1)
-  step?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  showLabels?: boolean;
-
-  @ApiPropertyOptional({ 
-    enum: ['full_marks', 'proportional', 'threshold', 'target_rating'],
-    description: 'Scoring strategy for rating questions'
-  })
-  @IsOptional()
-  @IsEnum(['full_marks', 'proportional', 'threshold', 'target_rating'])
-  scoringStrategy?: 'full_marks' | 'proportional' | 'threshold' | 'target_rating';
-}
-
 export class DropdownConfigDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -116,12 +83,6 @@ export class QuestionParamsDto {
   @IsOptional()
   @IsBoolean()
   allowPartialScoring?: boolean = false;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => RatingScaleDto)
-  ratingScale?: RatingScaleDto;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -201,10 +162,6 @@ export class CreateQuestionOptionDto {
   @IsBoolean()
   caseSensitive?: boolean;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  ratingValue?: number;
   @ApiPropertyOptional({
     description: 'Whether this option has a child question',
     example: false
