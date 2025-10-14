@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Not } from 'typeorm';
+import { Repository, In, Not, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
@@ -47,6 +47,7 @@ export class AttemptsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @InjectRepository(OptionQuestion)
     private readonly optionQuestionRepository: Repository<OptionQuestion>,
+    private readonly dataSource: DataSource,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
     private readonly configService: ConfigService,
@@ -926,6 +927,63 @@ export class AttemptsService {
   }
 
   /**
+   * CLEANUP CHILD QUESTION ANSWERS BEFORE SUBMIT (WITH TRANSACTION)
+   * Deletes all child question answers before processing new answers
+   */
+  private async cleanupChildQuestionAnswersBeforeSubmitWithTransaction(
+    attemptId: string, 
+    newAnswers: any[], 
+    authContext: AuthContext,
+    queryRunner: any
+  ): Promise<void> {
+    
+    // Get all existing answers for this attempt using transaction
+    const existingAnswers = await queryRunner.manager.find(TestUserAnswer, {
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    
+    if (existingAnswers.length === 0) {
+      return;
+    }
+
+    // Get all question IDs from existing answers
+    const existingQuestionIds = existingAnswers.map(a => a.questionId);
+    
+    // Get all questions to identify parent-child relationships using transaction
+    const allQuestions = await queryRunner.manager.find(Question, {
+      where: {
+        questionId: In(existingQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Identify child questions (questions with parentId != null)
+    const childQuestions = allQuestions.filter(q => q.parentId);
+
+    if (childQuestions.length === 0) {
+      return;
+    }
+
+    // Get all child question IDs
+    const childQuestionIds = childQuestions.map(cq => cq.questionId);
+
+    // Delete ALL child question answers using transaction
+    const deleteResult = await queryRunner.manager.delete(TestUserAnswer, {
+      attemptId,
+      questionId: In(childQuestionIds),
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    });
+
+  }
+
+  /**
    * MANUAL CLEANUP METHOD - For testing specific scenarios
    */
   private async manualCleanupTest(attemptId: string, authContext: AuthContext): Promise<void> {
@@ -1162,8 +1220,13 @@ export class AttemptsService {
     }
     console.log('authContext.userId', authContext.userId);
 
+    // Use database transaction to ensure data consistency
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     // Verify attempt exists and belongs to user (only once)
-    const attempt = await this.attemptRepository.findOne({
+    const attempt = await queryRunner.manager.findOne(TestAttempt, {
       where: {
         attemptId,
         userId: authContext.userId,
@@ -1173,9 +1236,14 @@ export class AttemptsService {
       relations: ['test'],
     });
 
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
+  if (!attempt) {
+    throw new NotFoundException('Attempt not found');
+  }
+    try {
+      // CLEANUP FIRST: Delete all child question answers before submitting new answers
+      await this.cleanupChildQuestionAnswersBeforeSubmitWithTransaction(attemptId, answersArray, authContext, queryRunner);
+
+      
 
     // Get test information to check allowResubmission setting
     const testId = attempt.resolvedTestId || attempt.testId;
@@ -1269,19 +1337,15 @@ export class AttemptsService {
       
     }
 
-    // Save all answers in batch operations
-    if (answersToSave.length > 0) {
-      await this.testUserAnswerRepository.save(answersToSave);
-    }
-    if (answersToUpdate.length > 0) {
-      await this.testUserAnswerRepository.save(answersToUpdate);
-    }
+      // Save all answers in batch operations
+      if (answersToSave.length > 0) {
+        await queryRunner.manager.save(TestUserAnswer, answersToSave);
+      }
+      if (answersToUpdate.length > 0) {
+        await queryRunner.manager.save(TestUserAnswer, answersToUpdate);
+      }
 
-    // Handle cleanup of orphaned child question answers - OPTIMIZED VERSION
-    await this.handleOrphanedChildAnswersOptimized(attemptId, answersArray, existingAnswers, authContext);
-    
-    // MANUAL TEST - For debugging specific scenario
-    await this.manualCleanupTest(attemptId, authContext);
+    // Cleanup is now done BEFORE submitting answers (see cleanupChildQuestionAnswersBeforeSubmit)
 
     // Update attempt time spent
     if (totalTimeSpent > 0) {
@@ -1292,7 +1356,7 @@ export class AttemptsService {
     if (answersArray.length > 0) {
       const testId = attempt.resolvedTestId || attempt.testId;
       const lastQuestionId = answersArray[answersArray.length - 1].questionId;
-      const testQuestion = await this.testQuestionRepository.findOne({
+      const testQuestion = await queryRunner.manager.findOne(TestQuestion, {
         where: {
           testId,
           questionId: lastQuestionId,
@@ -1306,9 +1370,21 @@ export class AttemptsService {
       }
     }
 
-    await this.attemptRepository.save(attempt);
+      await queryRunner.manager.save(attempt);
 
-    return { message: 'Answers submitted successfully' };
+      // Commit the transaction
+      await queryRunner.commitTransaction();
+      
+      return { message: 'Answers submitted successfully' };
+    } catch (error) {
+      // Rollback the transaction on error
+      await queryRunner.rollbackTransaction();
+      console.error('Transaction rolled back due to error:', error);
+      throw error;
+    } finally {
+      // Release the query runner
+      await queryRunner.release();
+    }
   }
 
   /**
