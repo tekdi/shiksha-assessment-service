@@ -688,10 +688,6 @@ export class QuestionsService {
           this.validateDropdownOptions(options, questionDto);
           break;
         }
-        case QuestionType.RATING: {
-          this.validateRatingOptions(options, questionDto);
-          break;
-        }
       }
     }
 
@@ -1164,65 +1160,6 @@ export class QuestionsService {
     
     // If no ratingScale is defined, we'll use defaults (min=1, max=5, step=1)
     // This is valid and will be handled in the scoring logic
-  }
-
-  /**
-   * Validates rating question options
-   * Ensures proper rating scale structure with options
-   * @param options - Array of option objects to validate
-   * @param questionDto - The complete question DTO for validation context
-   */
-  private validateRatingOptions(options: any[], questionDto: CreateQuestionDto): void {
-    const ratingScale = questionDto.params?.ratingScale;
-    
-    // Use default values if ratingScale is not defined
-    const min = ratingScale?.min ?? 1;
-    const max = ratingScale?.max ?? 5;
-    const step = ratingScale?.step ?? 1;
-    const expectedCount = Math.floor((max - min) / step) + 1;
-
-    // Validate minimum number of options (at least 2)
-    if (options.length < 2) {
-      throw new BadRequestException('Rating questions must have at least 2 options.');
-    }
-
-    // Validate each option has ratingValue
-    const optionsWithRatingValue = options.filter(option => option.ratingValue !== undefined);
-    if (optionsWithRatingValue.length !== options.length) {
-      throw new BadRequestException('All rating options must have ratingValue specified.');
-    }
-
-    // Validate ratingValue uniqueness
-    const ratingValues = options.map(option => option.ratingValue);
-    const uniqueRatingValues = [...new Set(ratingValues)];
-    if (uniqueRatingValues.length !== ratingValues.length) {
-      throw new BadRequestException('Rating values must be unique.');
-    }
-
-    // Validate ratingValue range
-    const minRating = Math.min(...ratingValues);
-    const maxRating = Math.max(...ratingValues);
-    if (minRating < min || maxRating > max) {
-      throw new BadRequestException(`Rating values must be within range ${min}-${max}.`);
-    }
-
-    // Validate ratingValue follows step pattern (if ratingScale is defined)
-    if (ratingScale) {
-      const invalidValues = ratingValues.filter(value => (value - min) % step !== 0);
-      if (invalidValues.length > 0) {
-        throw new BadRequestException(`Rating values must follow step pattern: ${invalidValues.join(', ')} are invalid.`);
-      }
-    }
-
-    // Validate option texts are unique
-    this.validateDuplicateTexts(options);
-
-    // Validate that options are properly ordered by ratingValue
-    const sortedOptions = [...options].sort((a, b) => a.ratingValue - b.ratingValue);
-    const isOrdered = JSON.stringify(options.map(o => o.ratingValue)) === JSON.stringify(sortedOptions.map(o => o.ratingValue));
-    if (!isOrdered) {
-      throw new BadRequestException('Rating options should be ordered by ratingValue from lowest to highest.');
-    }
   }
 
   /**
