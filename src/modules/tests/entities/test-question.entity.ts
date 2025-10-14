@@ -47,6 +47,10 @@ export class TestQuestion {
   @Column({ type: 'boolean', default: false })
   isCompulsory: boolean;
 
+  @ApiProperty()
+  @Column({ type: 'boolean', default: false })
+  isConditional: boolean;
+
   // Relations
   @ManyToOne(() => Test, test => test.questions)
   @JoinColumn({ name: 'testId' })
@@ -55,4 +59,8 @@ export class TestQuestion {
   @ManyToOne(() => TestSection, section => section.questions)
   @JoinColumn({ name: 'sectionId' })
   section: TestSection;
+
+  @ManyToOne('Question')
+  @JoinColumn({ name: 'questionId' })
+  question: any;
 } 

@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Not } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer, ReviewStatus as AnswerReviewStatus } from '../tests/entities/test-user-answer.entity';
 import { Test, TestType, TestStatus, AttemptsGradeMethod } from '../tests/entities/test.entity';
@@ -8,10 +10,12 @@ import { TestQuestion } from '../tests/entities/test-question.entity';
 import { TestRule } from '../tests/entities/test-rule.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
+import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { GradingType } from '../tests/entities/test.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
+import { ReviewTestAttemptDto } from './dto/review-test-attempt.dto';
 import { PluginManagerService } from '@/common/services/plugin-manager.service';
 import { QuestionPoolService } from '../tests/question-pool.service';
 import { ResumeAttemptDto } from './dto/resume-attempt.dto';
@@ -22,6 +26,8 @@ import { QuestionStatus } from '../questions/entities/question.entity';
 
 @Injectable()
 export class AttemptsService {
+  private readonly logger = new Logger(AttemptsService.name);
+
   constructor(
     @InjectRepository(TestAttempt)
     private readonly attemptRepository: Repository<TestAttempt>,
@@ -39,8 +45,11 @@ export class AttemptsService {
     private readonly questionRepository: Repository<Question>,
     @InjectRepository(QuestionOption)
     private readonly questionOptionRepository: Repository<QuestionOption>,
+    @InjectRepository(OptionQuestion)
+    private readonly optionQuestionRepository: Repository<OptionQuestion>,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
+    private readonly configService: ConfigService,
   ) {}
 
   async startAttempt(testId: string, userId: string, authContext: AuthContext): Promise<TestAttempt> {
@@ -743,6 +752,290 @@ export class AttemptsService {
     });
   }
 
+  /**
+   * Gets child questions associated with a specific option
+   * @param optionId - The option ID to check for child questions
+   * @param authContext - Authentication context
+   * @returns Promise<string[]> - Array of child question IDs
+   */
+  private async getChildQuestionsForOption(optionId: string, authContext: AuthContext): Promise<string[]> {
+    const optionQuestions = await this.optionQuestionRepository.find({
+      where: {
+        optionId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        isActive: true,
+      },
+    });
+
+    return optionQuestions.map(oq => oq.questionId);
+  }
+
+  /**
+   * Gets all child questions for multiple parent questions
+   * @param parentQuestionIds - Array of parent question IDs
+   * @param authContext - Authentication context
+   * @returns Promise<Map<string, string[]>> - Map of parent question ID to child question IDs
+   */
+  private async getChildQuestionsForParents(parentQuestionIds: string[], authContext: AuthContext): Promise<Map<string, string[]>> {
+    const childQuestionsMap = new Map<string, string[]>();
+
+    for (const parentQuestionId of parentQuestionIds) {
+      // Get all options for this parent question
+      const options = await this.questionOptionRepository.find({
+        where: {
+          questionId: parentQuestionId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      const allChildQuestions = new Set<string>();
+
+      // Get child questions for each option
+      for (const option of options) {
+        const childQuestions = await this.getChildQuestionsForOption(option.questionOptionId, authContext);
+        childQuestions.forEach(childId => allChildQuestions.add(childId));
+      }
+
+      childQuestionsMap.set(parentQuestionId, Array.from(allChildQuestions));
+    }
+
+    return childQuestionsMap;
+  }
+
+  /**
+   * Deletes orphaned child question answers
+   * @param attemptId - The attempt ID
+   * @param orphanedQuestionIds - Array of orphaned question IDs to delete
+   * @param authContext - Authentication context
+   */
+  private async deleteOrphanedAnswers(attemptId: string, orphanedQuestionIds: string[], authContext: AuthContext): Promise<void> {
+    if (orphanedQuestionIds.length === 0) {
+      return;
+    }
+
+    await this.testUserAnswerRepository.delete({
+      attemptId,
+      questionId: In(orphanedQuestionIds),
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    });
+
+    console.log(`Deleted ${orphanedQuestionIds.length} orphaned child question answers for attempt ${attemptId}`);
+  }
+
+  /**
+   * Optimized method to handle orphaned child answers with shared data
+   * @param attemptId - The attempt ID
+   * @param newAnswers - Array of new answers being submitted
+   * @param existingAnswers - Already fetched existing answers
+   * @param authContext - Authentication context
+   */
+  private async handleOrphanedChildAnswersOptimized(
+    attemptId: string, 
+    newAnswers: any[], 
+    existingAnswers: TestUserAnswer[],
+    authContext: AuthContext
+  ): Promise<void> {
+    // Get all questions (both existing and new) to identify parent-child relationships
+    const allQuestionIds = [
+      ...existingAnswers.map(a => a.questionId),
+      ...newAnswers.map(a => a.questionId)
+    ];
+
+    // Remove duplicates
+    const uniqueQuestionIds = [...new Set(allQuestionIds)];
+
+    const allQuestions = await this.questionRepository.find({
+      where: {
+        questionId: In(uniqueQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Identify parent questions (questions with parentId = null)
+    const parentQuestions = allQuestions.filter(q => !q.parentId);
+    const parentQuestionIds = parentQuestions.map(q => q.questionId);
+
+    if (parentQuestionIds.length === 0) {
+      return; // No parent questions, nothing to clean up
+    }
+
+    // Create maps for efficient lookup
+    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+
+    // Collect all orphaned question IDs to delete in batch
+    const orphanedQuestionIds: string[] = [];
+
+    // Process each parent question
+    for (const parentQuestionId of parentQuestionIds) {
+      // Find the new answer for this parent question
+      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
+      const existingAnswer = existingAnswersMap.get(parentQuestionId);
+
+      if (!newAnswer || !existingAnswer) {
+        continue; // Skip if no new answer or no existing answer
+      }
+
+      // Parse the answers to get selected options
+      let newSelectedOptions: string[] = [];
+      let oldSelectedOptions: string[] = [];
+
+      try {
+        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
+        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
+
+        // Extract selected option IDs based on answer format
+        if (newAnswerData.selectedOptions) {
+          newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+        if (oldAnswerData.selectedOptions) {
+          oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+      } catch (error) {
+        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
+        continue;
+      }
+
+      // Check if parent selection has changed
+      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
+
+      if (hasSelectionChanged) {
+        // Get child questions for old and new selections
+        const oldChildQuestions = new Set<string>();
+        const newChildQuestions = new Set<string>();
+
+        // Get child questions for old selections
+        for (const oldOptionId of oldSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
+          childQuestions.forEach(childId => oldChildQuestions.add(childId));
+        }
+
+        // Get child questions for new selections
+        for (const newOptionId of newSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
+          childQuestions.forEach(childId => newChildQuestions.add(childId));
+        }
+
+        // Find orphaned child questions (in old but not in new)
+        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
+          childId => !newChildQuestions.has(childId)
+        );
+
+        // Add to batch delete list
+        orphanedQuestionIds.push(...orphanedChildQuestions);
+      }
+    }
+
+    // Delete all orphaned answers in a single batch operation
+    if (orphanedQuestionIds.length > 0) {
+      await this.deleteOrphanedAnswers(attemptId, orphanedQuestionIds, authContext);
+    }
+  }
+
+  /**
+   * Handles cleanup of orphaned child question answers when parent selections change
+   * @param attemptId - The attempt ID
+   * @param newAnswers - Array of new answers being submitted
+   * @param authContext - Authentication context
+   */
+  private async handleOrphanedChildAnswers(attemptId: string, newAnswers: any[], authContext: AuthContext): Promise<void> {
+    // Get all existing answers for this attempt
+    const existingAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Get all questions (both existing and new) to identify parent-child relationships
+    const allQuestionIds = [
+      ...existingAnswers.map(a => a.questionId),
+      ...newAnswers.map(a => a.questionId)
+    ];
+
+    const allQuestions = await this.questionRepository.find({
+      where: {
+        questionId: In(allQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Identify parent questions (questions with parentId = null)
+    const parentQuestions = allQuestions.filter(q => !q.parentId);
+    const parentQuestionIds = parentQuestions.map(q => q.questionId);
+
+    if (parentQuestionIds.length === 0) {
+      return; // No parent questions, nothing to clean up
+    }
+
+    // Process each parent question
+    for (const parentQuestionId of parentQuestionIds) {
+      // Find the new answer for this parent question
+      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
+      const existingAnswer = existingAnswers.find(a => a.questionId === parentQuestionId);
+
+      if (!newAnswer || !existingAnswer) {
+        continue; // Skip if no new answer or no existing answer
+      }
+
+      // Parse the answers to get selected options
+      let newSelectedOptions: string[] = [];
+      let oldSelectedOptions: string[] = [];
+
+      try {
+        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
+        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
+
+        // Extract selected option IDs based on answer format
+        if (newAnswerData.selectedOptions) {
+          newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+        if (oldAnswerData.selectedOptions) {
+          oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
+        }
+      } catch (error) {
+        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
+        continue;
+      }
+
+      // Check if parent selection has changed
+      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
+
+      if (hasSelectionChanged) {
+        // Get child questions for old and new selections
+        const oldChildQuestions = new Set<string>();
+        const newChildQuestions = new Set<string>();
+
+        // Get child questions for old selections
+        for (const oldOptionId of oldSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
+          childQuestions.forEach(childId => oldChildQuestions.add(childId));
+        }
+
+        // Get child questions for new selections
+        for (const newOptionId of newSelectedOptions) {
+          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
+          childQuestions.forEach(childId => newChildQuestions.add(childId));
+        }
+
+        // Find orphaned child questions (in old but not in new)
+        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
+          childId => !newChildQuestions.has(childId)
+        );
+
+        // Delete orphaned child question answers
+        if (orphanedChildQuestions.length > 0) {
+          await this.deleteOrphanedAnswers(attemptId, orphanedChildQuestions, authContext);
+        }
+      }
+    }
+  }
+
   async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<any> {
     // Handle the new format with answers array and optional global timeSpent
     const answersArray = submitAnswerDto.answers || [];
@@ -796,17 +1089,21 @@ export class AttemptsService {
 
     const questionMap = new Map(questions.map(q => [q.questionId, q]));
 
-    // Get existing answers for this attempt (batch query)
+    // Get existing answers for this attempt (batch query) - OPTIMIZED: Get ALL answers for orphaned cleanup
     const existingAnswers = await this.testUserAnswerRepository.find({
       where: {
         attemptId,
-        questionId: In(questionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
     });
 
-    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+    // Filter existing answers for current questions only
+    const existingAnswersForCurrentQuestions = existingAnswers.filter(a => 
+      questionIds.includes(a.questionId)
+    );
+
+    const existingAnswersMap = new Map(existingAnswersForCurrentQuestions.map(a => [a.questionId, a]));
 
     // Prepare answers to save/update
     const answersToSave: TestUserAnswer[] = [];
@@ -863,6 +1160,9 @@ export class AttemptsService {
     if (answersToUpdate.length > 0) {
       await this.testUserAnswerRepository.save(answersToUpdate);
     }
+
+    // Handle cleanup of orphaned child question answers - OPTIMIZED VERSION
+    await this.handleOrphanedChildAnswersOptimized(attemptId, answersArray, existingAnswers, authContext);
 
     // Update attempt time spent
     if (totalTimeSpent > 0) {
@@ -994,9 +1294,14 @@ export class AttemptsService {
       // Calculate sum of all answers score
       const totalAnswersScore = await this.calculateTotalAttemptScore(attemptId, authContext);
       attempt.score = totalAnswersScore;
+      // check if the test have only objective questions that is question type is mcq or true_false, multiple_answer or match, fill_blank
+
       if (test.isObjective) {
         attempt.reviewStatus = ReviewStatus.REVIEWED;
         attempt.result = totalAnswersScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+        if(attempt.result === ResultType.PASS) {
+          await this.updateLmsTestProgress(attempt, authContext);
+        }
       } else {
         // Set review status to pending for manual review
         attempt.reviewStatus = ReviewStatus.PENDING;
@@ -1443,24 +1748,31 @@ export class AttemptsService {
     
     if (correctOptions.length === 0) return 0;
     
-    let totalScore = 0;
-    
-    // Award marks for correct selections
-    for (const correctOption of correctOptions) {
-      if (selectedOptionIds.includes(correctOption.questionOptionId)) {
-        totalScore += Number(correctOption.marks);
-      }
-    }
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
     
-    // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
+      // For partial scoring: sum of marks for selected correct options
+      let totalScore = 0;
+      for (const correctOption of correctOptions) {
+        if (selectedOptionIds.includes(correctOption.questionOptionId)) {
+          const optionMarks = Number(correctOption.marks);
+          totalScore += isNaN(optionMarks) ? 0 : optionMarks;
+        }
+      }
       return totalScore;
     } else {
-      // Full marks only if all correct options selected and no incorrect ones
-      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+      // For non-partial scoring: all-or-nothing based on question marks
+      // Check if all correct options are selected and no incorrect options are selected
+      const allCorrectSelected = correctOptions.every(opt => 
+        selectedOptionIds.includes(opt.questionOptionId)
+      );
+      const noIncorrectSelected = selectedOptionIds.every(selectedId => 
+        correctOptions.some(opt => opt.questionOptionId === selectedId)
+      );
+      
+      return (allCorrectSelected && noIncorrectSelected) ? safeQuestionMarks : 0;
     }
   }
 
@@ -1474,37 +1786,57 @@ export class AttemptsService {
     
     if (correctOptions.length === 0 || userBlanks.length === 0) return 0;
     
-    let totalScore = 0;
-    
-    for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
-      const userAnswer = userBlanks[i]?.trim();
-      const correctAnswer = correctOptions[i]?.text?.trim();
-      
-      if (!userAnswer || !correctAnswer) continue;
-      
-      // Check case sensitivity
-      const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
-      const isCorrect = isCaseSensitive 
-        ? userAnswer === correctAnswer
-        : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
-      
-      if (isCorrect) {
-        // Use individual option marks instead of equal distribution
-        totalScore += Number(correctOptions[i]?.marks || 0);
-      }
-    }
-    
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
     
-    // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
-      // Partial scoring: award marks for each correct blank using option marks
+      // For partial scoring: sum of marks for correct blanks using option marks
+      let totalScore = 0;
+      for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+        const userAnswer = userBlanks[i]?.trim();
+        const correctAnswer = correctOptions[i]?.text?.trim();
+        
+        if (!userAnswer || !correctAnswer) continue;
+        
+        // Check case sensitivity
+        const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
+        const isCorrect = isCaseSensitive 
+          ? userAnswer === correctAnswer
+          : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+        
+        if (isCorrect) {
+          const optionMarks = Number(correctOptions[i]?.marks || 0);
+          totalScore += isNaN(optionMarks) ? 0 : optionMarks;
+        }
+      }
       return totalScore;
     } else {
-      // All-or-nothing: full marks only if all blanks are correct
-      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+      // For non-partial scoring: all-or-nothing based on question marks
+      // Check if all blanks are correct
+      let allCorrect = true;
+      for (let i = 0; i < Math.min(userBlanks.length, correctOptions.length); i++) {
+        const userAnswer = userBlanks[i]?.trim();
+        const correctAnswer = correctOptions[i]?.text?.trim();
+        
+        if (!userAnswer || !correctAnswer) {
+          allCorrect = false;
+          break;
+        }
+        
+        // Check case sensitivity
+        const isCaseSensitive = correctOptions[i]?.caseSensitive || false;
+        const isCorrect = isCaseSensitive 
+          ? userAnswer === correctAnswer
+          : userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+        
+        if (!isCorrect) {
+          allCorrect = false;
+          break;
+        }
+      }
+      
+      return allCorrect ? safeQuestionMarks : 0;
     }
   }
 
@@ -1518,31 +1850,36 @@ export class AttemptsService {
     
     if (correctOptions.length === 0 || userMatches.length === 0) return 0;
     
-    let totalScore = 0;
-    
-    // Process each user match
-    for (const userMatch of userMatches) {
-      // Find the correct option that matches this user selection
-      const correctOption = correctOptions.find(opt => 
-        opt.questionOptionId === userMatch.optionId && 
-        opt.matchWith === userMatch.matchWith
-      );
-      if (correctOption) {
-        totalScore += Number(correctOption.marks);
-      }
-    }
-    
     // Ensure question marks is a valid number
     const questionMarks = Number(question.marks);
     const safeQuestionMarks = isNaN(questionMarks) ? 0 : questionMarks;
     
-    // Check if partial scoring is enabled
     if (question.allowPartialScoring) {
-      // Partial scoring: award marks for each correct match using option marks
+      // For partial scoring: sum of marks for correct matches using option marks
+      let totalScore = 0;
+      for (const userMatch of userMatches) {
+        // Find the correct option that matches this user selection
+        const correctOption = correctOptions.find(opt => 
+          opt.questionOptionId === userMatch.optionId && 
+          opt.matchWith === userMatch.matchWith
+        );
+        if (correctOption) {
+          const optionMarks = Number(correctOption.marks);
+          totalScore += isNaN(optionMarks) ? 0 : optionMarks;
+        }
+      }
       return totalScore;
     } else {
-      // All-or-nothing: full marks only if all matches are correct
-      return totalScore === safeQuestionMarks ? safeQuestionMarks : 0;
+      // For non-partial scoring: all-or-nothing based on question marks
+      // Check if all matches are correct
+      const allMatchesCorrect = correctOptions.every(correctOption => {
+        return userMatches.some(userMatch => 
+          userMatch.optionId === correctOption.questionOptionId && 
+          userMatch.matchWith === correctOption.matchWith
+        );
+      });
+      
+      return allMatchesCorrect ? safeQuestionMarks : 0;
     }
   }
 
@@ -1670,6 +2007,8 @@ export class AttemptsService {
   }
 
   private async validateAttemptForAnswersheet(attemptId: string, authContext: AuthContext): Promise<TestAttempt> {
+    
+    console.log("vinayak",attemptId);
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -1678,6 +2017,8 @@ export class AttemptsService {
       },
     });
 
+    // console.log(attempt);
+
     if (!attempt) {
       throw new Error('Attempt not found');
     }
@@ -1685,11 +2026,6 @@ export class AttemptsService {
      // Only return results if attempt is submitted
      if (attempt.status !== AttemptStatus.SUBMITTED) {
       throw new Error('Attempt results are only available for submitted attempts');
-    }
-
-    // Don't return results if attempt is under review
-    if (attempt.reviewStatus != ReviewStatus.REVIEWED) {
-      throw new Error('Attempt results are not available while under review');
     }
 
     return attempt;
@@ -1732,7 +2068,7 @@ export class AttemptsService {
       questionId: string;
       userAnswer: any;
       score: number;
-      correctAnswers: string[];
+      isCorrect: boolean;
     }> = [];
     
     for (const userAnswer of userAnswers) {
@@ -1751,17 +2087,63 @@ export class AttemptsService {
       
       // Get correct answers if test.showCorrectAnswer is true
       let correctAnswers: string[] = [];
+      let correctOptionMarks: number = 0;
       if (test.showCorrectAnswer && question.options) {
         correctAnswers = question.options
           .filter(opt => opt.isCorrect)
           .map(opt => opt.questionOptionId);
+        
+        // Calculate total marks for correct options (for partial scoring)
+        correctOptionMarks = question.options
+          .filter(opt => opt.isCorrect)
+          .reduce((sum, opt) => sum + (opt.marks || 0), 0);
       }
+      
+      // Transform selectedOptionIds into selectedOptions array with isCorrect property
+      let selectedOptions: Array<{optionId: string, isCorrect?: boolean}> = [];
+      let selectedCorrectOptions: string[] = [];
+      if (parsedAnswer.selectedOptionIds && Array.isArray(parsedAnswer.selectedOptionIds)) {
+        selectedOptions = parsedAnswer.selectedOptionIds.map((selectedId: string) => {
+          const option: {optionId: string, isCorrect?: boolean} = { optionId: selectedId };
+          // Only add isCorrect if showCorrectAnswer is true
+          if (test.showCorrectAnswer) {
+            const isCorrect = correctAnswers.includes(selectedId);
+            option.isCorrect = isCorrect;
+            if (isCorrect) {
+              selectedCorrectOptions.push(selectedId);
+            }
+          }
+          return option;
+        });
+      }
+      
+      // Calculate question-level isCorrect based on allowPartialScoring
+      let questionIsCorrect = false;
+      if (question.allowPartialScoring) {
+        // For partial scoring: if any correct option is selected, question is correct
+        questionIsCorrect = selectedCorrectOptions.length > 0;
+      } else {
+        // For non-partial scoring: user must select all correct options to get full marks
+        // Check if all correct options are selected and no incorrect options are selected
+        const allCorrectSelected = correctAnswers.every(correctId => 
+          parsedAnswer.selectedOptionIds?.includes(correctId)
+        );
+        const noIncorrectSelected = parsedAnswer.selectedOptionIds?.every(selectedId => 
+          correctAnswers.includes(selectedId)
+        ) ?? true;
+        questionIsCorrect = allCorrectSelected && noIncorrectSelected;
+      }
+      
+      // Create the new userAnswer structure
+      const transformedUserAnswer = {
+        selectedOptions: selectedOptions
+      };
       
       answers.push({
         questionId: userAnswer.questionId,
-        userAnswer: parsedAnswer,
+        userAnswer: transformedUserAnswer,
         score: userAnswer.score,
-        correctAnswers: correctAnswers,
+        isCorrect: questionIsCorrect,
       });
     }
     
@@ -1774,6 +2156,201 @@ export class AttemptsService {
     return answersheet;
   }
  
+  async reviewTestAttempt(testId: string, reviewDto: ReviewTestAttemptDto, authContext: AuthContext): Promise<TestAttempt> {
+    // Get test information
+    const test = await this.testRepository.findOne({
+      where: {
+        testId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Find the attempt based on allowResubmission and gradingType logic
+    let attempt: TestAttempt | null = null;
+
+    if (test.allowResubmission) {
+      // For tests with allowResubmission, find the existing attempt
+      attempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId: reviewDto.userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { attempt: 'DESC' }, // Get the most recent attempt
+      });
+    } else {
+      // For tests without allowResubmission, find the most recent submitted attempt
+      attempt = await this.attemptRepository.findOne({
+        where: {
+          testId,
+          userId: reviewDto.userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: AttemptStatus.SUBMITTED
+        },
+        order: { attempt: 'DESC' }, // Get the most recent attempt
+      });
+    }
+
+    if (!attempt) {
+      throw new NotFoundException('No attempt found for review');
+    }
+
+    // Validate attempt status - should be submitted for review
+    if (attempt.status !== AttemptStatus.SUBMITTED) {
+      throw new BadRequestException('Only submitted attempts can be reviewed');
+    }
+
+    // Get all answers for this attempt to validate and update
+    const attemptAnswers = await this.testUserAnswerRepository
+      .createQueryBuilder('answer')
+      .innerJoin('questions', 'question', 'question.questionId = answer.questionId')
+      .where('answer.attemptId = :attemptId', { attemptId: attempt.attemptId })
+      .andWhere('answer.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('answer.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .getMany();
+
+    // Update scores for reviewed answers
+    for (const answerReview of reviewDto.answers) {
+
+      const existingAnswer = attemptAnswers.find(
+        answer => answer.questionId === answerReview.questionId
+      );
+
+      if (existingAnswer) {
+        // Update the answer with review score
+        existingAnswer.score = Number(answerReview.score) || 0;
+        existingAnswer.reviewStatus = AnswerReviewStatus.REVIEWED;
+        existingAnswer.reviewedAt = new Date();
+        existingAnswer.reviewedBy = authContext.userId;
+        
+        if (answerReview.remarks) {
+          existingAnswer.remarks = answerReview.remarks;
+        }
+
+        await this.testUserAnswerRepository.save(existingAnswer);
+      }
+      else
+      {
+        throw new NotFoundException('User answers not found');
+      }
+    }
+
+    const totalScore = await this.calculateTotalAttemptScore(attempt.attemptId, authContext);
+
+    // Determine result based on passing marks
+    const result = totalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL;
+
+    // Update attempt with new score and result
+    attempt.score = Number(totalScore) || 0;
+    attempt.result = result;
+    attempt.reviewStatus = ReviewStatus.REVIEWED;
+    attempt.updatedBy = authContext.userId;
+
+    if(result === ResultType.PASS) {
+      // Call LMS service to update test progress before saving attempt locally
+      const lmsUpdateSuccess = await this.updateLmsTestProgress(attempt, authContext);
+      
+      if (!lmsUpdateSuccess) {
+        this.logger.error(`Failed to update LMS service for attempt ${attempt.attemptId}, rolling back attempt update`);
+        throw new BadRequestException('Failed to update test progress in LMS service. Please try again.');
+      }
+    }
+
+    // Save attempt locally only after successful LMS update
+    const savedAttempt = await this.attemptRepository.save(attempt);
+
+    return savedAttempt;
+  }
+
+  /**
+   * Updates test progress in the LMS service
+   * @param attempt - The test attempt to update
+   * @param authContext - Authentication context
+   * @returns Promise<boolean> - Success status
+   */
+  private async updateLmsTestProgress(attempt: TestAttempt, authContext: AuthContext): Promise<boolean> {
+    try {
+      const lmsServiceUrl = this.configService.get<string>('LMS_SERVICE_URL');
+      
+      if (!lmsServiceUrl) {
+        this.logger.warn('LMS_SERVICE_URL not configured, skipping LMS update');
+        return true; // Return true to not block the process if LMS is not configured
+      }
+
+      const payload = {
+        testId: attempt.testId,
+        userId: attempt.userId,
+        score: attempt.score,
+        result: attempt.result,
+        reviewedBy: authContext.userId,
+      };
+
+      this.logger.log(`Updating LMS test progress for attempt ${attempt.attemptId}`, {
+        attemptId: attempt.attemptId,
+        testId: attempt.testId,
+        userId: attempt.userId,
+        score: attempt.score,
+        result: attempt.result,
+      });
+
+      const response = await axios.patch(lmsServiceUrl + '/course/tracking/update_test_progress', payload, {
+        timeout: 10000, // 10 second timeout
+        headers: {
+          'Content-Type': 'application/json',
+          'tenantId': authContext.tenantId,
+          'organisationId': authContext.organisationId,
+        },
+      });
+
+      // Check both HTTP status and API response status
+      if (response.status >= 200 && response.status < 300) {
+        const responseData = response.data;
+        
+        // Validate API response structure
+        if (responseData && responseData.params && responseData.params.status === 'successful') {
+          this.logger.log(`Successfully updated LMS test progress for attempt ${attempt.attemptId}`, {
+            attemptId: attempt.attemptId,
+            lessonTrackId: responseData.result?.lessonTrackId,
+            score: responseData.result?.score,
+            status: responseData.result?.status,
+            completionPercentage: responseData.result?.completionPercentage,
+          });
+          return true;
+        } else {
+          this.logger.error(`LMS API returned unsuccessful status`, {
+            attemptId: attempt.attemptId,
+            apiStatus: responseData.params?.status,
+            errorMessage: responseData.params?.errmsg,
+            responseCode: responseData.responseCode,
+          });
+          return false;
+        }
+      } else {
+        this.logger.error(`LMS service returned HTTP error status: ${response.status}`, {
+          attemptId: attempt.attemptId,
+          status: response.status,
+          response: response.data,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.logger.error(`Failed to update LMS test progress for attempt ${attempt.attemptId}`, {
+        attemptId: attempt.attemptId,
+        error: error.message,
+        stack: error.stack,
+      });
+      return false;
+    }
+  }
+
   private async triggerPluginEvent(eventName: string, authContext: AuthContext, eventData: any): Promise<void> {
     await this.pluginManager.triggerEvent(
       eventName,

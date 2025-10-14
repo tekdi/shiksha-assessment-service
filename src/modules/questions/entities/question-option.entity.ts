@@ -4,10 +4,12 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Question, QuestionMedia } from './question.entity';
+import { OptionQuestion } from './option-question.entity';
 
 @Entity('questionOptions')
 export class QuestionOption {
@@ -94,4 +96,7 @@ export class QuestionOption {
   @ManyToOne(() => Question, question => question.options)
   @JoinColumn({ name: 'questionId' })
   question: Question;
+
+  @OneToMany(() => OptionQuestion, optionQuestion => optionQuestion.option)
+  optionQuestions: OptionQuestion[];
 } 

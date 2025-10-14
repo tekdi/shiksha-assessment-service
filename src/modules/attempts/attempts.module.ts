@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { AttemptsController } from './attempts.controller';
 import { AttemptsService } from './attempts.service';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
@@ -10,6 +11,7 @@ import { TestRule } from '../tests/entities/test-rule.entity';
 import { TestSection } from '../tests/entities/test-section.entity';
 import { Question } from '../questions/entities/question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
+import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { PluginModule } from '../plugins/plugin.module';
 import { TestsModule } from '../tests/tests.module';
 
@@ -24,7 +26,9 @@ import { TestsModule } from '../tests/tests.module';
       TestSection,
       Question,
       QuestionOption,
+      OptionQuestion,
     ]),
+    ConfigModule,
     PluginModule,
     TestsModule,
   ],

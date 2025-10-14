@@ -36,7 +36,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       ],
       synchronize: false,
       autoLoadEntities: true,
-      logging: isDevelopment,
+      // logging: isDevelopment, 
       ssl: this.configService.get('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
     };
   }

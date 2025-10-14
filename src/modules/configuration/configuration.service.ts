@@ -30,7 +30,7 @@ export class ConfigurationService  {
     private readonly cacheService: CacheService,
   ) {
     // Load LMS config
-    // this.loadLmsConfig();
+    //this.loadLmsConfig();
   }
 
   /**
@@ -84,6 +84,11 @@ export class ConfigurationService  {
    * Load local configuration and update cache
    */
   async loadLocalConfig(tenantId: string): Promise<any> {
+    // Check if lmsConfigJson is properly loaded
+    if (!this.lmsConfigJson || !this.lmsConfigJson.properties) {
+      throw new InternalServerErrorException(RESPONSE_MESSAGES.ERROR.ASSESSMENT_CONFIG_LOAD_FAILED);
+    }
+
     // if external config is not found, parse lms-config.json - only child properties with values
     const config = {};
     for (const section in this.lmsConfigJson.properties) {

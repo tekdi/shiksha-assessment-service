@@ -14,6 +14,7 @@ import { TestAttempt } from './entities/test-attempt.entity';
 import { TestRule } from './entities/test-rule.entity';
 import { TestUserAnswer } from './entities/test-user-answer.entity';
 import { Question } from '../questions/entities/question.entity';
+import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { OrderingService } from '@/common/services/ordering.service';
 
 @Module({
@@ -26,6 +27,7 @@ import { OrderingService } from '@/common/services/ordering.service';
       TestRule,
       TestUserAnswer,
       Question,
+      OptionQuestion,
     ]),
   ],
   controllers: [TestsController, SectionsController, RulesController],

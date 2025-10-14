@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { Repository, Like, Between, In, Not, FindOptionsWhere, DataSource } from 'typeorm';
+import { Repository, Like, Between, In, Not, FindOptionsWhere, DataSource, IsNull } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject } from '@nestjs/common';
 import { Cache } from 'cache-manager';
@@ -13,6 +13,7 @@ import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entit
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
+import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
@@ -37,6 +38,8 @@ export class TestsService {
     private readonly testSectionRepository: Repository<TestSection>,
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
+    @InjectRepository(OptionQuestion)
+    private readonly optionQuestionRepository: Repository<OptionQuestion>,
     @InjectRepository(TestAttempt)
     private readonly testAttemptRepository: Repository<TestAttempt>,
     @InjectRepository(TestRule)
@@ -48,6 +51,179 @@ export class TestsService {
     private readonly orderingService: OrderingService,
     private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Common logic for fetching test hierarchy data
+   * @param id - Test ID
+   * @param authContext - Authentication context
+   * @returns Promise<{test: Test, testQuestions: TestQuestion[], questionsMap: Map<string, Question>, childQuestionsByParent: Map<string, Question[]>}>
+   */
+  private async fetchTestHierarchyData(id: string, authContext: AuthContext) {
+    // First, get the test with sections
+    const test = await this.testRepository.findOne({
+      where: {
+        testId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        status: Not(TestStatus.ARCHIVED)
+      },
+      relations: ['sections'],
+      order: {
+        sections: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException('Test not found');
+    }
+
+    // Then, get test questions with explicit field selection
+    const testQuestions = await this.testQuestionRepository.find({
+      where: {
+        testId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      select: [
+        'testQuestionId',
+        'tenantId',
+        'organisationId',
+        'testId',
+        'questionId',
+        'ordering',
+        'sectionId',
+        'ruleId',
+        'isCompulsory',
+        'isConditional'
+      ],
+      order: { ordering: 'ASC' },
+    });
+
+    // Group test questions by section, filtering out conditional questions
+    const questionsBySection = new Map<string, any[]>();
+    testQuestions
+      .filter(tq => !tq.isConditional) // Filter out conditional questions
+      .forEach(tq => {
+        if (!questionsBySection.has(tq.sectionId)) {
+          questionsBySection.set(tq.sectionId, []);
+        }
+        questionsBySection.get(tq.sectionId)!.push(tq);
+      });
+
+    // Attach filtered test questions to sections
+    test.sections.forEach(section => {
+      section.questions = questionsBySection.get(section.sectionId) || [];
+    });
+
+    // Extract question IDs from test questions, filtering out conditional questions
+    const questionIds = testQuestions
+      .filter(testQuestion => !testQuestion.isConditional) // Filter out conditional questions
+      .map(testQuestion => testQuestion.questionId);
+
+    if (questionIds.length === 0) {
+      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map() };
+    }
+
+    // Fetch only parent questions (non-conditional) with options
+    const questions = await this.questionRepository.find({
+      where: { 
+        questionId: In(questionIds),
+        parentId: IsNull() // Only fetch parent questions
+      },
+      relations: ['options'],
+      order: {
+        options: {
+          ordering: 'ASC',
+        },
+      },
+    });
+
+    // Create a map for quick lookup
+    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
+
+    // Fetch all child questions for conditional display
+    const childQuestions = await this.questionRepository.find({
+      where: { 
+        parentId: Not(IsNull()) // Only fetch child questions
+      },
+      relations: ['options'],
+      order: {
+        options: {
+          ordering: 'ASC',
+        },
+      },
+    });
+    
+    // Create a map of child questions by parent ID
+    const childQuestionsByParent = new Map<string, any[]>();
+    childQuestions.forEach(child => {
+      if (!childQuestionsByParent.has(child.parentId!)) {
+        childQuestionsByParent.set(child.parentId!, []);
+      }
+      childQuestionsByParent.get(child.parentId!)!.push(child);
+    });
+
+    return { test, testQuestions, questionsMap, childQuestionsByParent };
+  }
+
+  /**
+   * Common logic for transforming and attaching questions to test hierarchy
+   * @param test - Test object with sections
+   * @param questionsMap - Map of questions by ID
+   * @param childQuestionsByParent - Map of child questions by parent ID
+   * @param showCorrectOptions - Whether to show correct options
+   * @param authContext - Authentication context
+   * @param transformMethod - Method to use for transformation
+   */
+  private async transformAndAttachQuestions(
+    test: Test,
+    questionsMap: Map<string, Question>,
+    childQuestionsByParent: Map<string, Question[]>,
+    showCorrectOptions: boolean,
+    authContext: AuthContext,
+    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>) => Promise<any>
+  ) {
+    // Transform questions and attach to test questions
+    for (const section of test.sections) {
+      for (const testQuestion of section.questions) {
+        // Skip conditional questions as they should not appear in main structure
+        if (testQuestion.isConditional) {
+          continue;
+        }
+        
+        const question = questionsMap.get(testQuestion.questionId);
+        if (question) {
+
+          // Transform the question data with conditional child questions
+          const transformedQuestion = await transformMethod(
+            question, 
+            showCorrectOptions, 
+            authContext,
+            childQuestionsByParent
+          );
+
+          // For matching questions, add a separate array of matchWith options
+          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
+            const matchWithOptions = question.options
+              .filter(opt => opt.matchWith) // Only include options that have matchWith
+              .map(opt => ({
+                matchWith: opt.matchWith,
+                matchWithMedia: opt.matchWithMedia,
+                ordering: opt.ordering,
+              }))
+              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
+
+            (transformedQuestion as any).matchWithOptions = matchWithOptions;
+          }
+
+          // Replace the test question with the complete question data
+          Object.assign(testQuestion, transformedQuestion);
+        }
+      }
+    }
+  }
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
    
@@ -251,102 +427,293 @@ export class TestsService {
     }
   }
 
+  // Learner view
+
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
-    const test = await this.testRepository.findOne({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        status: Not(TestStatus.ARCHIVED)
-      },
-      relations: [
-        'sections',
-        'sections.questions'
-      ],
-      order: {
-        sections: {
-          ordering: 'ASC',
-          questions: {
-            ordering: 'ASC',
-          },
-        },
-      },
-    });
+    // Fetch common test hierarchy data
+    const { test, questionsMap, childQuestionsByParent } = await this.fetchTestHierarchyData(id, authContext);
 
-    if (!test) {
-      throw new NotFoundException('Test not found');
-    }
-
-    // Extract all question IDs from test questions
-    const questionIds = test.sections
-      .flatMap(section => section.questions)
-      .map(testQuestion => testQuestion.questionId);
-
-    if (questionIds.length === 0) {
-      return test;
-    }
-
-    // Fetch all questions with options in a single query
-    const questions = await this.questionRepository.find({
-      where: { questionId: In(questionIds) },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
-
-    // Create a map for quick lookup
-    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Transform questions and attach to test questions
-    for (const section of test.sections) {
-      for (const testQuestion of section.questions) {
-        const question = questionsMap.get(testQuestion.questionId);
-        if (question) {
-          // Transform the question data to conditionally include sensitive fields based on showCorrectOptions
-          const transformedQuestion = {
-            ...question,
-            options: question.options?.map(opt => ({
-              questionOptionId: opt.questionOptionId,
-              text: opt.text,
-              media: opt.media,
-              ordering: opt.ordering,
-              marks: opt.marks,
-              caseSensitive: opt.caseSensitive,
-              createdAt: opt.createdAt,
-              // Conditionally include sensitive fields based on showCorrectOptions parameter
-              ...(showCorrectOptions && { 
-                isCorrect: opt.isCorrect,
-                blankIndex: opt.blankIndex,
-                matchWith: opt.matchWith,
-                matchWithMedia: opt.matchWithMedia
-              }),
-            })) || [],
-          };
-
-          // For matching questions, add a separate array of matchWith options
-          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
-            const matchWithOptions = question.options
-              .filter(opt => opt.matchWith) // Only include options that have matchWith
-              .map(opt => ({
-                matchWith: opt.matchWith,
-                matchWithMedia: opt.matchWithMedia,
-                ordering: opt.ordering,
-              }))
-              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
-
-            (transformedQuestion as any).matchWithOptions = matchWithOptions;
-          }
-
-          // Replace the test question with the complete question data
-          Object.assign(testQuestion, transformedQuestion);
-        }
-      }
-    }
+    // Transform and attach questions using learner transformation method
+    await this.transformAndAttachQuestions(
+      test,
+      questionsMap,
+      childQuestionsByParent,
+      showCorrectOptions,
+      authContext,
+      this.transformQuestionWithConditionals.bind(this)
+    );
 
     return test;
+  }
+
+  // Admin view
+  async getTestHierarchyAdmin(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
+    // Fetch common test hierarchy data
+    const { test, questionsMap, childQuestionsByParent } = await this.fetchTestHierarchyData(id, authContext);
+
+    // Transform and attach questions using admin transformation method
+    await this.transformAndAttachQuestions(
+      test,
+      questionsMap,
+      childQuestionsByParent,
+      showCorrectOptions,
+      authContext,
+      this.transformQuestionWithConditionalsAdmin.bind(this)
+    );
+
+    return test;
+  }
+
+  /**
+   * Transforms a question with its conditional child questions in a nested structure
+   * @param question - The question to transform
+   * @param showCorrectOptions - Whether to show correct options
+   * @param authContext - Authentication context
+   * @param childQuestionsByParent - Map of child questions by parent ID
+   * @returns Transformed question with conditional structure
+   */
+  private async transformQuestionWithConditionals(
+    question: any, 
+    showCorrectOptions: boolean, 
+    authContext: AuthContext,
+    childQuestionsByParent: Map<string, any[]>
+  ): Promise<any> {
+    const transformedQuestion = {
+      questionId: question.questionId,
+      text: question.text,
+      type: question.type,
+      marks: question.marks,
+      params: question.params,
+      status: question.status,
+      ordering: question.ordering,
+      createdAt: question.createdAt,
+      updatedAt: question.updatedAt,
+      options: await this.transformOptionsWithConditionals(
+        question.options || [], 
+        showCorrectOptions, 
+        authContext,
+        childQuestionsByParent,
+        question.questionId
+      )
+    };
+
+    return transformedQuestion;
+  }
+
+  /**
+   * Transforms options with their conditional child questions
+   * @param options - Array of options to transform
+   * @param showCorrectOptions - Whether to show correct options
+   * @param authContext - Authentication context
+   * @param childQuestionsByParent - Map of child questions by parent ID
+   * @param parentQuestionId - ID of the parent question
+   * @returns Transformed options with conditional structure
+   */
+  private async transformOptionsWithConditionals(
+    options: any[], 
+    showCorrectOptions: boolean, 
+    authContext: AuthContext,
+    childQuestionsByParent: Map<string, any[]>,
+    parentQuestionId: string
+  ): Promise<any[]> {
+    // Get option-question mappings for this parent question
+    const optionQuestionMappings = await this.optionQuestionRepository.find({
+      where: {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        option: {
+          questionId: parentQuestionId
+        }
+      },
+      relations: ['question', 'question.options', 'option']
+    });
+
+    // Create a map of optionId -> child question for quick lookup
+    const optionToChildQuestionMap = new Map<string, any>();
+    optionQuestionMappings.forEach(mapping => {
+      optionToChildQuestionMap.set(mapping.optionId, mapping.question);
+    });
+
+    return Promise.all(options.map(async (option) => {
+      const transformedOption: any = {
+        questionOptionId: option.questionOptionId,
+        text: option.text,
+        media: option.media,
+        ordering: option.ordering,
+        marks: option.marks,
+        caseSensitive: option.caseSensitive,
+        createdAt: option.createdAt,
+        // Conditionally include sensitive fields based on showCorrectOptions parameter
+        ...(showCorrectOptions && { 
+          isCorrect: option.isCorrect,
+          blankIndex: option.blankIndex,
+          matchWith: option.matchWith,
+          matchWithMedia: option.matchWithMedia
+        }),
+      };
+
+      // Check if this specific option has a conditional child question
+      const childQuestion = optionToChildQuestionMap.get(option.questionOptionId);
+      
+      if (childQuestion) {
+        transformedOption.hasChildQuestion = true;
+        
+        // Recursively transform the child question
+        transformedOption.childQuestion = await this.transformQuestionWithConditionals(
+          childQuestion, 
+          showCorrectOptions, 
+          authContext,
+          childQuestionsByParent
+        );
+      } else {
+        transformedOption.hasChildQuestion = false;
+      }
+
+      return transformedOption;
+    }));
+  }
+
+  /**
+   * Transforms questions with conditional child questions for admin view (includes child questions)
+   * @param question - Question to transform
+   * @param showCorrectOptions - Whether to show correct options
+   * @param authContext - Authentication context
+   * @param childQuestionsByParent - Map of child questions by parent ID
+   * @returns Transformed question with conditional structure including child questions
+   */
+  private async transformQuestionWithConditionalsAdmin(
+    question: any, 
+    showCorrectOptions: boolean, 
+    authContext: AuthContext,
+    childQuestionsByParent: Map<string, any[]>
+  ): Promise<any> {
+    const transformedQuestion: any = {
+      questionId: question.questionId,
+      text: question.text,
+      type: question.type,
+      marks: question.marks,
+      params: question.params,
+      status: question.status,
+      ordering: question.ordering,
+      createdAt: question.createdAt,
+      updatedAt: question.updatedAt,
+      options: await this.transformOptionsWithConditionalsAdmin(
+        question.options || [], 
+        showCorrectOptions, 
+        authContext,
+        childQuestionsByParent,
+        question.questionId
+      )
+    };
+
+    // Add childQuestion array for admin view
+    const childQuestions = childQuestionsByParent.get(question.questionId) || [];
+    if (childQuestions.length > 0) {
+      transformedQuestion.childQuestion = await Promise.all(
+        childQuestions.map(async (childQuestion) => {
+          return await this.transformQuestionWithConditionalsAdmin(
+            childQuestion,
+            showCorrectOptions,
+            authContext,
+            childQuestionsByParent
+          );
+        })
+      );
+    }
+
+    return transformedQuestion;
+  }
+
+  /**
+   * Transforms options with their conditional child questions for admin view (includes AssociatedQuestion array)
+   * @param options - Array of options to transform
+   * @param showCorrectOptions - Whether to show correct options
+   * @param authContext - Authentication context
+   * @param childQuestionsByParent - Map of child questions by parent ID
+   * @param parentQuestionId - ID of the parent question
+   * @returns Transformed options with conditional structure including AssociatedQuestion array
+   */
+  private async transformOptionsWithConditionalsAdmin(
+    options: any[], 
+    showCorrectOptions: boolean, 
+    authContext: AuthContext,
+    childQuestionsByParent: Map<string, any[]>,
+    parentQuestionId: string
+  ): Promise<any[]> {
+    // Get option-question mappings for this parent question
+    const optionQuestionMappings = await this.optionQuestionRepository.find({
+      where: {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        option: {
+          questionId: parentQuestionId
+        }
+      },
+      relations: ['question', 'question.options', 'option']
+    });
+
+    // Create a map of optionId -> child questions array for quick lookup
+    const optionToChildQuestionMap = new Map<string, any[]>();
+    optionQuestionMappings.forEach(mapping => {
+      if (!optionToChildQuestionMap.has(mapping.optionId)) {
+        optionToChildQuestionMap.set(mapping.optionId, []);
+      }
+      optionToChildQuestionMap.get(mapping.optionId)!.push(mapping.question);
+    });
+
+    return Promise.all(options.map(async (option) => {
+      const transformedOption: any = {
+        questionOptionId: option.questionOptionId,
+        text: option.text,
+        media: option.media,
+        ordering: option.ordering,
+        marks: option.marks,
+        caseSensitive: option.caseSensitive,
+        createdAt: option.createdAt,
+        // Conditionally include sensitive fields based on showCorrectOptions parameter
+        ...(showCorrectOptions && { 
+          isCorrect: option.isCorrect,
+          blankIndex: option.blankIndex,
+          matchWith: option.matchWith,
+          matchWithMedia: option.matchWithMedia
+        }),
+      };
+
+      // Check if this specific option has conditional child questions
+      const childQuestions = optionToChildQuestionMap.get(option.questionOptionId);
+      
+      if (childQuestions && childQuestions.length > 0) {
+        transformedOption.hasChildQuestion = true;
+        
+        // Add AssociatedQuestion array for this option (without options)
+        transformedOption.AssociatedQuestion = childQuestions.map(childQuestion => 
+          this.transformQuestionWithoutOptions(childQuestion)
+        );
+      } else {
+        transformedOption.hasChildQuestion = false;
+      }
+
+      return transformedOption;
+    }));
+  }
+
+  /**
+   * Transforms a question without options (for AssociatedQuestion)
+   * @param question - Question to transform
+   * @returns Transformed question without options
+   */
+  private transformQuestionWithoutOptions(question: any): any {
+    return {
+      questionId: question.questionId,
+      text: question.text,
+      type: question.type,
+      marks: question.marks,
+      params: question.params,
+      status: question.status,
+      ordering: question.ordering,
+      createdAt: question.createdAt,
+      updatedAt: question.updatedAt,
+    };
   }
 
   async addQuestionToTest(testId: string, sectionId: string, questionId: string, isCompulsory: boolean = true, authContext: AuthContext): Promise<void> {
@@ -382,6 +749,16 @@ export class TestsService {
     });
 
     await this.testQuestionRepository.save(testQuestion);
+    const isTestObjective = await this.checkIfTestIsObjective(testId, authContext);
+
+    let isObjective = false;
+    if(isTestObjective) {
+      isObjective = true;
+    }
+
+    await this.testRepository.update(testId, { isObjective });
+
+    
   }
 
   async addQuestionsBulkToTest(testId: string, sectionId: string, questions: Array<{ questionId: string; ordering?: number; isCompulsory?: boolean }>, authContext: AuthContext): Promise<{ added: number; skipped: number; errors: string[] }> {
@@ -488,6 +865,14 @@ export class TestsService {
         .execute();
       result.added = questionsToAdd.length;
     }
+
+    const isTestObjective = await this.checkIfTestIsObjective(testId, authContext);
+    let isObjective = false;
+    if(isTestObjective){
+      isObjective = true;
+    }
+
+    await this.testRepository.update(testId, { isObjective });
 
     return result;
   }
@@ -1613,5 +1998,44 @@ export class TestsService {
     }
   }
 
+  /**
+   * Check if a test contains only objective questions
+   * @param testId - The test ID to check
+   * @param authContext - Authentication context
+   * @returns Promise<boolean> - true if all questions are objective, false otherwise
+   */
+  async checkIfTestIsObjective(testId: string, authContext: AuthContext): Promise<boolean> {
+    try {
+      // Get all questions for this test through test questions
+      const testQuestions = await this.testQuestionRepository
+        .createQueryBuilder('tq')
+        .innerJoin('questions', 'q', 'q.questionId = tq.questionId')
+        .select('q.type')
+        .where('tq.testId = :testId', { testId })
+        .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+        .andWhere('tq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+        .getRawMany();
+
+      if (testQuestions.length === 0) {
+        // If no questions found, consider it objective (edge case)
+        return true;
+      }
+
+      // Check if all questions are objective types
+      const objectiveTypes = [
+        QuestionType.MCQ,
+        QuestionType.TRUE_FALSE,
+        QuestionType.MULTIPLE_ANSWER,
+        QuestionType.FILL_BLANK,
+        QuestionType.MATCH
+      ];
+
+      return testQuestions.every(tq => objectiveTypes.includes(tq.type));
+    } catch (error) {
+      this.logger.error(`Error checking if test is objective: ${error.message}`, error.stack);
+      // Return false as safe default (requires manual review)
+      return false;
+    }
+  }
 
 } 

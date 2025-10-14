@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { AttemptsService } from './attempts.service';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
+import { ReviewTestAttemptDto } from './dto/review-test-attempt.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
@@ -140,5 +141,26 @@ export class AttemptsController {
     const authContext: AuthContext = req.user;
     const result = await this.attemptsService.getAttemptAnswersheet(attemptId, authContext);
     return result;
+  }
+
+
+  @Post('review')
+  @ApiOperation({ 
+    summary: 'Review a test attempt by testId',
+    description: 'Find the attempt for the given testId based on allowResubmission and gradingType, then review and score the attempt'
+  })
+  @ApiResponse({ status: 200, description: 'Attempt reviewed successfully', type: ApiSuccessResponseDto })
+  async reviewTestAttempt(
+    @Body() reviewDto: ReviewTestAttemptDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const attempt = await this.attemptsService.reviewTestAttempt(reviewDto.testId, reviewDto, authContext);
+    return { 
+      attemptId: attempt.attemptId, 
+      score: attempt.score,
+      result: attempt.result,
+      reviewStatus: attempt.reviewStatus 
+    };
   }
 } 

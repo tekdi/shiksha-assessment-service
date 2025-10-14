@@ -5,7 +5,6 @@ if (typeof globalThis.crypto === 'undefined') {
 }
 
 import { DataSource } from 'typeorm';
-import { InitialSchema001 } from '../migrations/001_initial_schema';
 
 // Database configuration
 const dataSource = new DataSource({
@@ -30,7 +29,6 @@ async function showMigrationStatus() {
     
     // Get available migrations
     const availableMigrations = [
-      new InitialSchema001(),
     ];
     
     // Get executed migrations
