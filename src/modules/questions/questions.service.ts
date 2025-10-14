@@ -668,7 +668,8 @@ export class QuestionsService {
           break;
         }
           
-        case QuestionType.MULTIPLE_ANSWER: {
+        case QuestionType.MULTIPLE_ANSWER:
+        case QuestionType.CHECKBOX: {
           this.validateMultipleAnswerOptions(options, questionDto);
           break;
         }
@@ -680,6 +681,11 @@ export class QuestionsService {
           
         case QuestionType.MATCH: {
           this.validateMatchOptions(options);
+          break;
+        }
+          
+        case QuestionType.DROPDOWN: {
+          this.validateDropdownOptions(options, questionDto);
           break;
         }
       }
@@ -1103,6 +1109,57 @@ export class QuestionsService {
     if (duplicateMatchWith.length > 0) {
       throw new BadRequestException(`Duplicate matchWith values found: ${duplicateMatchWith.join(', ')}`);
     }
+  }
+
+  /**
+   * Validates dropdown question options
+   * Ensures proper option structure and correct answer distribution
+   * @param options - Array of option objects to validate
+   * @param questionDto - The complete question DTO for validation context
+   */
+  private validateDropdownOptions(options: any[], questionDto: CreateQuestionDto): void {
+    // Dropdown questions must have at least 2 options
+    if (options.length < 2) {
+      throw new BadRequestException('Dropdown questions must have at least 2 options.');
+    }
+
+    // Validate at least one correct option
+    const correctOptions = options.filter(option => option.isCorrect);
+    if (correctOptions.length === 0) {
+      throw new BadRequestException('Dropdown questions must have at least one correct answer.');
+    }
+
+    // For single-select dropdown, only one correct option
+    const dropdownConfig = questionDto.params?.dropdownConfig;
+    if (!dropdownConfig?.allowMultiple && correctOptions.length > 1) {
+      throw new BadRequestException('Single-select dropdown questions must have exactly one correct answer.');
+    }
+
+    // Validate option texts are unique
+    this.validateDuplicateTexts(options);
+  }
+
+  /**
+   * Validates rating question parameters
+   * Ensures rating scale configuration is valid
+   * @param questionDto - The complete question DTO for validation context
+   */
+  private validateRatingQuestion(questionDto: CreateQuestionDto): void {
+    const ratingScale = questionDto.params?.ratingScale;
+    
+    if (ratingScale) {
+      // Validate rating scale parameters
+      if (ratingScale.min !== undefined && ratingScale.max !== undefined && ratingScale.min >= ratingScale.max) {
+        throw new BadRequestException('Rating minimum value must be less than maximum value.');
+      }
+      
+      if (ratingScale.step && ratingScale.step <= 0) {
+        throw new BadRequestException('Rating step must be greater than 0.');
+      }
+    }
+    
+    // If no ratingScale is defined, we'll use defaults (min=1, max=5, step=1)
+    // This is valid and will be handled in the scoring logic
   }
 
   /**

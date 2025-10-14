@@ -855,7 +855,7 @@ All API endpoints require the following headers for multi-tenancy and audit trai
 **Input Validation Rules**:
 - **Required Fields**:
   - `text` (string): Non-empty after trimming, 1-5000 characters
-  - `type` (enum): Must be one of `mcq`, `multiple_answer`, `true_false`, `fill_blank`, `match`, `subjective`, `essay`
+  - `type` (enum): Must be one of `mcq`, `multiple_answer`, `true_false`, `fill_blank`, `match`, `subjective`, `essay`, `dropdown`, `rating`
 - **Optional Fields**:
   - `media` (object): Valid URLs for image, video, audio, document
   - `alias` (string): 1-100 characters, URL-friendly format
@@ -892,6 +892,23 @@ All API endpoints require the following headers for multi-tenancy and audit trai
   - No options required
   - `params` validation: `maxLength > minLength`, `wordLimit > 0`
   - Rubric criteria must have positive `maxScore`
+- **DROPDOWN**:
+  - At least 2 options required
+  - At least one correct option required
+  - For single-select: exactly one correct option
+  - For multi-select: multiple correct options allowed
+  - Option texts must be unique
+  - Supports `dropdownConfig` for multiple selection and search
+  - Uses `selectedOptionIds` for answer submission (single or multiple)
+- **RATING**:
+  - Options optional but recommended for labels and custom scoring
+  - If options provided: must have `ratingValue` for each option
+  - Rating values must be sequential from min to max
+  - `ratingScale` validation: `min < max`, `step > 0`
+  - Option texts serve as labels for each rating level
+  - Supports 0 marks for non-scored rating questions
+  - Default rating scale: min=1, max=5, step=1 if not specified
+  - Uses `rating` field for answer submission (numeric value)
 
 **Business Logic Conditions**:
 - **Options Validation**:

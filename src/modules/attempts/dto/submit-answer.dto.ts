@@ -7,7 +7,7 @@ export class AnswerDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  selectedOptionIds?: string[]; // For MCQ/Multiple choice
+  selectedOptionIds?: string[]; // For MCQ/Multiple choice/Dropdown/Rating (single or multiple selection)
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -27,6 +27,11 @@ export class AnswerDto {
   @IsArray()
   @IsString({ each: true })
   blanks?: string[]; // For fill-in-the-blank
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  rating?: number; // For rating questions without options (legacy support)
 }
 
 export class SubmitAnswerDto {

@@ -41,6 +41,18 @@ export class RubricCriteriaDto {
   description: string;
 }
 
+export class DropdownConfigDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  allowMultiple?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  placeholder?: string;
+}
+
 export class QuestionParamsDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -71,6 +83,12 @@ export class QuestionParamsDto {
   @IsOptional()
   @IsBoolean()
   allowPartialScoring?: boolean = false;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DropdownConfigDto)
+  dropdownConfig?: DropdownConfigDto;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -239,7 +257,7 @@ export class CreateQuestionDto {
 
   @ApiPropertyOptional({ 
     type: [CreateQuestionOptionDto],
-    description: 'Question options. Required for MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, MATCH. Optional for SUBJECTIVE and ESSAY (for reference correct answers - shown in answersheet but not used for auto-evaluation).'
+    description: 'Question options. Required for MCQ, TRUE_FALSE, MULTIPLE_ANSWER, FILL_BLANK, MATCH, DROPDOWN. Optional for SUBJECTIVE and ESSAY (for reference correct answers - shown in answersheet but not used for auto-evaluation). Optional for RATING questions (recommended for labels and custom scoring per rating level).'
   })
   @IsOptional()
   @IsArray()
