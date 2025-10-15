@@ -757,7 +757,7 @@ export class AttemptsService {
    * CLEANUP CHILD QUESTION ANSWERS BEFORE SUBMIT (WITH TRANSACTION)
    * Deletes all child question answers before processing new answers
    */
-  private async cleanupChildQuestionAnswersBeforeSubmitWithTransaction(
+  private async cleanupChildQuestion(
     attemptId: string, 
     newAnswers: any[], 
     authContext: AuthContext,
@@ -841,9 +841,7 @@ export class AttemptsService {
   }
     try {
       // CLEANUP FIRST: Delete all child question answers before submitting new answers
-      await this.cleanupChildQuestionAnswersBeforeSubmitWithTransaction(attemptId, answersArray, authContext, queryRunner);
-
-      
+      await this.cleanupChildQuestion(attemptId, answersArray, authContext, queryRunner);
 
     // Get test information to check allowResubmission setting
     const testId = attempt.resolvedTestId || attempt.testId;
@@ -945,7 +943,6 @@ export class AttemptsService {
         await queryRunner.manager.save(TestUserAnswer, answersToUpdate);
       }
 
-    // Cleanup is now done BEFORE submitting answers (see cleanupChildQuestionAnswersBeforeSubmit)
 
     // Update attempt time spent
     if (totalTimeSpent > 0) {
