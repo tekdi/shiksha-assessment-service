@@ -1140,29 +1140,6 @@ export class QuestionsService {
   }
 
   /**
-   * Validates rating question parameters
-   * Ensures rating scale configuration is valid
-   * @param questionDto - The complete question DTO for validation context
-   */
-  private validateRatingQuestion(questionDto: CreateQuestionDto): void {
-    const ratingScale = questionDto.params?.ratingScale;
-    
-    if (ratingScale) {
-      // Validate rating scale parameters
-      if (ratingScale.min !== undefined && ratingScale.max !== undefined && ratingScale.min >= ratingScale.max) {
-        throw new BadRequestException('Rating minimum value must be less than maximum value.');
-      }
-      
-      if (ratingScale.step && ratingScale.step <= 0) {
-        throw new BadRequestException('Rating step must be greater than 0.');
-      }
-    }
-    
-    // If no ratingScale is defined, we'll use defaults (min=1, max=5, step=1)
-    // This is valid and will be handled in the scoring logic
-  }
-
-  /**
    * Associates a question with an option (creates conditional question relationship)
    * @param questionId - The ID of the question to associate
    * @param optionId - The ID of the option to associate with
