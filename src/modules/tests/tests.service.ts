@@ -528,10 +528,13 @@ export class TestsService {
       relations: ['question', 'question.options', 'option']
     });
 
-    // Create a map of optionId -> child question for quick lookup
-    const optionToChildQuestionMap = new Map<string, any>();
+    // Create a map of optionId -> array of child questions for quick lookup
+    const optionToChildQuestionsMap = new Map<string, any[]>();
     optionQuestionMappings.forEach(mapping => {
-      optionToChildQuestionMap.set(mapping.optionId, mapping.question);
+      if (!optionToChildQuestionsMap.has(mapping.optionId)) {
+        optionToChildQuestionsMap.set(mapping.optionId, []);
+      }
+      optionToChildQuestionsMap.get(mapping.optionId)!.push(mapping.question);
     });
 
     return Promise.all(options.map(async (option) => {
@@ -552,18 +555,22 @@ export class TestsService {
         }),
       };
 
-      // Check if this specific option has a conditional child question
-      const childQuestion = optionToChildQuestionMap.get(option.questionOptionId);
+      // Check if this specific option has conditional child questions
+      const childQuestions = optionToChildQuestionsMap.get(option.questionOptionId);
       
-      if (childQuestion) {
+      if (childQuestions && childQuestions.length > 0) {
         transformedOption.hasChildQuestion = true;
         
-        // Recursively transform the child question
-        transformedOption.childQuestion = await this.transformQuestionWithConditionals(
-          childQuestion, 
-          showCorrectOptions, 
-          authContext,
-          childQuestionsByParent
+        // Recursively transform all child questions
+        transformedOption.childQuestion = await Promise.all(
+          childQuestions.map(async (childQuestion) => 
+            await this.transformQuestionWithConditionals(
+              childQuestion, 
+              showCorrectOptions, 
+              authContext,
+              childQuestionsByParent
+            )
+          )
         );
       } else {
         transformedOption.hasChildQuestion = false;
