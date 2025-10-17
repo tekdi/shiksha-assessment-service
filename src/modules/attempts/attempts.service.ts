@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Not } from 'typeorm';
+import { Repository, In, Not, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { TestAttempt, AttemptStatus, SubmissionType, ReviewStatus, ResultType } from '../tests/entities/test-attempt.entity';
@@ -47,6 +47,7 @@ export class AttemptsService {
     private readonly questionOptionRepository: Repository<QuestionOption>,
     @InjectRepository(OptionQuestion)
     private readonly optionQuestionRepository: Repository<OptionQuestion>,
+    private readonly dataSource: DataSource,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
     private readonly configService: ConfigService,
@@ -753,287 +754,46 @@ export class AttemptsService {
   }
 
   /**
-   * Gets child questions associated with a specific option
-   * @param optionId - The option ID to check for child questions
-   * @param authContext - Authentication context
-   * @returns Promise<string[]> - Array of child question IDs
+   * CLEANUP CHILD QUESTION ANSWERS BEFORE SUBMIT (WITH TRANSACTION)
+   * Deletes all child question answers before processing new answers
    */
-  private async getChildQuestionsForOption(optionId: string, authContext: AuthContext): Promise<string[]> {
-    const optionQuestions = await this.optionQuestionRepository.find({
+  private async cleanupChildQuestion(
+    attemptId: string, 
+    existingAnswers: TestUserAnswer[],
+    authContext: AuthContext,
+    queryRunner: any
+  ): Promise<void> {
+    
+    // Get all question IDs from existing answers
+    const existingQuestionIds = existingAnswers.map(a => a.questionId);
+    
+    // Get all questions to identify parent-child relationships using transaction
+    const allQuestions = await queryRunner.manager.find(Question, {
       where: {
-        optionId,
+        questionId: In(existingQuestionIds),
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
-        isActive: true,
       },
     });
 
-    return optionQuestions.map(oq => oq.questionId);
-  }
+    // Identify child questions (questions with parentId != null)
+    const childQuestions = allQuestions.filter(q => q.parentId);
 
-  /**
-   * Gets all child questions for multiple parent questions
-   * @param parentQuestionIds - Array of parent question IDs
-   * @param authContext - Authentication context
-   * @returns Promise<Map<string, string[]>> - Map of parent question ID to child question IDs
-   */
-  private async getChildQuestionsForParents(parentQuestionIds: string[], authContext: AuthContext): Promise<Map<string, string[]>> {
-    const childQuestionsMap = new Map<string, string[]>();
-
-    for (const parentQuestionId of parentQuestionIds) {
-      // Get all options for this parent question
-      const options = await this.questionOptionRepository.find({
-        where: {
-          questionId: parentQuestionId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
-
-      const allChildQuestions = new Set<string>();
-
-      // Get child questions for each option
-      for (const option of options) {
-        const childQuestions = await this.getChildQuestionsForOption(option.questionOptionId, authContext);
-        childQuestions.forEach(childId => allChildQuestions.add(childId));
-      }
-
-      childQuestionsMap.set(parentQuestionId, Array.from(allChildQuestions));
-    }
-
-    return childQuestionsMap;
-  }
-
-  /**
-   * Deletes orphaned child question answers
-   * @param attemptId - The attempt ID
-   * @param orphanedQuestionIds - Array of orphaned question IDs to delete
-   * @param authContext - Authentication context
-   */
-  private async deleteOrphanedAnswers(attemptId: string, orphanedQuestionIds: string[], authContext: AuthContext): Promise<void> {
-    if (orphanedQuestionIds.length === 0) {
+    if (childQuestions.length === 0) {
       return;
     }
 
-    await this.testUserAnswerRepository.delete({
+    // Get all child question IDs
+    const childQuestionIds = childQuestions.map(cq => cq.questionId);
+
+    // Delete ALL child question answers using transaction
+    const deleteResult = await queryRunner.manager.delete(TestUserAnswer, {
       attemptId,
-      questionId: In(orphanedQuestionIds),
+      questionId: In(childQuestionIds),
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
     });
 
-    console.log(`Deleted ${orphanedQuestionIds.length} orphaned child question answers for attempt ${attemptId}`);
-  }
-
-  /**
-   * Optimized method to handle orphaned child answers with shared data
-   * @param attemptId - The attempt ID
-   * @param newAnswers - Array of new answers being submitted
-   * @param existingAnswers - Already fetched existing answers
-   * @param authContext - Authentication context
-   */
-  private async handleOrphanedChildAnswersOptimized(
-    attemptId: string, 
-    newAnswers: any[], 
-    existingAnswers: TestUserAnswer[],
-    authContext: AuthContext
-  ): Promise<void> {
-    // Get all questions (both existing and new) to identify parent-child relationships
-    const allQuestionIds = [
-      ...existingAnswers.map(a => a.questionId),
-      ...newAnswers.map(a => a.questionId)
-    ];
-
-    // Remove duplicates
-    const uniqueQuestionIds = [...new Set(allQuestionIds)];
-
-    const allQuestions = await this.questionRepository.find({
-      where: {
-        questionId: In(uniqueQuestionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Identify parent questions (questions with parentId = null)
-    const parentQuestions = allQuestions.filter(q => !q.parentId);
-    const parentQuestionIds = parentQuestions.map(q => q.questionId);
-
-    if (parentQuestionIds.length === 0) {
-      return; // No parent questions, nothing to clean up
-    }
-
-    // Create maps for efficient lookup
-    const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
-
-    // Collect all orphaned question IDs to delete in batch
-    const orphanedQuestionIds: string[] = [];
-
-    // Process each parent question
-    for (const parentQuestionId of parentQuestionIds) {
-      // Find the new answer for this parent question
-      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
-      const existingAnswer = existingAnswersMap.get(parentQuestionId);
-
-      if (!newAnswer || !existingAnswer) {
-        continue; // Skip if no new answer or no existing answer
-      }
-
-      // Parse the answers to get selected options
-      let newSelectedOptions: string[] = [];
-      let oldSelectedOptions: string[] = [];
-
-      try {
-        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
-        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
-
-        // Extract selected option IDs based on answer format
-        if (newAnswerData.selectedOptions) {
-          newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
-        }
-        if (oldAnswerData.selectedOptions) {
-          oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
-        }
-      } catch (error) {
-        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
-        continue;
-      }
-
-      // Check if parent selection has changed
-      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
-
-      if (hasSelectionChanged) {
-        // Get child questions for old and new selections
-        const oldChildQuestions = new Set<string>();
-        const newChildQuestions = new Set<string>();
-
-        // Get child questions for old selections
-        for (const oldOptionId of oldSelectedOptions) {
-          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
-          childQuestions.forEach(childId => oldChildQuestions.add(childId));
-        }
-
-        // Get child questions for new selections
-        for (const newOptionId of newSelectedOptions) {
-          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
-          childQuestions.forEach(childId => newChildQuestions.add(childId));
-        }
-
-        // Find orphaned child questions (in old but not in new)
-        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
-          childId => !newChildQuestions.has(childId)
-        );
-
-        // Add to batch delete list
-        orphanedQuestionIds.push(...orphanedChildQuestions);
-      }
-    }
-
-    // Delete all orphaned answers in a single batch operation
-    if (orphanedQuestionIds.length > 0) {
-      await this.deleteOrphanedAnswers(attemptId, orphanedQuestionIds, authContext);
-    }
-  }
-
-  /**
-   * Handles cleanup of orphaned child question answers when parent selections change
-   * @param attemptId - The attempt ID
-   * @param newAnswers - Array of new answers being submitted
-   * @param authContext - Authentication context
-   */
-  private async handleOrphanedChildAnswers(attemptId: string, newAnswers: any[], authContext: AuthContext): Promise<void> {
-    // Get all existing answers for this attempt
-    const existingAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Get all questions (both existing and new) to identify parent-child relationships
-    const allQuestionIds = [
-      ...existingAnswers.map(a => a.questionId),
-      ...newAnswers.map(a => a.questionId)
-    ];
-
-    const allQuestions = await this.questionRepository.find({
-      where: {
-        questionId: In(allQuestionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Identify parent questions (questions with parentId = null)
-    const parentQuestions = allQuestions.filter(q => !q.parentId);
-    const parentQuestionIds = parentQuestions.map(q => q.questionId);
-
-    if (parentQuestionIds.length === 0) {
-      return; // No parent questions, nothing to clean up
-    }
-
-    // Process each parent question
-    for (const parentQuestionId of parentQuestionIds) {
-      // Find the new answer for this parent question
-      const newAnswer = newAnswers.find(a => a.questionId === parentQuestionId);
-      const existingAnswer = existingAnswers.find(a => a.questionId === parentQuestionId);
-
-      if (!newAnswer || !existingAnswer) {
-        continue; // Skip if no new answer or no existing answer
-      }
-
-      // Parse the answers to get selected options
-      let newSelectedOptions: string[] = [];
-      let oldSelectedOptions: string[] = [];
-
-      try {
-        const newAnswerData = typeof newAnswer.answer === 'string' ? JSON.parse(newAnswer.answer) : newAnswer.answer;
-        const oldAnswerData = typeof existingAnswer.answer === 'string' ? JSON.parse(existingAnswer.answer) : existingAnswer.answer;
-
-        // Extract selected option IDs based on answer format
-        if (newAnswerData.selectedOptions) {
-          newSelectedOptions = newAnswerData.selectedOptions.map((opt: any) => opt.optionId);
-        }
-        if (oldAnswerData.selectedOptions) {
-          oldSelectedOptions = oldAnswerData.selectedOptions.map((opt: any) => opt.optionId);
-        }
-      } catch (error) {
-        console.warn(`Failed to parse answers for parent question ${parentQuestionId}:`, error);
-        continue;
-      }
-
-      // Check if parent selection has changed
-      const hasSelectionChanged = JSON.stringify(newSelectedOptions.sort()) !== JSON.stringify(oldSelectedOptions.sort());
-
-      if (hasSelectionChanged) {
-        // Get child questions for old and new selections
-        const oldChildQuestions = new Set<string>();
-        const newChildQuestions = new Set<string>();
-
-        // Get child questions for old selections
-        for (const oldOptionId of oldSelectedOptions) {
-          const childQuestions = await this.getChildQuestionsForOption(oldOptionId, authContext);
-          childQuestions.forEach(childId => oldChildQuestions.add(childId));
-        }
-
-        // Get child questions for new selections
-        for (const newOptionId of newSelectedOptions) {
-          const childQuestions = await this.getChildQuestionsForOption(newOptionId, authContext);
-          childQuestions.forEach(childId => newChildQuestions.add(childId));
-        }
-
-        // Find orphaned child questions (in old but not in new)
-        const orphanedChildQuestions = Array.from(oldChildQuestions).filter(
-          childId => !newChildQuestions.has(childId)
-        );
-
-        // Delete orphaned child question answers
-        if (orphanedChildQuestions.length > 0) {
-          await this.deleteOrphanedAnswers(attemptId, orphanedChildQuestions, authContext);
-        }
-      }
-    }
   }
 
   async submitAnswer(attemptId: string, submitAnswerDto: SubmitMultipleAnswersDto, authContext: AuthContext): Promise<any> {
@@ -1044,152 +804,179 @@ export class AttemptsService {
     if (answersArray.length === 0) {
       return { message: 'No answers provided to submit' };
     }
-    console.log('authContext.userId', authContext.userId);
 
-    // Verify attempt exists and belongs to user (only once)
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        attemptId,
-        userId: authContext.userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['test'],
-    });
+    // Use database transaction to ensure data consistency
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!attempt) {
-      throw new NotFoundException('Attempt not found');
-    }
-
-    // Get test information to check allowResubmission setting
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
-
-    // Check if attempt is submitted (only for tests without allowResubmission)
-    if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
-      throw new Error('Cannot submit answer to completed attempt');
-    }
-
-    // Get all questions to validate answer formats and determine question types (batch query)
-    const questionIds = answersArray.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
-      where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['options'], // Load options for scoring
-    });
-
-    if (questions.length !== questionIds.length) {
-      const foundQuestionIds = questions.map(q => q.questionId);
-      const missingQuestionIds = questionIds.filter(id => !foundQuestionIds.includes(id));
-      throw new NotFoundException(`Questions not found: ${missingQuestionIds.join(', ')}`);
-    }
-
-    const questionMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Get existing answers for this attempt (batch query) - OPTIMIZED: Get ALL answers for orphaned cleanup
-    const existingAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Filter existing answers for current questions only
-    const existingAnswersForCurrentQuestions = existingAnswers.filter(a => 
-      questionIds.includes(a.questionId)
-    );
-
-    const existingAnswersMap = new Map(existingAnswersForCurrentQuestions.map(a => [a.questionId, a]));
-
-    // Prepare answers to save/update
-    const answersToSave: TestUserAnswer[] = [];
-    const answersToUpdate: TestUserAnswer[] = [];
-    let totalTimeSpent = globalTimeSpent; // Start with global timeSpent if provided
-
-    for (const answerDto of answersArray) {
-      const answer = JSON.stringify(answerDto.answer);
-      const question = questionMap.get(answerDto.questionId);
-      const existingAnswer = existingAnswersMap.get(answerDto.questionId);
-
-      // Add null check for question object before calculating score
-      if (!question) {
-        throw new NotFoundException(`Question not found`);
-      }
-
-      // Calculate score and review status based on question type
-      let score = await this.calculateQuestionScore(answerDto.answer, question);
-      let reviewStatus = AnswerReviewStatus.PENDING;
-      if (attempt.test.isObjective) {
-        reviewStatus = AnswerReviewStatus.REVIEWED
-      } 
-
-      // Improved score validation: check if score is a finite number and default to 0 if not
-      const numericScore = Number(score);
-      const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
-
-      if (existingAnswer) {
-        existingAnswer.answer = answer;
-        existingAnswer.score = finalScore;
-        existingAnswer.reviewStatus = reviewStatus;
-        existingAnswer.updatedAt = new Date();
-        answersToUpdate.push(existingAnswer);
-      } else {
-        const userAnswer = this.testUserAnswerRepository.create({
+    try {
+      // 1. Verify attempt exists and belongs to user (only once)
+      const attempt = await queryRunner.manager.findOne(TestAttempt, {
+        where: {
           attemptId,
-          questionId: answerDto.questionId,
-          answer: answer,
-          score: finalScore,
-          reviewStatus: reviewStatus,
-          anssOrder: '1', // This could be enhanced to track order
+          userId: authContext.userId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
-        });
-        answersToSave.push(userAnswer);
+        },
+        relations: ['test'],
+      });
+
+      if (!attempt) {
+        throw new NotFoundException('Attempt not found');
       }
+
+      const test = attempt.test;
+
+      // Check if attempt is submitted (only for tests without allowResubmission)
+      if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
+        throw new Error('Cannot submit answer to completed attempt');
+      }
+
+      // 2. Batch load all required data for optimal performance
+      const questionIds = answersArray.map(answer => answer.questionId);
       
-    }
+      const [questions, allOptions, existingAnswers] = await Promise.all([
+        queryRunner.manager.find(Question, {
+          where: {
+            questionId: In(questionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        }),
+        queryRunner.manager.find(QuestionOption, {
+          where: { questionId: In(questionIds) },
+          order: { questionId: 'ASC', ordering: 'ASC' },
+        }),
+        queryRunner.manager.find(TestUserAnswer, {
+          where: {
+            attemptId,
+            questionId: In(questionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        })
+      ]);
 
-    // Save all answers in batch operations
-    if (answersToSave.length > 0) {
-      await this.testUserAnswerRepository.save(answersToSave);
-    }
-    if (answersToUpdate.length > 0) {
-      await this.testUserAnswerRepository.save(answersToUpdate);
-    }
+      // 3. Create lookup maps for efficient data access
+      const questionMap = new Map(questions.map(q => [q.questionId, q]));
+      const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+      const optionsMap = new Map<string, QuestionOption[]>();
+      
+      allOptions.forEach(option => {
+        if (!optionsMap.has(option.questionId)) {
+          optionsMap.set(option.questionId, []);
+        }
+        optionsMap.get(option.questionId)!.push(option);
+      });
 
-    // Handle cleanup of orphaned child question answers - OPTIMIZED VERSION
-    await this.handleOrphanedChildAnswersOptimized(attemptId, answersArray, existingAnswers, authContext);
-
-    // Update attempt time spent
-    if (totalTimeSpent > 0) {
-      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
-    }
-
-    // Update current position based on the last question's ordering
-    if (answersArray.length > 0) {
-      const testId = attempt.resolvedTestId || attempt.testId;
-      const lastQuestionId = answersArray[answersArray.length - 1].questionId;
-      const testQuestion = await this.testQuestionRepository.findOne({
+      // 4. Cleanup child questions if needed (using all existing answers for orphaned cleanup)
+      const allExistingAnswers = await queryRunner.manager.find(TestUserAnswer, {
         where: {
-          testId,
-          questionId: lastQuestionId,
+          attemptId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         },
       });
 
-      if (testQuestion) {
-        attempt.currentPosition = testQuestion.ordering;
+      if (allExistingAnswers.length > 0) {
+        await this.cleanupChildQuestion(attemptId, allExistingAnswers, authContext, queryRunner);
       }
+
+      // 5. Process answers with transaction-safe scoring
+      const answersToSave: TestUserAnswer[] = [];
+      const answersToUpdate: TestUserAnswer[] = [];
+
+      for (const answerDto of answersArray) {
+        const question = questionMap.get(answerDto.questionId);
+        if (!question) {
+          throw new NotFoundException(`Question not found`);
+        }
+
+        const options = optionsMap.get(answerDto.questionId) || [];
+        const existingAnswer = existingAnswersMap.get(answerDto.questionId);
+
+        // Calculate score and review status based on question type
+        let score = 0;
+        let reviewStatus = AnswerReviewStatus.REVIEWED;
+        
+        // Only calculate score if test grading type is QUIZ or ASSESSMENT
+        if (test.gradingType === GradingType.QUIZ || test.gradingType === GradingType.ASSESSMENT) {
+          score = await this.calculateQuestionScore(answerDto.answer, question, options, queryRunner);
+          reviewStatus = test.isObjective ? AnswerReviewStatus.REVIEWED : AnswerReviewStatus.PENDING;
+        }
+
+        // Improved score validation: check if score is a finite number and default to 0 if not
+        const numericScore = Number(score);
+        const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
+
+        if (existingAnswer) {
+          existingAnswer.answer = JSON.stringify(answerDto.answer);
+          existingAnswer.score = finalScore;
+          existingAnswer.reviewStatus = reviewStatus;
+          existingAnswer.updatedAt = new Date();
+          answersToUpdate.push(existingAnswer);
+        } else {
+          const userAnswer = queryRunner.manager.create(TestUserAnswer, {
+            attemptId,
+            questionId: answerDto.questionId,
+            answer: JSON.stringify(answerDto.answer),
+            score: finalScore,
+            reviewStatus: reviewStatus,
+            anssOrder: '1', 
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          });
+          answersToSave.push(userAnswer);
+        }
+      }
+
+      // 6. Batch save operations for optimal performance
+      if (answersToSave.length > 0) {
+        await queryRunner.manager.save(TestUserAnswer, answersToSave);
+      }
+      if (answersToUpdate.length > 0) {
+        await queryRunner.manager.save(TestUserAnswer, answersToUpdate);
+      }
+
+      // 7. Update attempt time spent
+      if (globalTimeSpent > 0) {
+        attempt.timeSpent = (attempt.timeSpent || 0) + globalTimeSpent;
+      }
+
+      // 8. Update current position based on the last question's ordering
+      if (answersArray.length > 0) {
+        const testId = attempt.resolvedTestId || attempt.testId;
+        const lastQuestionId = answersArray[answersArray.length - 1].questionId;
+        const testQuestion = await queryRunner.manager.findOne(TestQuestion, {
+          where: {
+            testId,
+            questionId: lastQuestionId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        });
+
+        if (testQuestion) {
+          attempt.currentPosition = testQuestion.ordering;
+        }
+      }
+
+      await queryRunner.manager.save(attempt);
+
+      // Commit the transaction
+      await queryRunner.commitTransaction();
+      
+      return { message: 'Answers submitted successfully' };
+    } catch (error) {
+      // Rollback the transaction on error
+      await queryRunner.rollbackTransaction();
+      console.error('Transaction rolled back due to error:', error);
+      throw error;
+    } finally {
+      // Release the query runner
+      await queryRunner.release();
     }
-
-    await this.attemptRepository.save(attempt);
-
-    return { message: 'Answers submitted successfully' };
   }
 
   /**
@@ -1661,30 +1448,48 @@ export class AttemptsService {
    * 
    * @param answerData - The parsed user answer data
    * @param question - The question entity with type and marks
+   * @param options - Pre-loaded question options (for transaction safety)
+   * @param queryRunner - Optional query runner for transaction context
    * @returns number - The calculated score for this question
    */
-  private async calculateQuestionScore(answerData: any, question: Question): Promise<number> {
-    // Get question options for validation
-    const options = await this.getQuestionOptions(question.questionId);
+  private async calculateQuestionScore(
+    answerData: any, 
+    question: Question, 
+    options?: QuestionOption[], 
+    queryRunner?: any
+  ): Promise<number> {
+    // Get question options for validation - use provided options or fetch within transaction
+    let questionOptions: QuestionOption[];
+    if (options) {
+      questionOptions = options;
+    } else if (queryRunner) {
+      questionOptions = await queryRunner.manager.find(QuestionOption, {
+        where: { questionId: question.questionId },
+        order: { ordering: 'ASC' },
+      });
+    } else {
+      // Fallback to repository (not recommended for transaction contexts)
+      questionOptions = await this.getQuestionOptions(question.questionId);
+    }
     
     let score: number;
     
     switch (question.type) {
       case QuestionType.MCQ:
       case QuestionType.TRUE_FALSE:
-        score = this.calculateMCQScore(answerData, question, options);
+        score = this.calculateMCQScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.MULTIPLE_ANSWER:
-        score = this.calculateMultipleAnswerScore(answerData, question, options);
+        score = this.calculateMultipleAnswerScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.FILL_BLANK:
-        score = this.calculateFillBlankScore(answerData, question, options);
+        score = this.calculateFillBlankScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.MATCH:
-        score = this.calculateMatchScore(answerData, question, options);
+        score = this.calculateMatchScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.SUBJECTIVE:
@@ -1694,7 +1499,7 @@ export class AttemptsService {
         break;
         
       case QuestionType.DROPDOWN:
-        score = this.calculateMCQScore(answerData, question, options);
+        score = this.calculateMCQScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.RATING:
