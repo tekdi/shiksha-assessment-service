@@ -759,25 +759,11 @@ export class AttemptsService {
    */
   private async cleanupChildQuestion(
     attemptId: string, 
-    newAnswers: any[], 
+    existingAnswers: TestUserAnswer[],
     authContext: AuthContext,
     queryRunner: any
   ): Promise<void> {
     
-    // Get all existing answers for this attempt using transaction
-    const existingAnswers = await queryRunner.manager.find(TestUserAnswer, {
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    
-    if (existingAnswers.length === 0) {
-      return;
-    }
-
     // Get all question IDs from existing answers
     const existingQuestionIds = existingAnswers.map(a => a.questionId);
     
@@ -818,124 +804,134 @@ export class AttemptsService {
     if (answersArray.length === 0) {
       return { message: 'No answers provided to submit' };
     }
-    console.log('authContext.userId', authContext.userId);
 
     // Use database transaction to ensure data consistency
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
-    // Verify attempt exists and belongs to user (only once)
-    const attempt = await queryRunner.manager.findOne(TestAttempt, {
-      where: {
-        attemptId,
-        userId: authContext.userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['test'],
-    });
-
-  if (!attempt) {
-    throw new NotFoundException('Attempt not found');
-  }
     try {
-      // CLEANUP FIRST: Delete all child question answers before submitting new answers
-      await this.cleanupChildQuestion(attemptId, answersArray, authContext, queryRunner);
-
-    // Get test information to check allowResubmission setting
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
-
-    // Check if attempt is submitted (only for tests without allowResubmission)
-    if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
-      throw new Error('Cannot submit answer to completed attempt');
-    }
-
-    // Get all questions to validate answer formats and determine question types (batch query)
-    const questionIds = answersArray.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
-      where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['options'], // Load options for scoring
-    });
-
-    if (questions.length !== questionIds.length) {
-      const foundQuestionIds = questions.map(q => q.questionId);
-      const missingQuestionIds = questionIds.filter(id => !foundQuestionIds.includes(id));
-      throw new NotFoundException(`Questions not found: ${missingQuestionIds.join(', ')}`);
-    }
-
-    const questionMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Get existing answers for this attempt (batch query) - OPTIMIZED: Get ALL answers for orphaned cleanup
-    const existingAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    // Filter existing answers for current questions only
-    const existingAnswersForCurrentQuestions = existingAnswers.filter(a => 
-      questionIds.includes(a.questionId)
-    );
-
-    const existingAnswersMap = new Map(existingAnswersForCurrentQuestions.map(a => [a.questionId, a]));
-
-    // Prepare answers to save/update
-    const answersToSave: TestUserAnswer[] = [];
-    const answersToUpdate: TestUserAnswer[] = [];
-    let totalTimeSpent = globalTimeSpent; // Start with global timeSpent if provided
-
-    for (const answerDto of answersArray) {
-      const answer = JSON.stringify(answerDto.answer);
-      const question = questionMap.get(answerDto.questionId);
-      const existingAnswer = existingAnswersMap.get(answerDto.questionId);
-
-      // Add null check for question object before calculating score
-      if (!question) {
-        throw new NotFoundException(`Question not found`);
-      }
-
-      // Calculate score and review status based on question type
-      let score = await this.calculateQuestionScore(answerDto.answer, question);
-      let reviewStatus = AnswerReviewStatus.PENDING;
-      if (attempt.test.isObjective) {
-        reviewStatus = AnswerReviewStatus.REVIEWED
-      } 
-
-      // Improved score validation: check if score is a finite number and default to 0 if not
-      const numericScore = Number(score);
-      const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
-
-      if (existingAnswer) {
-        existingAnswer.answer = answer;
-        existingAnswer.score = finalScore;
-        existingAnswer.reviewStatus = reviewStatus;
-        existingAnswer.updatedAt = new Date();
-        answersToUpdate.push(existingAnswer);
-      } else {
-        const userAnswer = this.testUserAnswerRepository.create({
+      // 1. Verify attempt exists and belongs to user (only once)
+      const attempt = await queryRunner.manager.findOne(TestAttempt, {
+        where: {
           attemptId,
-          questionId: answerDto.questionId,
-          answer: answer,
-          score: finalScore,
-          reviewStatus: reviewStatus,
-          anssOrder: '1', // This could be enhanced to track order
+          userId: authContext.userId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
-        });
-        answersToSave.push(userAnswer);
-      }
-      
-    }
+        },
+        relations: ['test'],
+      });
 
-      // Save all answers in batch operations
+      if (!attempt) {
+        throw new NotFoundException('Attempt not found');
+      }
+
+      const test = attempt.test;
+
+      // Check if attempt is submitted (only for tests without allowResubmission)
+      if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
+        throw new Error('Cannot submit answer to completed attempt');
+      }
+
+      // 2. Batch load all required data for optimal performance
+      const questionIds = answersArray.map(answer => answer.questionId);
+      
+      const [questions, allOptions, existingAnswers] = await Promise.all([
+        queryRunner.manager.find(Question, {
+          where: {
+            questionId: In(questionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        }),
+        queryRunner.manager.find(QuestionOption, {
+          where: { questionId: In(questionIds) },
+          order: { questionId: 'ASC', ordering: 'ASC' },
+        }),
+        queryRunner.manager.find(TestUserAnswer, {
+          where: {
+            attemptId,
+            questionId: In(questionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        })
+      ]);
+
+      // 3. Create lookup maps for efficient data access
+      const questionMap = new Map(questions.map(q => [q.questionId, q]));
+      const existingAnswersMap = new Map(existingAnswers.map(a => [a.questionId, a]));
+      const optionsMap = new Map<string, QuestionOption[]>();
+      
+      allOptions.forEach(option => {
+        if (!optionsMap.has(option.questionId)) {
+          optionsMap.set(option.questionId, []);
+        }
+        optionsMap.get(option.questionId)!.push(option);
+      });
+
+      // 4. Cleanup child questions if needed (using all existing answers for orphaned cleanup)
+      const allExistingAnswers = await queryRunner.manager.find(TestUserAnswer, {
+        where: {
+          attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+
+      if (allExistingAnswers.length > 0) {
+        await this.cleanupChildQuestion(attemptId, allExistingAnswers, authContext, queryRunner);
+      }
+
+      // 5. Process answers with transaction-safe scoring
+      const answersToSave: TestUserAnswer[] = [];
+      const answersToUpdate: TestUserAnswer[] = [];
+
+      for (const answerDto of answersArray) {
+        const question = questionMap.get(answerDto.questionId);
+        if (!question) {
+          throw new NotFoundException(`Question not found`);
+        }
+
+        const options = optionsMap.get(answerDto.questionId) || [];
+        const existingAnswer = existingAnswersMap.get(answerDto.questionId);
+
+        // Calculate score and review status based on question type
+        let score = 0;
+        let reviewStatus = AnswerReviewStatus.REVIEWED;
+        
+        // Only calculate score if test grading type is QUIZ or ASSESSMENT
+        if (test.gradingType === GradingType.QUIZ || test.gradingType === GradingType.ASSESSMENT) {
+          score = await this.calculateQuestionScore(answerDto.answer, question, options, queryRunner);
+          reviewStatus = test.isObjective ? AnswerReviewStatus.REVIEWED : AnswerReviewStatus.PENDING;
+        }
+
+        // Improved score validation: check if score is a finite number and default to 0 if not
+        const numericScore = Number(score);
+        const finalScore = (isNaN(numericScore) || !Number.isFinite(numericScore)) ? 0 : numericScore;
+
+        if (existingAnswer) {
+          existingAnswer.answer = JSON.stringify(answerDto.answer);
+          existingAnswer.score = finalScore;
+          existingAnswer.reviewStatus = reviewStatus;
+          existingAnswer.updatedAt = new Date();
+          answersToUpdate.push(existingAnswer);
+        } else {
+          const userAnswer = queryRunner.manager.create(TestUserAnswer, {
+            attemptId,
+            questionId: answerDto.questionId,
+            answer: JSON.stringify(answerDto.answer),
+            score: finalScore,
+            reviewStatus: reviewStatus,
+            anssOrder: '1', 
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          });
+          answersToSave.push(userAnswer);
+        }
+      }
+
+      // 6. Batch save operations for optimal performance
       if (answersToSave.length > 0) {
         await queryRunner.manager.save(TestUserAnswer, answersToSave);
       }
@@ -943,29 +939,28 @@ export class AttemptsService {
         await queryRunner.manager.save(TestUserAnswer, answersToUpdate);
       }
 
-
-    // Update attempt time spent
-    if (totalTimeSpent > 0) {
-      attempt.timeSpent = (attempt.timeSpent || 0) + totalTimeSpent;
-    }
-
-    // Update current position based on the last question's ordering
-    if (answersArray.length > 0) {
-      const testId = attempt.resolvedTestId || attempt.testId;
-      const lastQuestionId = answersArray[answersArray.length - 1].questionId;
-      const testQuestion = await queryRunner.manager.findOne(TestQuestion, {
-        where: {
-          testId,
-          questionId: lastQuestionId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
-
-      if (testQuestion) {
-        attempt.currentPosition = testQuestion.ordering;
+      // 7. Update attempt time spent
+      if (globalTimeSpent > 0) {
+        attempt.timeSpent = (attempt.timeSpent || 0) + globalTimeSpent;
       }
-    }
+
+      // 8. Update current position based on the last question's ordering
+      if (answersArray.length > 0) {
+        const testId = attempt.resolvedTestId || attempt.testId;
+        const lastQuestionId = answersArray[answersArray.length - 1].questionId;
+        const testQuestion = await queryRunner.manager.findOne(TestQuestion, {
+          where: {
+            testId,
+            questionId: lastQuestionId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        });
+
+        if (testQuestion) {
+          attempt.currentPosition = testQuestion.ordering;
+        }
+      }
 
       await queryRunner.manager.save(attempt);
 
@@ -1453,30 +1448,48 @@ export class AttemptsService {
    * 
    * @param answerData - The parsed user answer data
    * @param question - The question entity with type and marks
+   * @param options - Pre-loaded question options (for transaction safety)
+   * @param queryRunner - Optional query runner for transaction context
    * @returns number - The calculated score for this question
    */
-  private async calculateQuestionScore(answerData: any, question: Question): Promise<number> {
-    // Get question options for validation
-    const options = await this.getQuestionOptions(question.questionId);
+  private async calculateQuestionScore(
+    answerData: any, 
+    question: Question, 
+    options?: QuestionOption[], 
+    queryRunner?: any
+  ): Promise<number> {
+    // Get question options for validation - use provided options or fetch within transaction
+    let questionOptions: QuestionOption[];
+    if (options) {
+      questionOptions = options;
+    } else if (queryRunner) {
+      questionOptions = await queryRunner.manager.find(QuestionOption, {
+        where: { questionId: question.questionId },
+        order: { ordering: 'ASC' },
+      });
+    } else {
+      // Fallback to repository (not recommended for transaction contexts)
+      questionOptions = await this.getQuestionOptions(question.questionId);
+    }
     
     let score: number;
     
     switch (question.type) {
       case QuestionType.MCQ:
       case QuestionType.TRUE_FALSE:
-        score = this.calculateMCQScore(answerData, question, options);
+        score = this.calculateMCQScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.MULTIPLE_ANSWER:
-        score = this.calculateMultipleAnswerScore(answerData, question, options);
+        score = this.calculateMultipleAnswerScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.FILL_BLANK:
-        score = this.calculateFillBlankScore(answerData, question, options);
+        score = this.calculateFillBlankScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.MATCH:
-        score = this.calculateMatchScore(answerData, question, options);
+        score = this.calculateMatchScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.SUBJECTIVE:
@@ -1486,7 +1499,7 @@ export class AttemptsService {
         break;
         
       case QuestionType.DROPDOWN:
-        score = this.calculateMCQScore(answerData, question, options);
+        score = this.calculateMCQScore(answerData, question, questionOptions);
         break;
         
       case QuestionType.RATING:
