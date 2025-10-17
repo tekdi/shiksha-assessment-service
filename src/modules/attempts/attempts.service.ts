@@ -759,25 +759,11 @@ export class AttemptsService {
    */
   private async cleanupChildQuestion(
     attemptId: string, 
-    newAnswers: any[], 
+    existingAnswers: TestUserAnswer[],
     authContext: AuthContext,
     queryRunner: any
   ): Promise<void> {
     
-    // Get all existing answers for this attempt using transaction
-    const existingAnswers = await queryRunner.manager.find(TestUserAnswer, {
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
-    
-    if (existingAnswers.length === 0) {
-      return;
-    }
-
     // Get all question IDs from existing answers
     const existingQuestionIds = existingAnswers.map(a => a.questionId);
     
@@ -818,7 +804,6 @@ export class AttemptsService {
     if (answersArray.length === 0) {
       return { message: 'No answers provided to submit' };
     }
-    console.log('authContext.userId', authContext.userId);
 
     // Use database transaction to ensure data consistency
     const queryRunner = this.dataSource.createQueryRunner();
@@ -839,13 +824,22 @@ export class AttemptsService {
   if (!attempt) {
     throw new NotFoundException('Attempt not found');
   }
-    try {
-      // CLEANUP FIRST: Delete all child question answers before submitting new answers
-      await this.cleanupChildQuestion(attemptId, answersArray, authContext, queryRunner);
 
+    try {
+       // Get existing answers for this attempt (batch query) - OPTIMIZED: Get ALL answers for orphaned cleanup
+    const existingAnswers = await queryRunner.manager.find(TestUserAnswer, {
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (existingAnswers.length) {
+      await this.cleanupChildQuestion(attemptId, existingAnswers, authContext, queryRunner);
+    }
     // Get test information to check allowResubmission setting
-    const testId = attempt.resolvedTestId || attempt.testId;
-    const test = await this.findTestById(testId, authContext);
+    const test = attempt.test;
 
     // Check if attempt is submitted (only for tests without allowResubmission)
     if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
@@ -854,31 +848,15 @@ export class AttemptsService {
 
     // Get all questions to validate answer formats and determine question types (batch query)
     const questionIds = answersArray.map(answer => answer.questionId);
-    const questions = await this.questionRepository.find({
+    const questions = await queryRunner.manager.find(Question, {
       where: {
-        questionId: In(questionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      relations: ['options'], // Load options for scoring
-    });
-
-    if (questions.length !== questionIds.length) {
-      const foundQuestionIds = questions.map(q => q.questionId);
-      const missingQuestionIds = questionIds.filter(id => !foundQuestionIds.includes(id));
-      throw new NotFoundException(`Questions not found: ${missingQuestionIds.join(', ')}`);
-    }
+      questionId: In(questionIds),
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    },
+  });
 
     const questionMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Get existing answers for this attempt (batch query) - OPTIMIZED: Get ALL answers for orphaned cleanup
-    const existingAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
 
     // Filter existing answers for current questions only
     const existingAnswersForCurrentQuestions = existingAnswers.filter(a => 
@@ -903,11 +881,18 @@ export class AttemptsService {
       }
 
       // Calculate score and review status based on question type
-      let score = await this.calculateQuestionScore(answerDto.answer, question);
-      let reviewStatus = AnswerReviewStatus.PENDING;
-      if (attempt.test.isObjective) {
-        reviewStatus = AnswerReviewStatus.REVIEWED
-      } 
+      let score = 0;
+      let reviewStatus = AnswerReviewStatus.REVIEWED;
+      
+      // Only calculate score if test grading type is QUIZ or ASSESSMENT
+      if (test.gradingType === GradingType.QUIZ || test.gradingType === GradingType.ASSESSMENT) {
+        score = await this.calculateQuestionScore(answerDto.answer, question);
+        if (attempt.test.isObjective) {
+          reviewStatus = AnswerReviewStatus.REVIEWED
+        }else{
+          reviewStatus = AnswerReviewStatus.PENDING
+        }
+      }
 
       // Improved score validation: check if score is a finite number and default to 0 if not
       const numericScore = Number(score);
@@ -920,7 +905,7 @@ export class AttemptsService {
         existingAnswer.updatedAt = new Date();
         answersToUpdate.push(existingAnswer);
       } else {
-        const userAnswer = this.testUserAnswerRepository.create({
+        const userAnswer = queryRunner.manager.create(TestUserAnswer, {
           attemptId,
           questionId: answerDto.questionId,
           answer: answer,
