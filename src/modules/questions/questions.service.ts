@@ -727,7 +727,7 @@ export class QuestionsService {
    * Performs basic validation of question properties
    * @param createQuestionDto - The question DTO to validate
    */
-  private async validateQuestionData(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
+  private async   validateQuestionData(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
     const { marks: questionMarks } = createQuestionDto;
 
     // Validate question text length
@@ -739,9 +739,9 @@ export class QuestionsService {
     //await this.validateDuplicateQuestionText(createQuestionDto, authContext);
     
     // Validate question marks are positive if specified
-    if (questionMarks !== undefined && questionMarks <= 0) {
-      throw new BadRequestException('Question marks must be greater than 0.');
-    }
+    // if (questionMarks !== undefined && questionMarks <= 0) {
+    //   throw new BadRequestException('Question marks must be greater than 0.');
+    // }
 
   }
 
