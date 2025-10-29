@@ -655,7 +655,7 @@ export class QuestionsService {
     // For all question types, if options are provided, validate them
     if (options && options.length > 0) {
       // Validate that all options have required fields
-      this.validateOptionFields(options, questionMarks);
+      // this.validateOptionFields(options, questionMarks);
       
       // Validate for duplicate options
       this.validateDuplicateOptionsInternal(questionDto);
@@ -727,7 +727,7 @@ export class QuestionsService {
    * Performs basic validation of question properties
    * @param createQuestionDto - The question DTO to validate
    */
-  private async   validateQuestionData(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
+  private async validateQuestionData(createQuestionDto: CreateQuestionDto, authContext: AuthContext): Promise<void> {
     const { marks: questionMarks } = createQuestionDto;
 
     // Validate question text length
