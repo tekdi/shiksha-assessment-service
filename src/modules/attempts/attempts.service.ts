@@ -1065,7 +1065,7 @@ export class AttemptsService {
     
     if (!compulsoryValidation.isValid) {
       throw new BadRequestException({
-        message: `Cannot submit attempt. The following compulsory questions (JSON) must be answered: ${JSON.stringify(compulsoryValidation.missingQuestions)}`,
+        message: `You need to answer all the required questions before submitting your attempt.`,
       });
     }
 

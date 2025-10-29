@@ -2036,8 +2036,7 @@ export class TestsService {
         QuestionType.FILL_BLANK,
         QuestionType.MATCH
       ];
-
-      return testQuestions.every(tq => objectiveTypes.includes(tq.type));
+      return testQuestions.every(tq => objectiveTypes.includes(tq.q_type));
     } catch (error) {
       this.logger.error(`Error checking if test is objective: ${error.message}`, error.stack);
       // Return false as safe default (requires manual review)
