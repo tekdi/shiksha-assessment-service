@@ -103,25 +103,25 @@ export class TestsService {
 
     // Create a map of questionId -> isCompulsory for all test questions (including child questions)
     const isCompulsoryMap = new Map<string, boolean>();
-    testQuestions.forEach(tq => {
+    for (const tq of testQuestions) {
       isCompulsoryMap.set(tq.questionId, tq.isCompulsory);
-    });
+    }
 
     // Group test questions by section, filtering out conditional questions
     const questionsBySection = new Map<string, any[]>();
-    testQuestions
-      .filter(tq => !tq.isConditional) // Filter out conditional questions
-      .forEach(tq => {
+    for (const tq of testQuestions) {
+      if (!tq.isConditional) { // Filter out conditional questions
         if (!questionsBySection.has(tq.sectionId)) {
           questionsBySection.set(tq.sectionId, []);
         }
         questionsBySection.get(tq.sectionId)!.push(tq);
-      });
+      }
+    }
 
     // Attach filtered test questions to sections
-    test.sections.forEach(section => {
+    for (const section of test.sections) {
       section.questions = questionsBySection.get(section.sectionId) || [];
-    });
+    }
 
     // Extract question IDs from test questions, filtering out conditional questions
     const questionIds = testQuestions
@@ -164,12 +164,12 @@ export class TestsService {
     
     // Create a map of child questions by parent ID
     const childQuestionsByParent = new Map<string, any[]>();
-    childQuestions.forEach(child => {
+    for (const child of childQuestions) {
       if (!childQuestionsByParent.has(child.parentId!)) {
         childQuestionsByParent.set(child.parentId!, []);
       }
       childQuestionsByParent.get(child.parentId!)!.push(child);
-    });
+    }
 
     return { test, testQuestions, questionsMap, childQuestionsByParent, isCompulsoryMap };
   }
@@ -546,12 +546,12 @@ export class TestsService {
 
     // Create a map of optionId -> array of child questions for quick lookup
     const optionToChildQuestionsMap = new Map<string, any[]>();
-    optionQuestionMappings.forEach(mapping => {
+    for (const mapping of optionQuestionMappings) {
       if (!optionToChildQuestionsMap.has(mapping.optionId)) {
         optionToChildQuestionsMap.set(mapping.optionId, []);
       }
       optionToChildQuestionsMap.get(mapping.optionId)!.push(mapping.question);
-    });
+    }
 
     return Promise.all(options.map(async (option) => {
       const transformedOption: any = {
@@ -696,12 +696,12 @@ export class TestsService {
 
     // Create a map of optionId -> child questions array for quick lookup
     const optionToChildQuestionMap = new Map<string, any[]>();
-    optionQuestionMappings.forEach(mapping => {
+    for (const mapping of optionQuestionMappings) {
       if (!optionToChildQuestionMap.has(mapping.optionId)) {
         optionToChildQuestionMap.set(mapping.optionId, []);
       }
       optionToChildQuestionMap.get(mapping.optionId)!.push(mapping.question);
-    });
+    }
 
     return Promise.all(options.map(async (option) => {
       const transformedOption: any = {
