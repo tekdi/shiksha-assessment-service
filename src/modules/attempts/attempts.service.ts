@@ -2300,7 +2300,7 @@ export class AttemptsService {
     // Step 3: Extract all unique question IDs from user answers
     const questionIds = [
       ...new Set(userAnswers.map((ua) => ua.questionId)),
-    ].filter((id) => id); // Remove any null/undefined values
+    ].filter(Boolean); // Remove any null/undefined values
 
     // Early return if no answers found
     if (questionIds.length === 0) {
