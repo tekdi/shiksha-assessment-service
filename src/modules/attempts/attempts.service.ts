@@ -2331,10 +2331,39 @@ export class AttemptsService {
       questions.push(...batchQuestions);
     }
 
-    // Step 5: Create a lookup map for O(1) access to questions by questionId
+    // Step 5: Create lookup maps for O(1) access
+    // Map questions by questionId
     const questionMap = new Map(
       questions.map((q) => [q.questionId, q])
     );
+
+    // Pre-compute options maps for each question (for O(1) lookup instead of O(n) find)
+    const optionsMap = new Map<string, Map<string, QuestionOption>>();
+    for (const question of questions) {
+      if (question.options && question.options.length > 0) {
+        const optMap = new Map(
+          question.options.map((opt) => [opt.questionOptionId, opt])
+        );
+        optionsMap.set(question.questionId, optMap);
+      }
+    }
+
+    // Pre-compute correct answers as Sets for O(1) lookup (only for questions that need it)
+    const correctAnswersMap = new Map<string, Set<string>>();
+    if (test.showCorrectAnswer) {
+      for (const question of questions) {
+        if (question.options && question.options.length > 0) {
+          const correctAnswers = new Set(
+            question.options
+              .filter((opt) => opt.isCorrect)
+              .map((opt) => opt.questionOptionId)
+          );
+          if (correctAnswers.size > 0) {
+            correctAnswersMap.set(question.questionId, correctAnswers);
+          }
+        }
+      }
+    }
 
     // Step 6: Process user answers using the pre-loaded questions
     const answers: Array<{
@@ -2384,7 +2413,6 @@ export class AttemptsService {
           text: parsedAnswer.text,
         };
         // For subjective questions, isCorrect is based on score (if scored, consider it correct)
-        // You can adjust this logic based on your requirements
         questionIsCorrect = userAnswer.score > 0;
       } else if (
         question.type === QuestionType.FILL_BLANK &&
@@ -2404,12 +2432,11 @@ export class AttemptsService {
         question.type === QuestionType.MATCH &&
         parsedAnswer.matches
       ) {
-        // Handle matching questions
+        // Handle matching questions - use pre-computed options map for O(1) lookup
+        const questionOptionsMap = optionsMap.get(question.questionId);
         transformedUserAnswer = {
           matches: parsedAnswer.matches.map((match: any) => {
-            const option = question.options?.find(
-              (opt) => opt.questionOptionId === match.optionId
-            );
+            const option = questionOptionsMap?.get(match.optionId);
             return {
               questionOptionId: match.optionId,
               text: option?.text || '',
@@ -2421,28 +2448,21 @@ export class AttemptsService {
         questionIsCorrect = userAnswer.score > 0;
       } else {
         // Handle objective questions (MCQ, Multiple Answer, True/False, Dropdown, etc.)
-        // Get correct answers if test.showCorrectAnswer is true
-        let correctAnswers: string[] = [];
-        let correctOptionMarks: number = 0;
-        if (test.showCorrectAnswer && question.options) {
-          correctAnswers = question.options
-            .filter((opt) => opt.isCorrect)
-            .map((opt) => opt.questionOptionId);
-
-          // Calculate total marks for correct options (for partial scoring)
-          correctOptionMarks = question.options
-            .filter((opt) => opt.isCorrect)
-            .reduce((sum, opt) => sum + (opt.marks || 0), 0);
-        }
+        // Get correct answers Set for O(1) lookup (pre-computed above)
+        const correctAnswers = correctAnswersMap.get(question.questionId) || new Set<string>();
 
         // Transform selectedOptionIds into selectedOptions array with isCorrect property
         let selectedOptions: Array<{ optionId: string; isCorrect?: boolean }> =
           [];
         let selectedCorrectOptions: string[] = [];
+        
         if (
           parsedAnswer.selectedOptionIds &&
           Array.isArray(parsedAnswer.selectedOptionIds)
         ) {
+          // Use Set for O(1) lookup instead of array.includes() which is O(n)
+          const selectedOptionIdsSet = new Set(parsedAnswer.selectedOptionIds);
+          
           selectedOptions = parsedAnswer.selectedOptionIds.map(
             (selectedId: string) => {
               const option: { optionId: string; isCorrect?: boolean } = {
@@ -2450,7 +2470,7 @@ export class AttemptsService {
               };
               // Only add isCorrect if showCorrectAnswer is true
               if (test.showCorrectAnswer) {
-                const isCorrect = correctAnswers.includes(selectedId);
+                const isCorrect = correctAnswers.has(selectedId); // O(1) lookup
                 option.isCorrect = isCorrect;
                 if (isCorrect) {
                   selectedCorrectOptions.push(selectedId);
@@ -2459,23 +2479,21 @@ export class AttemptsService {
               return option;
             }
           );
-        }
 
-        // Calculate question-level isCorrect based on allowPartialScoring
-        if (question.allowPartialScoring) {
-          // For partial scoring: if any correct option is selected, question is correct
-          questionIsCorrect = selectedCorrectOptions.length > 0;
-        } else {
-          // For non-partial scoring: user must select all correct options to get full marks
-          // Check if all correct options are selected and no incorrect options are selected
-          const allCorrectSelected = correctAnswers.every((correctId) =>
-            parsedAnswer.selectedOptionIds?.includes(correctId)
-          );
-          const noIncorrectSelected =
-            parsedAnswer.selectedOptionIds?.every((selectedId) =>
-              correctAnswers.includes(selectedId)
-            ) ?? true;
-          questionIsCorrect = allCorrectSelected && noIncorrectSelected;
+          // Calculate question-level isCorrect based on allowPartialScoring
+          if (question.allowPartialScoring) {
+            // For partial scoring: if any correct option is selected, question is correct
+            questionIsCorrect = selectedCorrectOptions.length > 0;
+          } else {
+            // For non-partial scoring: user must select all correct options to get full marks
+            // Check if all correct options are selected and no incorrect options are selected
+            // Using Set operations for O(n) instead of O(n²) with array.includes()
+            const allCorrectSelected = correctAnswers.size > 0 && 
+              Array.from(correctAnswers).every((correctId: string) => selectedOptionIdsSet.has(correctId));
+            const noIncorrectSelected = 
+              Array.from(selectedOptionIdsSet).every((selectedId: string) => correctAnswers.has(selectedId));
+            questionIsCorrect = allCorrectSelected && noIncorrectSelected;
+          }
         }
 
         // Create the userAnswer structure for objective questions
