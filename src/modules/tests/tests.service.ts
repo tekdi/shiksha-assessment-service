@@ -56,7 +56,7 @@ export class TestsService {
    * Common logic for fetching test hierarchy data
    * @param id - Test ID
    * @param authContext - Authentication context
-   * @returns Promise<{test: Test, testQuestions: TestQuestion[], questionsMap: Map<string, Question>, childQuestionsByParent: Map<string, Question[]>}>
+   * @returns Promise<{test: Test, testQuestions: TestQuestion[], questionsMap: Map<string, Question>, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>}>
    */
   private async fetchTestHierarchyData(id: string, authContext: AuthContext) {
     // First, get the test with sections
@@ -101,21 +101,27 @@ export class TestsService {
       order: { ordering: 'ASC' },
     });
 
+    // Create a map of questionId -> isCompulsory for all test questions (including child questions)
+    const isCompulsoryMap = new Map<string, boolean>();
+    for (const tq of testQuestions) {
+      isCompulsoryMap.set(tq.questionId, tq.isCompulsory);
+    }
+
     // Group test questions by section, filtering out conditional questions
     const questionsBySection = new Map<string, any[]>();
-    testQuestions
-      .filter(tq => !tq.isConditional) // Filter out conditional questions
-      .forEach(tq => {
+    for (const tq of testQuestions) {
+      if (!tq.isConditional) { // Filter out conditional questions
         if (!questionsBySection.has(tq.sectionId)) {
           questionsBySection.set(tq.sectionId, []);
         }
         questionsBySection.get(tq.sectionId)!.push(tq);
-      });
+      }
+    }
 
     // Attach filtered test questions to sections
-    test.sections.forEach(section => {
+    for (const section of test.sections) {
       section.questions = questionsBySection.get(section.sectionId) || [];
-    });
+    }
 
     // Extract question IDs from test questions, filtering out conditional questions
     const questionIds = testQuestions
@@ -123,7 +129,7 @@ export class TestsService {
       .map(testQuestion => testQuestion.questionId);
 
     if (questionIds.length === 0) {
-      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map() };
+      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map(), isCompulsoryMap };
     }
 
     // Fetch only parent questions (non-conditional) with options
@@ -158,14 +164,14 @@ export class TestsService {
     
     // Create a map of child questions by parent ID
     const childQuestionsByParent = new Map<string, any[]>();
-    childQuestions.forEach(child => {
+    for (const child of childQuestions) {
       if (!childQuestionsByParent.has(child.parentId!)) {
         childQuestionsByParent.set(child.parentId!, []);
       }
       childQuestionsByParent.get(child.parentId!)!.push(child);
-    });
+    }
 
-    return { test, testQuestions, questionsMap, childQuestionsByParent };
+    return { test, testQuestions, questionsMap, childQuestionsByParent, isCompulsoryMap };
   }
 
   /**
@@ -176,6 +182,7 @@ export class TestsService {
    * @param showCorrectOptions - Whether to show correct options
    * @param authContext - Authentication context
    * @param transformMethod - Method to use for transformation
+   * @param isCompulsoryMap - Map of questionId -> isCompulsory
    */
   private async transformAndAttachQuestions(
     test: Test,
@@ -183,7 +190,8 @@ export class TestsService {
     childQuestionsByParent: Map<string, Question[]>,
     showCorrectOptions: boolean,
     authContext: AuthContext,
-    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>) => Promise<any>
+    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>) => Promise<any>,
+    isCompulsoryMap: Map<string, boolean>
   ) {
     // Transform questions and attach to test questions
     for (const section of test.sections) {
@@ -201,7 +209,8 @@ export class TestsService {
             question, 
             showCorrectOptions, 
             authContext,
-            childQuestionsByParent
+            childQuestionsByParent,
+            isCompulsoryMap
           );
 
           // For matching questions, add a separate array of matchWith options
@@ -431,7 +440,7 @@ export class TestsService {
 
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     // Fetch common test hierarchy data
-    const { test, questionsMap, childQuestionsByParent } = await this.fetchTestHierarchyData(id, authContext);
+    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap } = await this.fetchTestHierarchyData(id, authContext);
 
     // Transform and attach questions using learner transformation method
     await this.transformAndAttachQuestions(
@@ -440,7 +449,8 @@ export class TestsService {
       childQuestionsByParent,
       showCorrectOptions,
       authContext,
-      this.transformQuestionWithConditionals.bind(this)
+      this.transformQuestionWithConditionals.bind(this),
+      isCompulsoryMap
     );
 
     return test;
@@ -449,7 +459,7 @@ export class TestsService {
   // Admin view
   async getTestHierarchyAdmin(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     // Fetch common test hierarchy data
-    const { test, questionsMap, childQuestionsByParent } = await this.fetchTestHierarchyData(id, authContext);
+    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap } = await this.fetchTestHierarchyData(id, authContext);
 
     // Transform and attach questions using admin transformation method
     await this.transformAndAttachQuestions(
@@ -458,7 +468,8 @@ export class TestsService {
       childQuestionsByParent,
       showCorrectOptions,
       authContext,
-      this.transformQuestionWithConditionalsAdmin.bind(this)
+      this.transformQuestionWithConditionalsAdmin.bind(this),
+      isCompulsoryMap
     );
 
     return test;
@@ -470,13 +481,15 @@ export class TestsService {
    * @param showCorrectOptions - Whether to show correct options
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
+   * @param isCompulsoryMap - Map of questionId -> isCompulsory
    * @returns Transformed question with conditional structure
    */
   private async transformQuestionWithConditionals(
     question: any, 
     showCorrectOptions: boolean, 
     authContext: AuthContext,
-    childQuestionsByParent: Map<string, any[]>
+    childQuestionsByParent: Map<string, any[]>,
+    isCompulsoryMap: Map<string, boolean>
   ): Promise<any> {
     const transformedQuestion = {
       questionId: question.questionId,
@@ -493,7 +506,8 @@ export class TestsService {
         showCorrectOptions, 
         authContext,
         childQuestionsByParent,
-        question.questionId
+        question.questionId,
+        isCompulsoryMap
       )
     };
 
@@ -507,6 +521,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param parentQuestionId - ID of the parent question
+   * @param isCompulsoryMap - Map of questionId -> isCompulsory
    * @returns Transformed options with conditional structure
    */
   private async transformOptionsWithConditionals(
@@ -514,7 +529,8 @@ export class TestsService {
     showCorrectOptions: boolean, 
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
-    parentQuestionId: string
+    parentQuestionId: string,
+    isCompulsoryMap: Map<string, boolean>
   ): Promise<any[]> {
     // Get option-question mappings for this parent question
     const optionQuestionMappings = await this.optionQuestionRepository.find({
@@ -530,12 +546,12 @@ export class TestsService {
 
     // Create a map of optionId -> array of child questions for quick lookup
     const optionToChildQuestionsMap = new Map<string, any[]>();
-    optionQuestionMappings.forEach(mapping => {
+    for (const mapping of optionQuestionMappings) {
       if (!optionToChildQuestionsMap.has(mapping.optionId)) {
         optionToChildQuestionsMap.set(mapping.optionId, []);
       }
       optionToChildQuestionsMap.get(mapping.optionId)!.push(mapping.question);
-    });
+    }
 
     return Promise.all(options.map(async (option) => {
       const transformedOption: any = {
@@ -563,14 +579,21 @@ export class TestsService {
         
         // Recursively transform all child questions
         transformedOption.childQuestion = await Promise.all(
-          childQuestions.map(async (childQuestion) => 
-            await this.transformQuestionWithConditionals(
+          childQuestions.map(async (childQuestion) => {
+            const transformed = await this.transformQuestionWithConditionals(
               childQuestion, 
               showCorrectOptions, 
               authContext,
-              childQuestionsByParent
-            )
-          )
+              childQuestionsByParent,
+              isCompulsoryMap
+            );
+            // Add isCompulsory from map if available
+            const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
+            if (isCompulsory !== undefined) {
+              transformed.isCompulsory = isCompulsory;
+            }
+            return transformed;
+          })
         );
       } else {
         transformedOption.hasChildQuestion = false;
@@ -586,13 +609,15 @@ export class TestsService {
    * @param showCorrectOptions - Whether to show correct options
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
+   * @param isCompulsoryMap - Map of questionId -> isCompulsory
    * @returns Transformed question with conditional structure including child questions
    */
   private async transformQuestionWithConditionalsAdmin(
     question: any, 
     showCorrectOptions: boolean, 
     authContext: AuthContext,
-    childQuestionsByParent: Map<string, any[]>
+    childQuestionsByParent: Map<string, any[]>,
+    isCompulsoryMap: Map<string, boolean>
   ): Promise<any> {
     const transformedQuestion: any = {
       questionId: question.questionId,
@@ -609,7 +634,8 @@ export class TestsService {
         showCorrectOptions, 
         authContext,
         childQuestionsByParent,
-        question.questionId
+        question.questionId,
+        isCompulsoryMap
       )
     };
 
@@ -618,12 +644,19 @@ export class TestsService {
     if (childQuestions.length > 0) {
       transformedQuestion.childQuestion = await Promise.all(
         childQuestions.map(async (childQuestion) => {
-          return await this.transformQuestionWithConditionalsAdmin(
+          const transformed = await this.transformQuestionWithConditionalsAdmin(
             childQuestion,
             showCorrectOptions,
             authContext,
-            childQuestionsByParent
+            childQuestionsByParent,
+            isCompulsoryMap
           );
+          // Add isCompulsory from map if available
+          const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
+          if (isCompulsory !== undefined) {
+            transformed.isCompulsory = isCompulsory;
+          }
+          return transformed;
         })
       );
     }
@@ -638,6 +671,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param parentQuestionId - ID of the parent question
+   * @param isCompulsoryMap - Map of questionId -> isCompulsory
    * @returns Transformed options with conditional structure including AssociatedQuestion array
    */
   private async transformOptionsWithConditionalsAdmin(
@@ -645,7 +679,8 @@ export class TestsService {
     showCorrectOptions: boolean, 
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
-    parentQuestionId: string
+    parentQuestionId: string,
+    isCompulsoryMap: Map<string, boolean>
   ): Promise<any[]> {
     // Get option-question mappings for this parent question
     const optionQuestionMappings = await this.optionQuestionRepository.find({
@@ -661,12 +696,12 @@ export class TestsService {
 
     // Create a map of optionId -> child questions array for quick lookup
     const optionToChildQuestionMap = new Map<string, any[]>();
-    optionQuestionMappings.forEach(mapping => {
+    for (const mapping of optionQuestionMappings) {
       if (!optionToChildQuestionMap.has(mapping.optionId)) {
         optionToChildQuestionMap.set(mapping.optionId, []);
       }
       optionToChildQuestionMap.get(mapping.optionId)!.push(mapping.question);
-    });
+    }
 
     return Promise.all(options.map(async (option) => {
       const transformedOption: any = {
@@ -693,9 +728,15 @@ export class TestsService {
         transformedOption.hasChildQuestion = true;
         
         // Add AssociatedQuestion array for this option (without options)
-        transformedOption.AssociatedQuestion = childQuestions.map(childQuestion => 
-          this.transformQuestionWithoutOptions(childQuestion)
-        );
+        transformedOption.AssociatedQuestion = childQuestions.map(childQuestion => {
+          const transformed = this.transformQuestionWithoutOptions(childQuestion);
+          // Add isCompulsory from map if available
+          const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
+          if (isCompulsory !== undefined) {
+            transformed.isCompulsory = isCompulsory;
+          }
+          return transformed;
+        });
       } else {
         transformedOption.hasChildQuestion = false;
       }

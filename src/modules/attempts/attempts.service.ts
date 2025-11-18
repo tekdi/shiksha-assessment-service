@@ -2118,9 +2118,6 @@ export class AttemptsService {
     attemptId: string,
     authContext: AuthContext
   ): Promise<TestAttempt> {
-    // console.log('vinayak', attemptId);
-    console.log('authContext', authContext, attemptId);
-
     const attempt = await this.attemptRepository.findOne({
       where: {
         attemptId,
@@ -2129,15 +2126,13 @@ export class AttemptsService {
       },
     });
 
-    console.log('attempt', attempt);
-
     if (!attempt) {
-      throw new Error('Attempt not found');
+      throw new NotFoundException('Attempt not found');
     }
 
     // Only return results if attempt is submitted
     if (attempt.status !== AttemptStatus.SUBMITTED) {
-      throw new Error(
+      throw new BadRequestException(
         'Attempt results are only available for submitted attempts'
       );
     }
@@ -2160,30 +2155,53 @@ export class AttemptsService {
       attemptId,
       authContext
     );
-    const test = await this.testRepository.findOne({
-      where: {
-        testId: attempt.testId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+
+    // Determine which test to use (resolved test for rule-based tests, original test otherwise)
+    const testId = attempt.resolvedTestId || attempt.testId;
+
+    // Step 2: Fetch test, user answers, and test questions in parallel for better performance
+    const [test, userAnswers, testQuestions] = await Promise.all([
+      this.testRepository.findOne({
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      }),
+      this.testUserAnswerRepository.find({
+        where: {
+          attemptId: attempt.attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      }),
+      this.testQuestionRepository.find({
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        order: { ordering: 'ASC' },
+      }),
+    ]);
 
     if (!test) {
-      throw new Error('Test not found');
+      throw new NotFoundException('Test not found');
     }
 
     if (!test.answerSheet) {
-      throw new Error('Answer sheet is not enabled for this test');
+      throw new BadRequestException('Answer sheet is not enabled for this test');
     }
 
-    const userAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId: attempt.attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    // Create a map of question ordering for sorting answers
+    const questionOrderMap = new Map(
+      testQuestions.map((tq) => [tq.questionId, tq.ordering])
+    );
 
+    // ===== OLD CODE WITH N+1 QUERY PROBLEM (COMMENTED OUT) =====
+    // This code had a critical performance issue: fetching questions one by one in a loop
+    // If there are 50 answers, this would execute 50+ separate database queries
+    /*
     const answers: Array<{
       questionId: string;
       userAnswer: any;
@@ -2275,11 +2293,239 @@ export class AttemptsService {
         isCorrect: questionIsCorrect,
       });
     }
+    */
+    // ===== END OF OLD CODE =====
 
-    // Step 3: Build the complete answersheet structure
+    // ===== OPTIMIZED CODE: BATCH LOAD QUESTIONS (FIXES N+1 QUERY PROBLEM) =====
+    // Step 3: Extract all unique question IDs from user answers
+    const questionIds = [
+      ...new Set(userAnswers.map((ua) => ua.questionId)),
+    ].filter(Boolean); // Remove any null/undefined values
+
+    // Early return if no answers found
+    if (questionIds.length === 0) {
+      return {
+        attempt: attempt,
+        answers: [],
+      };
+    }
+
+    // Step 4: Batch load all questions with their options using configurable batch size
+    // This replaces N queries with batched queries, dramatically improving performance
+    // Get batch size from config (default: 30)
+    const batchSize =
+      this.configService.get<number>('ANSWERSHEET_QUESTION_BATCH_SIZE') || 30;
+
+    const questions: Question[] = [];
+    // Process question IDs in batches to avoid query size limits
+    for (let i = 0; i < questionIds.length; i += batchSize) {
+      const batchIds = questionIds.slice(i, i + batchSize);
+      const batchQuestions = await this.questionRepository.find({
+        where: {
+          questionId: In(batchIds),
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        relations: ['options'],
+      });
+      questions.push(...batchQuestions);
+    }
+
+    // Step 5: Create lookup maps for O(1) access
+    // Map questions by questionId
+    const questionMap = new Map(
+      questions.map((q) => [q.questionId, q])
+    );
+
+    // Pre-compute options maps for each question (for O(1) lookup instead of O(n) find)
+    const optionsMap = new Map<string, Map<string, QuestionOption>>();
+    for (const question of questions) {
+      if (question.options && question.options.length > 0) {
+        const optMap = new Map(
+          question.options.map((opt) => [opt.questionOptionId, opt])
+        );
+        optionsMap.set(question.questionId, optMap);
+      }
+    }
+
+    // Pre-compute correct answers as Sets for O(1) lookup (only for questions that need it)
+    const correctAnswersMap = new Map<string, Set<string>>();
+    if (test.showCorrectAnswer) {
+      for (const question of questions) {
+        if (question.options && question.options.length > 0) {
+          const correctAnswers = new Set(
+            question.options
+              .filter((opt) => opt.isCorrect)
+              .map((opt) => opt.questionOptionId)
+          );
+          if (correctAnswers.size > 0) {
+            correctAnswersMap.set(question.questionId, correctAnswers);
+          }
+        }
+      }
+    }
+
+    // Step 6: Process user answers using the pre-loaded questions
+    const answers: Array<{
+      questionId: string;
+      userAnswer: any;
+      score: number;
+      isCorrect: boolean;
+      ordering?: number; // Add ordering for sorting
+    }> = [];
+
+    for (const userAnswer of userAnswers) {
+      // Get question from the pre-loaded map (no database query needed)
+      const question = questionMap.get(userAnswer.questionId);
+
+      if (!question) {
+        this.logger.warn(
+          `Question ${userAnswer.questionId} not found for attempt ${attemptId}`
+        );
+        continue; // Skip if question not found
+      }
+
+      // Parse answer JSON with error handling
+      let parsedAnswer: any;
+      try {
+        parsedAnswer = JSON.parse(userAnswer.answer);
+      } catch (error) {
+        this.logger.error(
+          `Failed to parse answer JSON for question ${userAnswer.questionId} in attempt ${attemptId}`,
+          error
+        );
+        // Continue with empty answer structure
+        parsedAnswer = {};
+      }
+
+      // Handle different question types
+      let transformedUserAnswer: any = {};
+      let questionIsCorrect = false;
+
+      // Check if this is a subjective/essay question (has text answer)
+      if (
+        (question.type === QuestionType.SUBJECTIVE ||
+          question.type === QuestionType.ESSAY) &&
+        parsedAnswer.text
+      ) {
+        // Handle subjective/essay questions
+        transformedUserAnswer = {
+          text: parsedAnswer.text,
+        };
+        // For subjective questions, isCorrect is based on score (if scored, consider it correct)
+        questionIsCorrect = userAnswer.score > 0;
+      } else if (
+        question.type === QuestionType.FILL_BLANK &&
+        (parsedAnswer.blanks || parsedAnswer.selectedOptionIds)
+      ) {
+        // Handle fill-in-blank questions
+        const blanks = parsedAnswer.blanks || parsedAnswer.selectedOptionIds || [];
+        transformedUserAnswer = {
+          blanks: blanks.map((blank: any, index: number) => ({
+            blankIndex: blank.blankIndex ?? index,
+            text: blank.text || blank.answer || blank || '',
+          })),
+        };
+        // For fill-blank, isCorrect is based on score
+        questionIsCorrect = userAnswer.score > 0;
+      } else if (
+        question.type === QuestionType.MATCH &&
+        parsedAnswer.matches
+      ) {
+        // Handle matching questions - use pre-computed options map for O(1) lookup
+        const questionOptionsMap = optionsMap.get(question.questionId);
+        transformedUserAnswer = {
+          matches: parsedAnswer.matches.map((match: any) => {
+            const option = questionOptionsMap?.get(match.optionId);
+            return {
+              questionOptionId: match.optionId,
+              text: option?.text || '',
+              matchWith: match.matchWith || '',
+            };
+          }),
+        };
+        // For match, isCorrect is based on score
+        questionIsCorrect = userAnswer.score > 0;
+      } else {
+        // Handle objective questions (MCQ, Multiple Answer, True/False, Dropdown, etc.)
+        // Get correct answers Set for O(1) lookup (pre-computed above)
+        const correctAnswers = correctAnswersMap.get(question.questionId) || new Set<string>();
+
+        // Transform selectedOptionIds into selectedOptions array with isCorrect property
+        let selectedOptions: Array<{ optionId: string; isCorrect?: boolean }> =
+          [];
+        let selectedCorrectOptions: string[] = [];
+        
+        if (
+          parsedAnswer.selectedOptionIds &&
+          Array.isArray(parsedAnswer.selectedOptionIds)
+        ) {
+          // Use Set for O(1) lookup instead of array.includes() which is O(n)
+          const selectedOptionIdsSet = new Set(parsedAnswer.selectedOptionIds);
+          
+          selectedOptions = parsedAnswer.selectedOptionIds.map(
+            (selectedId: string) => {
+              const option: { optionId: string; isCorrect?: boolean } = {
+                optionId: selectedId,
+              };
+              // Only add isCorrect if showCorrectAnswer is true
+              if (test.showCorrectAnswer) {
+                const isCorrect = correctAnswers.has(selectedId); // O(1) lookup
+                option.isCorrect = isCorrect;
+                if (isCorrect) {
+                  selectedCorrectOptions.push(selectedId);
+                }
+              }
+              return option;
+            }
+          );
+
+          // Calculate question-level isCorrect based on allowPartialScoring
+          if (question.allowPartialScoring) {
+            // For partial scoring: if any correct option is selected, question is correct
+            questionIsCorrect = selectedCorrectOptions.length > 0;
+          } else {
+            // For non-partial scoring: user must select all correct options to get full marks
+            // Check if all correct options are selected and no incorrect options are selected
+            // Using Set operations for O(n) instead of O(n²) with array.includes()
+            const allCorrectSelected = correctAnswers.size > 0 && 
+              Array.from(correctAnswers).every((correctId: string) => selectedOptionIdsSet.has(correctId));
+            const noIncorrectSelected = 
+              Array.from(selectedOptionIdsSet).every((selectedId: string) => correctAnswers.has(selectedId));
+            questionIsCorrect = allCorrectSelected && noIncorrectSelected;
+          }
+        }
+
+        // Create the userAnswer structure for objective questions
+        transformedUserAnswer = {
+          selectedOptions: selectedOptions,
+        };
+      }
+
+      // Get ordering from test questions map (default to 9999 if not found for sorting)
+      const ordering = questionOrderMap.get(userAnswer.questionId) ?? 9999;
+
+      answers.push({
+        questionId: userAnswer.questionId,
+        userAnswer: transformedUserAnswer,
+        score: userAnswer.score,
+        isCorrect: questionIsCorrect,
+        ordering: ordering,
+      });
+    }
+
+    // Step 7: Sort answers by test question ordering to maintain test sequence
+    answers.sort((a, b) => (a.ordering || 9999) - (b.ordering || 9999));
+
+    // Remove ordering from final response (it was only for sorting)
+    const finalAnswers = answers.map(({ ordering, ...answer }) => answer);
+
+    // ===== END OF OPTIMIZED CODE =====
+
+    // Step 8: Build the complete answersheet structure
     const answersheet = {
       attempt: attempt,
-      answers: answers,
+      answers: finalAnswers,
     };
 
     return answersheet;
