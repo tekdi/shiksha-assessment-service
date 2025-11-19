@@ -56,50 +56,50 @@ export class TestsService {
    * Common logic for fetching test hierarchy data
    * @param id - Test ID
    * @param authContext - Authentication context
-   * @returns Promise<{test: Test, testQuestions: TestQuestion[], questionsMap: Map<string, Question>, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>}>
+   * @returns Promise<{test: Test, testQuestions: TestQuestion[], questionsMap: Map<string, Question>, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>, optionQuestionMappingsMap: Map<string, any[]>}>
    */
   private async fetchTestHierarchyData(id: string, authContext: AuthContext) {
-    // First, get the test with sections
-    const test = await this.testRepository.findOne({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        status: Not(TestStatus.ARCHIVED)
-      },
-      relations: ['sections'],
-      order: {
-        sections: {
-          ordering: 'ASC',
+    // Parallel fetch: test with sections and test questions
+    const [test, testQuestions] = await Promise.all([
+      this.testRepository.findOne({
+        where: {
+          testId: id,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: Not(TestStatus.ARCHIVED)
         },
-      },
-    });
+        relations: ['sections'],
+        order: {
+          sections: {
+            ordering: 'ASC',
+          },
+        },
+      }),
+      this.testQuestionRepository.find({
+        where: {
+          testId: id,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        select: [
+          'testQuestionId',
+          'tenantId',
+          'organisationId',
+          'testId',
+          'questionId',
+          'ordering',
+          'sectionId',
+          'ruleId',
+          'isCompulsory',
+          'isConditional'
+        ],
+        order: { ordering: 'ASC' },
+      })
+    ]);
 
     if (!test) {
       throw new NotFoundException('Test not found');
     }
-
-    // Then, get test questions with explicit field selection
-    const testQuestions = await this.testQuestionRepository.find({
-      where: {
-        testId: id,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      select: [
-        'testQuestionId',
-        'tenantId',
-        'organisationId',
-        'testId',
-        'questionId',
-        'ordering',
-        'sectionId',
-        'ruleId',
-        'isCompulsory',
-        'isConditional'
-      ],
-      order: { ordering: 'ASC' },
-    });
 
     // Create a map of questionId -> isCompulsory for all test questions (including child questions)
     const isCompulsoryMap = new Map<string, boolean>();
@@ -129,49 +129,201 @@ export class TestsService {
       .map(testQuestion => testQuestion.questionId);
 
     if (questionIds.length === 0) {
-      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map(), isCompulsoryMap };
+      return { 
+        test, 
+        testQuestions, 
+        questionsMap: new Map(), 
+        childQuestionsByParent: new Map(), 
+        isCompulsoryMap,
+        optionQuestionMappingsMap: new Map()
+      };
     }
 
-    // Fetch only parent questions (non-conditional) with options
-    const questions = await this.questionRepository.find({
-      where: { 
-        questionId: In(questionIds),
-        parentId: IsNull() // Only fetch parent questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
+    // Fetch parent questions with options
+    const parentQuestions = await this.questionRepository
+      .createQueryBuilder('question')
+      .leftJoinAndSelect('question.options', 'options', 'options.tenantId = :tenantId AND options.organisationId = :organisationId', {
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId
+      })
+      .where('question.questionId IN (:...questionIds)', { questionIds })
+      .andWhere('question.parentId IS NULL')
+      .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .orderBy('options.ordering', 'ASC')
+      .getMany();
 
     // Create a map for quick lookup
-    const questionsMap = new Map(questions.map(q => [q.questionId, q]));
-
-    // Fetch all child questions for conditional display
-    const childQuestions = await this.questionRepository.find({
-      where: { 
-        parentId: Not(IsNull()) // Only fetch child questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
+    const questionsMap = new Map(parentQuestions.map(q => [q.questionId, q]));
+    
+    // Recursively fetch all nested child questions (child questions of child questions, etc.)
+    const allChildQuestions: Question[] = [];
+    const processedQuestionIds = new Set<string>(questionIds);
+    let currentLevelQuestionIds = [...questionIds];
+    
+    // Keep fetching child questions until no more are found
+    while (currentLevelQuestionIds.length > 0) {
+      const childQuestions = await this.questionRepository
+        .createQueryBuilder('question')
+        .leftJoinAndSelect('question.options', 'options', 'options.tenantId = :tenantId AND options.organisationId = :organisationId', {
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId
+        })
+        .where('question.parentId IN (:...parentIds)', { parentIds: currentLevelQuestionIds })
+        .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
+        .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
+        .orderBy('options.ordering', 'ASC')
+        .getMany();
+      
+      if (childQuestions.length === 0) {
+        break; // No more child questions found
+      }
+      
+      allChildQuestions.push(...childQuestions);
+      
+      // Prepare for next level - get IDs of child questions that haven't been processed
+      currentLevelQuestionIds = childQuestions
+        .map(q => q.questionId)
+        .filter(id => !processedQuestionIds.has(id));
+      
+      // Add to processed set to avoid infinite loops
+      childQuestions.forEach(q => processedQuestionIds.add(q.questionId));
+    }
     
     // Create a map of child questions by parent ID
     const childQuestionsByParent = new Map<string, any[]>();
-    for (const child of childQuestions) {
+    for (const child of allChildQuestions) {
       if (!childQuestionsByParent.has(child.parentId!)) {
         childQuestionsByParent.set(child.parentId!, []);
       }
       childQuestionsByParent.get(child.parentId!)!.push(child);
     }
 
-    return { test, testQuestions, questionsMap, childQuestionsByParent, isCompulsoryMap };
+    // Extract all option IDs from both parent and all nested child questions
+    const allOptionIds = [
+      ...parentQuestions.flatMap(q => q.options?.map(opt => opt.questionOptionId) || []),
+      ...allChildQuestions.flatMap(q => q.options?.map(opt => opt.questionOptionId) || [])
+    ];
+
+    // Batch fetch option-question mappings with minimal relations (only what we need)
+    const optionQuestionMappingsMap = new Map<string, any[]>();
+    if (allOptionIds.length > 0) {
+      // Use QueryBuilder to fetch only necessary fields and relations
+      const optionQuestionMappings = await this.optionQuestionRepository
+        .createQueryBuilder('oq')
+        .leftJoinAndSelect('oq.question', 'childQuestion')
+        .leftJoinAndSelect('childQuestion.options', 'childOptions', 'childOptions.tenantId = :tenantId AND childOptions.organisationId = :organisationId', {
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId
+        })
+        .where('oq.optionId IN (:...optionIds)', { optionIds: allOptionIds })
+        .andWhere('oq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+        .andWhere('oq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+        .orderBy('oq.ordering', 'ASC')
+        .orderBy('childOptions.ordering', 'ASC')
+        .getMany();
+
+      // Create a map of optionId -> array of child questions for quick lookup
+      for (const mapping of optionQuestionMappings) {
+        if (!optionQuestionMappingsMap.has(mapping.optionId)) {
+          optionQuestionMappingsMap.set(mapping.optionId, []);
+        }
+        optionQuestionMappingsMap.get(mapping.optionId)!.push(mapping.question);
+      }
+      
+      // Recursively collect all nested child questions from option-question mappings
+      // and fetch their option-question mappings too
+      const allNestedChildQuestions = new Map<string, Question>();
+      const allNestedOptionIds = new Set<string>(allOptionIds);
+      
+      // Collect child questions from mappings
+      for (const mapping of optionQuestionMappings) {
+        if (mapping.question) {
+          allNestedChildQuestions.set(mapping.question.questionId, mapping.question);
+          // Collect option IDs from nested child questions
+          if (mapping.question.options) {
+            mapping.question.options.forEach(opt => {
+              allNestedOptionIds.add(opt.questionOptionId);
+            });
+          }
+        }
+      }
+      
+      // Recursively fetch option-question mappings for nested levels
+      let currentLevelOptionIds = Array.from(allNestedOptionIds).filter(id => !allOptionIds.includes(id));
+      const processedOptionIds = new Set<string>(allOptionIds);
+      
+      while (currentLevelOptionIds.length > 0) {
+        // Fetch option-question mappings for nested options
+        const nestedOptionQuestionMappings = await this.optionQuestionRepository
+          .createQueryBuilder('oq')
+          .leftJoinAndSelect('oq.question', 'childQuestion')
+          .leftJoinAndSelect('childQuestion.options', 'childOptions', 'childOptions.tenantId = :tenantId AND childOptions.organisationId = :organisationId', {
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId
+          })
+          .where('oq.optionId IN (:...optionIds)', { optionIds: currentLevelOptionIds })
+          .andWhere('oq.tenantId = :tenantId', { tenantId: authContext.tenantId })
+          .andWhere('oq.organisationId = :organisationId', { organisationId: authContext.organisationId })
+          .orderBy('oq.ordering', 'ASC')
+          .orderBy('childOptions.ordering', 'ASC')
+          .getMany();
+        
+        if (nestedOptionQuestionMappings.length === 0) {
+          break;
+        }
+        
+        // Add to the map
+        for (const mapping of nestedOptionQuestionMappings) {
+          if (!optionQuestionMappingsMap.has(mapping.optionId)) {
+            optionQuestionMappingsMap.set(mapping.optionId, []);
+          }
+          optionQuestionMappingsMap.get(mapping.optionId)!.push(mapping.question);
+          
+          // Collect nested child questions
+          if (mapping.question) {
+            allNestedChildQuestions.set(mapping.question.questionId, mapping.question);
+            // Collect option IDs from nested child questions
+            if (mapping.question.options) {
+              mapping.question.options.forEach(opt => {
+                if (!processedOptionIds.has(opt.questionOptionId)) {
+                  allNestedOptionIds.add(opt.questionOptionId);
+                }
+              });
+            }
+          }
+        }
+        
+        // Prepare for next iteration
+        currentLevelOptionIds = Array.from(allNestedOptionIds)
+          .filter(id => !processedOptionIds.has(id));
+        
+        currentLevelOptionIds.forEach(id => processedOptionIds.add(id));
+      }
+      
+      // Add all nested child questions to childQuestionsByParent map
+      for (const [questionId, question] of allNestedChildQuestions) {
+        if (question.parentId) {
+          if (!childQuestionsByParent.has(question.parentId)) {
+            childQuestionsByParent.set(question.parentId, []);
+          }
+          // Only add if not already present
+          const existing = childQuestionsByParent.get(question.parentId)!;
+          if (!existing.find(q => q.questionId === questionId)) {
+            existing.push(question);
+          }
+        }
+      }
+    }
+
+    return { 
+      test, 
+      testQuestions, 
+      questionsMap, 
+      childQuestionsByParent, 
+      isCompulsoryMap,
+      optionQuestionMappingsMap
+    };
   }
 
   /**
@@ -183,6 +335,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param transformMethod - Method to use for transformation
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param optionQuestionMappingsMap - Pre-fetched map of optionId -> child questions
    */
   private async transformAndAttachQuestions(
     test: Test,
@@ -190,10 +343,12 @@ export class TestsService {
     childQuestionsByParent: Map<string, Question[]>,
     showCorrectOptions: boolean,
     authContext: AuthContext,
-    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>) => Promise<any>,
-    isCompulsoryMap: Map<string, boolean>
+    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>, optionQuestionMappingsMap: Map<string, any[]>) => Promise<any>,
+    isCompulsoryMap: Map<string, boolean>,
+    optionQuestionMappingsMap: Map<string, any[]>
   ) {
-    // Transform questions and attach to test questions
+    // Collect all questions that need transformation
+    const questionsToTransform: Array<{ testQuestion: any; question: Question }> = [];
     for (const section of test.sections) {
       for (const testQuestion of section.questions) {
         // Skip conditional questions as they should not appear in main structure
@@ -203,34 +358,45 @@ export class TestsService {
         
         const question = questionsMap.get(testQuestion.questionId);
         if (question) {
-
-          // Transform the question data with conditional child questions
-          const transformedQuestion = await transformMethod(
-            question, 
-            showCorrectOptions, 
-            authContext,
-            childQuestionsByParent,
-            isCompulsoryMap
-          );
-
-          // For matching questions, add a separate array of matchWith options
-          if (question.type === QuestionType.MATCH && question.options?.length > 0) {
-            const matchWithOptions = question.options
-              .filter(opt => opt.matchWith) // Only include options that have matchWith
-              .map(opt => ({
-                matchWith: opt.matchWith,
-                matchWithMedia: opt.matchWithMedia,
-                ordering: opt.ordering,
-              }))
-              .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
-
-            (transformedQuestion as any).matchWithOptions = matchWithOptions;
-          }
-
-          // Replace the test question with the complete question data
-          Object.assign(testQuestion, transformedQuestion);
+          questionsToTransform.push({ testQuestion, question });
         }
       }
+    }
+
+    // Transform all questions in parallel
+    const transformedQuestions = await Promise.all(
+      questionsToTransform.map(async ({ testQuestion, question }) => {
+        // Transform the question data with conditional child questions
+        const transformedQuestion = await transformMethod(
+          question, 
+          showCorrectOptions, 
+          authContext,
+          childQuestionsByParent,
+          isCompulsoryMap,
+          optionQuestionMappingsMap
+        );
+
+        // For matching questions, add a separate array of matchWith options
+        if (question.type === QuestionType.MATCH && question.options?.length > 0) {
+          const matchWithOptions = question.options
+            .filter(opt => opt.matchWith) // Only include options that have matchWith
+            .map(opt => ({
+              matchWith: opt.matchWith,
+              matchWithMedia: opt.matchWithMedia,
+              ordering: opt.ordering,
+            }))
+            .sort((a, b) => a.ordering - b.ordering); // Sort by ordering
+
+          (transformedQuestion as any).matchWithOptions = matchWithOptions;
+        }
+
+        return { testQuestion, transformedQuestion };
+      })
+    );
+
+    // Attach transformed questions back to test questions
+    for (const { testQuestion, transformedQuestion } of transformedQuestions) {
+      Object.assign(testQuestion, transformedQuestion);
     }
   }
 
@@ -440,7 +606,7 @@ export class TestsService {
 
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     // Fetch common test hierarchy data
-    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap } = await this.fetchTestHierarchyData(id, authContext);
+    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, optionQuestionMappingsMap } = await this.fetchTestHierarchyData(id, authContext);
 
     // Transform and attach questions using learner transformation method
     await this.transformAndAttachQuestions(
@@ -450,7 +616,8 @@ export class TestsService {
       showCorrectOptions,
       authContext,
       this.transformQuestionWithConditionals.bind(this),
-      isCompulsoryMap
+      isCompulsoryMap,
+      optionQuestionMappingsMap
     );
 
     return test;
@@ -459,7 +626,7 @@ export class TestsService {
   // Admin view
   async getTestHierarchyAdmin(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     // Fetch common test hierarchy data
-    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap } = await this.fetchTestHierarchyData(id, authContext);
+    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, optionQuestionMappingsMap } = await this.fetchTestHierarchyData(id, authContext);
 
     // Transform and attach questions using admin transformation method
     await this.transformAndAttachQuestions(
@@ -469,7 +636,8 @@ export class TestsService {
       showCorrectOptions,
       authContext,
       this.transformQuestionWithConditionalsAdmin.bind(this),
-      isCompulsoryMap
+      isCompulsoryMap,
+      optionQuestionMappingsMap
     );
 
     return test;
@@ -482,6 +650,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param optionQuestionMappingsMap - Pre-fetched map of optionId -> child questions
    * @returns Transformed question with conditional structure
    */
   private async transformQuestionWithConditionals(
@@ -489,7 +658,8 @@ export class TestsService {
     showCorrectOptions: boolean, 
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    optionQuestionMappingsMap: Map<string, any[]>
   ): Promise<any> {
     const transformedQuestion = {
       questionId: question.questionId,
@@ -507,7 +677,8 @@ export class TestsService {
         authContext,
         childQuestionsByParent,
         question.questionId,
-        isCompulsoryMap
+        isCompulsoryMap,
+        optionQuestionMappingsMap
       )
     };
 
@@ -522,6 +693,7 @@ export class TestsService {
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param parentQuestionId - ID of the parent question
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param optionQuestionMappingsMap - Pre-fetched map of optionId -> child questions
    * @returns Transformed options with conditional structure
    */
   private async transformOptionsWithConditionals(
@@ -530,29 +702,9 @@ export class TestsService {
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     parentQuestionId: string,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    optionQuestionMappingsMap: Map<string, any[]>
   ): Promise<any[]> {
-    // Get option-question mappings for this parent question
-    const optionQuestionMappings = await this.optionQuestionRepository.find({
-      where: {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        option: {
-          questionId: parentQuestionId
-        }
-      },
-      relations: ['question', 'question.options', 'option']
-    });
-
-    // Create a map of optionId -> array of child questions for quick lookup
-    const optionToChildQuestionsMap = new Map<string, any[]>();
-    for (const mapping of optionQuestionMappings) {
-      if (!optionToChildQuestionsMap.has(mapping.optionId)) {
-        optionToChildQuestionsMap.set(mapping.optionId, []);
-      }
-      optionToChildQuestionsMap.get(mapping.optionId)!.push(mapping.question);
-    }
-
     return Promise.all(options.map(async (option) => {
       const transformedOption: any = {
         questionOptionId: option.questionOptionId,
@@ -571,8 +723,8 @@ export class TestsService {
         }),
       };
 
-      // Check if this specific option has conditional child questions
-      const childQuestions = optionToChildQuestionsMap.get(option.questionOptionId);
+      // Check if this specific option has conditional child questions using pre-fetched map
+      const childQuestions = optionQuestionMappingsMap.get(option.questionOptionId);
       
       if (childQuestions && childQuestions.length > 0) {
         transformedOption.hasChildQuestion = true;
@@ -585,7 +737,8 @@ export class TestsService {
               showCorrectOptions, 
               authContext,
               childQuestionsByParent,
-              isCompulsoryMap
+              isCompulsoryMap,
+              optionQuestionMappingsMap
             );
             // Add isCompulsory from map if available
             const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
@@ -610,6 +763,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param optionQuestionMappingsMap - Pre-fetched map of optionId -> child questions
    * @returns Transformed question with conditional structure including child questions
    */
   private async transformQuestionWithConditionalsAdmin(
@@ -617,7 +771,8 @@ export class TestsService {
     showCorrectOptions: boolean, 
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    optionQuestionMappingsMap: Map<string, any[]>
   ): Promise<any> {
     const transformedQuestion: any = {
       questionId: question.questionId,
@@ -635,7 +790,8 @@ export class TestsService {
         authContext,
         childQuestionsByParent,
         question.questionId,
-        isCompulsoryMap
+        isCompulsoryMap,
+        optionQuestionMappingsMap
       )
     };
 
@@ -649,7 +805,8 @@ export class TestsService {
             showCorrectOptions,
             authContext,
             childQuestionsByParent,
-            isCompulsoryMap
+            isCompulsoryMap,
+            optionQuestionMappingsMap
           );
           // Add isCompulsory from map if available
           const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
@@ -672,6 +829,7 @@ export class TestsService {
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param parentQuestionId - ID of the parent question
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param optionQuestionMappingsMap - Pre-fetched map of optionId -> child questions
    * @returns Transformed options with conditional structure including AssociatedQuestion array
    */
   private async transformOptionsWithConditionalsAdmin(
@@ -680,29 +838,9 @@ export class TestsService {
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     parentQuestionId: string,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    optionQuestionMappingsMap: Map<string, any[]>
   ): Promise<any[]> {
-    // Get option-question mappings for this parent question
-    const optionQuestionMappings = await this.optionQuestionRepository.find({
-      where: {
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        option: {
-          questionId: parentQuestionId
-        }
-      },
-      relations: ['question', 'question.options', 'option']
-    });
-
-    // Create a map of optionId -> child questions array for quick lookup
-    const optionToChildQuestionMap = new Map<string, any[]>();
-    for (const mapping of optionQuestionMappings) {
-      if (!optionToChildQuestionMap.has(mapping.optionId)) {
-        optionToChildQuestionMap.set(mapping.optionId, []);
-      }
-      optionToChildQuestionMap.get(mapping.optionId)!.push(mapping.question);
-    }
-
     return Promise.all(options.map(async (option) => {
       const transformedOption: any = {
         questionOptionId: option.questionOptionId,
@@ -721,8 +859,8 @@ export class TestsService {
         }),
       };
 
-      // Check if this specific option has conditional child questions
-      const childQuestions = optionToChildQuestionMap.get(option.questionOptionId);
+      // Check if this specific option has conditional child questions using pre-fetched map
+      const childQuestions = optionQuestionMappingsMap.get(option.questionOptionId);
       
       if (childQuestions && childQuestions.length > 0) {
         transformedOption.hasChildQuestion = true;
