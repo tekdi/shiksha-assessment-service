@@ -880,6 +880,50 @@ export class AttemptsService {
    * CLEANUP CHILD QUESTION ANSWERS BEFORE SUBMIT (WITH TRANSACTION)
    * Deletes all child question answers before processing new answers
    */
+  /**
+   * Optimized cleanup: Only cleans up child questions for specific parent question IDs
+   * This avoids loading all existing answers and questions unnecessarily
+   */
+  private async cleanupChildQuestionForParents(
+    attemptId: string,
+    parentQuestionIds: string[],
+    authContext: AuthContext,
+    queryRunner: any
+  ): Promise<void> {
+    if (parentQuestionIds.length === 0) {
+      return;
+    }
+
+    // Find all child questions for the given parent question IDs
+    const childQuestions = await queryRunner.manager.find(Question, {
+      where: {
+        parentId: In(parentQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      select: ['questionId'], // Only select questionId for efficiency
+    });
+
+    if (childQuestions.length === 0) {
+      return;
+    }
+
+    // Get all child question IDs
+    const childQuestionIds = childQuestions.map((cq) => cq.questionId);
+
+    // Delete child question answers using transaction
+    await queryRunner.manager.delete(TestUserAnswer, {
+      attemptId,
+      questionId: In(childQuestionIds),
+      tenantId: authContext.tenantId,
+      organisationId: authContext.organisationId,
+    });
+  }
+
+  /**
+   * @deprecated Use cleanupChildQuestionForParents instead for better performance
+   * Kept for backward compatibility if needed elsewhere
+   */
   private async cleanupChildQuestion(
     attemptId: string,
     existingAnswers: TestUserAnswer[],
@@ -963,8 +1007,9 @@ export class AttemptsService {
 
       // 2. Batch load all required data for optimal performance
       const questionIds = answersArray.map((answer) => answer.questionId);
+      const testId = attempt.resolvedTestId || attempt.testId;
 
-      const [questions, allOptions, existingAnswers] = await Promise.all([
+      const [questions, allOptions, existingAnswers, testQuestions] = await Promise.all([
         queryRunner.manager.find(Question, {
           where: {
             questionId: In(questionIds),
@@ -984,12 +1029,23 @@ export class AttemptsService {
             organisationId: authContext.organisationId,
           },
         }),
+        queryRunner.manager.find(TestQuestion, {
+          where: {
+            testId,
+            questionId: In(questionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        }),
       ]);
 
       // 3. Create lookup maps for efficient data access
       const questionMap = new Map(questions.map((q) => [q.questionId, q]));
       const existingAnswersMap = new Map(
         existingAnswers.map((a) => [a.questionId, a])
+      );
+      const testQuestionMap = new Map(
+        testQuestions.map((tq) => [tq.questionId, tq])
       );
       const optionsMap = new Map<string, QuestionOption[]>();
 
@@ -1000,22 +1056,15 @@ export class AttemptsService {
         optionsMap.get(option.questionId)!.push(option);
       });
 
-      // 4. Cleanup child questions if needed (using all existing answers for orphaned cleanup)
-      const allExistingAnswers = await queryRunner.manager.find(
-        TestUserAnswer,
-        {
-          where: {
-            attemptId,
-            tenantId: authContext.tenantId,
-            organisationId: authContext.organisationId,
-          },
-        }
-      );
-
-      if (allExistingAnswers.length > 0) {
-        await this.cleanupChildQuestion(
+      // 4. Optimized cleanup: Check if any submitted questions are parent questions
+      // (i.e., questions that have child questions). If so, cleanup their child question answers.
+      // Only check questions that don't have a parentId (they might be parent questions)
+      const potentialParentQuestions = questions.filter((q) => !q.parentId);
+      if (potentialParentQuestions.length > 0) {
+        const potentialParentQuestionIds = potentialParentQuestions.map((q) => q.questionId);
+        await this.cleanupChildQuestionForParents(
           attemptId,
-          allExistingAnswers,
+          potentialParentQuestionIds,
           authContext,
           queryRunner
         );
@@ -1043,11 +1092,11 @@ export class AttemptsService {
           test.gradingType === GradingType.QUIZ ||
           test.gradingType === GradingType.ASSESSMENT
         ) {
-          score = await this.calculateQuestionScore(
+          // calculateQuestionScore is now synchronous since options are pre-loaded
+          score = this.calculateQuestionScore(
             answerDto.answer,
             question,
-            options,
-            queryRunner
+            options
           );
           reviewStatus = test.isObjective
             ? AnswerReviewStatus.REVIEWED
@@ -1096,17 +1145,10 @@ export class AttemptsService {
       }
 
       // 8. Update current position based on the last question's ordering
+      // Use pre-loaded testQuestionMap instead of individual query
       if (answersArray.length > 0) {
-        const testId = attempt.resolvedTestId || attempt.testId;
         const lastQuestionId = answersArray[answersArray.length - 1].questionId;
-        const testQuestion = await queryRunner.manager.findOne(TestQuestion, {
-          where: {
-            testId,
-            questionId: lastQuestionId,
-            tenantId: authContext.tenantId,
-            organisationId: authContext.organisationId,
-          },
-        });
+        const testQuestion = testQuestionMap.get(lastQuestionId);
 
         if (testQuestion) {
           attempt.currentPosition = testQuestion.ordering;
@@ -1705,29 +1747,24 @@ export class AttemptsService {
    *
    * @param answerData - The parsed user answer data
    * @param question - The question entity with type and marks
-   * @param options - Pre-loaded question options (for transaction safety)
-   * @param queryRunner - Optional query runner for transaction context
+   * @param options - Pre-loaded question options (required for performance)
    * @returns number - The calculated score for this question
+   * 
+   * Performance optimized: This method is now synchronous and requires pre-loaded options
+   * to avoid database queries during scoring.
    */
-  private async calculateQuestionScore(
+  private calculateQuestionScore(
     answerData: any,
     question: Question,
-    options?: QuestionOption[],
-    queryRunner?: any
-  ): Promise<number> {
-    // Get question options for validation - use provided options or fetch within transaction
-    let questionOptions: QuestionOption[];
-    if (options) {
-      questionOptions = options;
-    } else if (queryRunner) {
-      questionOptions = await queryRunner.manager.find(QuestionOption, {
-        where: { questionId: question.questionId },
-        order: { ordering: 'ASC' },
-      });
-    } else {
-      // Fallback to repository (not recommended for transaction contexts)
-      questionOptions = await this.getQuestionOptions(question.questionId);
+    options: QuestionOption[]
+  ): number {
+    // Options should always be provided for performance
+    if (!options || options.length === 0) {
+      this.logger.warn(`No options provided for question ${question.questionId}, score will be 0`);
+      return 0;
     }
+
+    const questionOptions = options;
 
     let score: number;
 
