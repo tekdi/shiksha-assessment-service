@@ -1422,7 +1422,7 @@ export class AttemptsService {
         validatedFinalScore >= test.passingMarks
           ? ResultType.PASS
           : ResultType.FAIL;
-      
+
       // Call LMS service to update test progress when review is complete
       // This ensures LMS status is updated when marks change (both PASS and FAIL)
       // This handles the case where marks are updated and status needs to change
@@ -2190,7 +2190,9 @@ export class AttemptsService {
     }
 
     if (!test.answerSheet) {
-      throw new BadRequestException('Answer sheet is not enabled for this test');
+      throw new BadRequestException(
+        'Answer sheet is not enabled for this test'
+      );
     }
 
     // Create a map of question ordering for sorting answers
@@ -2333,9 +2335,7 @@ export class AttemptsService {
 
     // Step 5: Create lookup maps for O(1) access
     // Map questions by questionId
-    const questionMap = new Map(
-      questions.map((q) => [q.questionId, q])
-    );
+    const questionMap = new Map(questions.map((q) => [q.questionId, q]));
 
     // Pre-compute options maps for each question (for O(1) lookup instead of O(n) find)
     const optionsMap = new Map<string, Map<string, QuestionOption>>();
@@ -2419,7 +2419,8 @@ export class AttemptsService {
         (parsedAnswer.blanks || parsedAnswer.selectedOptionIds)
       ) {
         // Handle fill-in-blank questions
-        const blanks = parsedAnswer.blanks || parsedAnswer.selectedOptionIds || [];
+        const blanks =
+          parsedAnswer.blanks || parsedAnswer.selectedOptionIds || [];
         transformedUserAnswer = {
           blanks: blanks.map((blank: any, index: number) => ({
             blankIndex: blank.blankIndex ?? index,
@@ -2428,10 +2429,7 @@ export class AttemptsService {
         };
         // For fill-blank, isCorrect is based on score
         questionIsCorrect = userAnswer.score > 0;
-      } else if (
-        question.type === QuestionType.MATCH &&
-        parsedAnswer.matches
-      ) {
+      } else if (question.type === QuestionType.MATCH && parsedAnswer.matches) {
         // Handle matching questions - use pre-computed options map for O(1) lookup
         const questionOptionsMap = optionsMap.get(question.questionId);
         transformedUserAnswer = {
@@ -2449,20 +2447,21 @@ export class AttemptsService {
       } else {
         // Handle objective questions (MCQ, Multiple Answer, True/False, Dropdown, etc.)
         // Get correct answers Set for O(1) lookup (pre-computed above)
-        const correctAnswers = correctAnswersMap.get(question.questionId) || new Set<string>();
+        const correctAnswers =
+          correctAnswersMap.get(question.questionId) || new Set<string>();
 
         // Transform selectedOptionIds into selectedOptions array with isCorrect property
         let selectedOptions: Array<{ optionId: string; isCorrect?: boolean }> =
           [];
         let selectedCorrectOptions: string[] = [];
-        
+
         if (
           parsedAnswer.selectedOptionIds &&
           Array.isArray(parsedAnswer.selectedOptionIds)
         ) {
           // Use Set for O(1) lookup instead of array.includes() which is O(n)
           const selectedOptionIdsSet = new Set(parsedAnswer.selectedOptionIds);
-          
+
           selectedOptions = parsedAnswer.selectedOptionIds.map(
             (selectedId: string) => {
               const option: { optionId: string; isCorrect?: boolean } = {
@@ -2488,10 +2487,14 @@ export class AttemptsService {
             // For non-partial scoring: user must select all correct options to get full marks
             // Check if all correct options are selected and no incorrect options are selected
             // Using Set operations for O(n) instead of O(n²) with array.includes()
-            const allCorrectSelected = correctAnswers.size > 0 && 
-              Array.from(correctAnswers).every((correctId: string) => selectedOptionIdsSet.has(correctId));
-            const noIncorrectSelected = 
-              Array.from(selectedOptionIdsSet).every((selectedId: string) => correctAnswers.has(selectedId));
+            const allCorrectSelected =
+              correctAnswers.size > 0 &&
+              Array.from(correctAnswers).every((correctId: string) =>
+                selectedOptionIdsSet.has(correctId)
+              );
+            const noIncorrectSelected = Array.from(selectedOptionIdsSet).every(
+              (selectedId: string) => correctAnswers.has(selectedId)
+            );
             questionIsCorrect = allCorrectSelected && noIncorrectSelected;
           }
         }
@@ -2773,15 +2776,15 @@ export class AttemptsService {
    * Checks if the result is imported for a given user and test
    * Returns true if reviewStatus is REVIEWED ('R') and result is PASS ('P') or FAIL ('F')
    * Returns false if reviewStatus is PENDING ('P')
-   * 
+   *
    * Optimized to only select required fields (reviewStatus, result) for better performance.
-   * 
+   *
    * @param userId - The user ID to check
    * @param testId - The test ID to check
    * @param authContext - Authentication context for tenant/organization filtering
    * @returns Promise<{isImported: boolean}> - Object containing the isImported flag
    */
-  async checkResultImported(
+  async getAssessmentResultStatus(
     userId: string,
     testId: string,
     authContext: AuthContext
@@ -2793,7 +2796,9 @@ export class AttemptsService {
       .select(['attempt.reviewStatus', 'attempt.result'])
       .where('attempt.testId = :testId', { testId })
       .andWhere('attempt.userId = :userId', { userId })
-      .andWhere('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('attempt.tenantId = :tenantId', {
+        tenantId: authContext.tenantId,
+      })
       .andWhere('attempt.organisationId = :organisationId', {
         organisationId: authContext.organisationId,
       })
@@ -2811,7 +2816,8 @@ export class AttemptsService {
     // isImported = false if reviewStatus is PENDING or any other case
     const isImported =
       attempt.reviewStatus === ReviewStatus.REVIEWED &&
-      (attempt.result === ResultType.PASS || attempt.result === ResultType.FAIL);
+      (attempt.result === ResultType.PASS ||
+        attempt.result === ResultType.FAIL);
 
     return { isImported };
   }

@@ -246,12 +246,12 @@ export class AttemptsController {
     description: 'Result import status retrieved successfully',
     type: ApiSuccessResponseDto,
   })
-  async checkResultImported(
+  async getAssessmentResultStatus(
     @Body() checkDto: CheckResultImportedDto,
     @Req() req: any
   ) {
     const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.checkResultImported(
+    const result = await this.attemptsService.getAssessmentResultStatus(
       checkDto.userId,
       checkDto.testId,
       authContext
