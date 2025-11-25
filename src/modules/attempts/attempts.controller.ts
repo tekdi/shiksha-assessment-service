@@ -256,6 +256,8 @@ export class AttemptsController {
       checkDto.testId,
       authContext
     );
+    console.log('in controller result-----------');
+
     return result;
   }
 }
