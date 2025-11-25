@@ -180,7 +180,7 @@ export class AttemptsController {
     return this.attemptsService.getPendingReviews(authContext);
   }
 
-  @Post('result-status')
+  @Post('import/resultstatus')
   @ApiOperation({
     summary: 'Check if result is imported for a user and test',
     description:
