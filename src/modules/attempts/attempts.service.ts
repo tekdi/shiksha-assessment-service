@@ -2774,6 +2774,8 @@ export class AttemptsService {
    * Returns true if reviewStatus is REVIEWED ('R') and result is PASS ('P') or FAIL ('F')
    * Returns false if reviewStatus is PENDING ('P')
    * 
+   * Optimized to only select required fields (reviewStatus, result) for better performance.
+   * 
    * @param userId - The user ID to check
    * @param testId - The test ID to check
    * @param authContext - Authentication context for tenant/organization filtering
@@ -2784,37 +2786,34 @@ export class AttemptsService {
     testId: string,
     authContext: AuthContext
   ): Promise<{ isImported: boolean }> {
-    // Find the most recent attempt for the user and test
-    const attempt = await this.attemptRepository.findOne({
-      where: {
-        testId,
-        userId,
-        tenantId: authContext.tenantId,
+    // Optimized query: Only select the fields we need (reviewStatus and result)
+    // This reduces memory usage and network transfer
+    const attempt = await this.attemptRepository
+      .createQueryBuilder('attempt')
+      .select(['attempt.reviewStatus', 'attempt.result'])
+      .where('attempt.testId = :testId', { testId })
+      .andWhere('attempt.userId = :userId', { userId })
+      .andWhere('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('attempt.organisationId = :organisationId', {
         organisationId: authContext.organisationId,
-      },
-      order: { attempt: 'DESC' }, // Get the most recent attempt
-    });
+      })
+      .orderBy('attempt.attempt', 'DESC') // Get the most recent attempt
+      .limit(1) // Only need one record
+      .getOne();
 
     // If no attempt found, return false
     if (!attempt) {
       return { isImported: false };
     }
 
-    // Check if reviewStatus is PENDING ('P')
-    if (attempt.reviewStatus === ReviewStatus.PENDING) {
-      return { isImported: false };
-    }
-
-    // Check if reviewStatus is REVIEWED ('R') and result is PASS ('P') or FAIL ('F')
-    if (
+    // Optimized logic: Check conditions in a single expression
+    // isImported = true if reviewStatus is REVIEWED AND result is PASS or FAIL
+    // isImported = false if reviewStatus is PENDING or any other case
+    const isImported =
       attempt.reviewStatus === ReviewStatus.REVIEWED &&
-      (attempt.result === ResultType.PASS || attempt.result === ResultType.FAIL)
-    ) {
-      return { isImported: true };
-    }
+      (attempt.result === ResultType.PASS || attempt.result === ResultType.FAIL);
 
-    // Default case: return false
-    return { isImported: false };
+    return { isImported };
   }
 
   private async triggerPluginEvent(
