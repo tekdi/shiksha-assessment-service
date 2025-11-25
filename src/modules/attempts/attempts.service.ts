@@ -2080,7 +2080,6 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
       },
     });
-    console.log('attempt', attempt);
     if (!attempt) {
       throw new NotFoundException('Attempt not found');
     }
@@ -2805,7 +2804,6 @@ export class AttemptsService {
       .orderBy('attempt.attempt', 'DESC') // Get the most recent attempt
       .limit(1) // Only need one record
       .getOne();
-    console.log('in service check------------------');
 
     // If no attempt found, return false
     if (!attempt) {
