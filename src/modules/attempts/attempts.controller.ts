@@ -12,6 +12,7 @@ import { AttemptsService } from './attempts.service';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
 import { ReviewTestAttemptDto } from './dto/review-test-attempt.dto';
+import { CheckResultImportedDto } from './dto/check-result-imported.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
@@ -162,5 +163,28 @@ export class AttemptsController {
       result: attempt.result,
       reviewStatus: attempt.reviewStatus 
     };
+  }
+
+  @Post('check-result-imported')
+  @ApiOperation({ 
+    summary: 'Check if result is imported for a user and test',
+    description: 'Checks if the result is imported by verifying reviewStatus and result in testAttempts table. Returns isImported: true if reviewStatus is R (REVIEWED) and result is P (PASS) or F (FAIL). Returns isImported: false if reviewStatus is P (PENDING).'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Result import status retrieved successfully',
+    type: ApiSuccessResponseDto
+  })
+  async checkResultImported(
+    @Body() checkDto: CheckResultImportedDto,
+    @Req() req: any,
+  ) {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.checkResultImported(
+      checkDto.userId,
+      checkDto.testId,
+      authContext
+    );
+    return result;
   }
 } 

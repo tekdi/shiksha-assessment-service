@@ -2769,6 +2769,54 @@ export class AttemptsService {
     }
   }
 
+  /**
+   * Checks if the result is imported for a given user and test
+   * Returns true if reviewStatus is REVIEWED ('R') and result is PASS ('P') or FAIL ('F')
+   * Returns false if reviewStatus is PENDING ('P')
+   * 
+   * @param userId - The user ID to check
+   * @param testId - The test ID to check
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{isImported: boolean}> - Object containing the isImported flag
+   */
+  async checkResultImported(
+    userId: string,
+    testId: string,
+    authContext: AuthContext
+  ): Promise<{ isImported: boolean }> {
+    // Find the most recent attempt for the user and test
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+      order: { attempt: 'DESC' }, // Get the most recent attempt
+    });
+
+    // If no attempt found, return false
+    if (!attempt) {
+      return { isImported: false };
+    }
+
+    // Check if reviewStatus is PENDING ('P')
+    if (attempt.reviewStatus === ReviewStatus.PENDING) {
+      return { isImported: false };
+    }
+
+    // Check if reviewStatus is REVIEWED ('R') and result is PASS ('P') or FAIL ('F')
+    if (
+      attempt.reviewStatus === ReviewStatus.REVIEWED &&
+      (attempt.result === ResultType.PASS || attempt.result === ResultType.FAIL)
+    ) {
+      return { isImported: true };
+    }
+
+    // Default case: return false
+    return { isImported: false };
+  }
+
   private async triggerPluginEvent(
     eventName: string,
     authContext: AuthContext,
