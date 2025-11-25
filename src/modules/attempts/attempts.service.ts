@@ -2805,6 +2805,7 @@ export class AttemptsService {
       .orderBy('attempt.attempt', 'DESC') // Get the most recent attempt
       .limit(1) // Only need one record
       .getOne();
+    console.log('in service check------------------');
 
     // If no attempt found, return false
     if (!attempt) {
