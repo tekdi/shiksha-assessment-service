@@ -7,7 +7,12 @@ import {
   Req,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
 import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
 import { ReviewAttemptDto } from './dto/review-answer.dto';
@@ -26,25 +31,31 @@ export class AttemptsController {
 
   @Post('start/:testId')
   @ApiOperation({ summary: 'Start a new test attempt' })
-  @ApiResponse({ status: 201, description: 'Attempt started', type: ApiSuccessResponseDto })
-  async startAttempt(
-    @Param('testId') testId: string, 
-    @Req() req: any
-  ) {
+  @ApiResponse({
+    status: 201,
+    description: 'Attempt started',
+    type: ApiSuccessResponseDto,
+  })
+  async startAttempt(@Param('testId') testId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
-    const attempt = await this.attemptsService.startAttempt(testId, authContext.userId, authContext);
+    const attempt = await this.attemptsService.startAttempt(
+      testId,
+      authContext.userId,
+      authContext
+    );
     return { attemptId: attempt.attemptId };
   }
 
   @Get(':attemptId/resume/:userId')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get / Resume an in-progress attempt',
-    description: 'Load an existing in-progress attempt and recover previous answers, state, time, and review statuses. Cannot be used for submitted attempts.'
+    description:
+      'Load an existing in-progress attempt and recover previous answers, state, time, and review statuses. Cannot be used for submitted attempts.',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Attempt resumed successfully',
-    type: ApiSuccessResponseDto
+    type: ApiSuccessResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -55,129 +66,189 @@ export class AttemptsController {
     description: 'Attempt not found',
   })
   async resumeAttempt(
-    @Param('attemptId') attemptId: string, 
+    @Param('attemptId') attemptId: string,
     @Param('userId') userId: string,
     @Req() req: any
   ): Promise<{ result: any }> {
     const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.getAttemptAnswers(attemptId, userId, authContext);
+    const result = await this.attemptsService.getAttemptAnswers(
+      attemptId,
+      userId,
+      authContext
+    );
     return result;
   }
 
   @Get(':attemptId/questions/:userId')
   @ApiOperation({ summary: 'Get questions for an attempt' })
-  @ApiResponse({ status: 200, description: 'Questions retrieved', type: ApiSuccessResponseDto })
-  async getAttemptQuestions(@Param('attemptId') attemptId: string, @Param('userId') userId: string, @Req() req: any) {
+  @ApiResponse({
+    status: 200,
+    description: 'Questions retrieved',
+    type: ApiSuccessResponseDto,
+  })
+  async getAttemptQuestions(
+    @Param('attemptId') attemptId: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ) {
     const authContext: AuthContext = req.user;
-    return this.attemptsService.getAttemptQuestions(attemptId, userId, authContext);
+    return this.attemptsService.getAttemptQuestions(
+      attemptId,
+      userId,
+      authContext
+    );
   }
 
   @Post(':attemptId/answers')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Submit multiple answers for questions',
-    description: 'Submit answers for multiple questions in a test attempt. Accepts an object with answers array and optional global timeSpent.'
+    description:
+      'Submit answers for multiple questions in a test attempt. Accepts an object with answers array and optional global timeSpent.',
   })
-  @ApiResponse({ status: 200, description: 'Answers submitted', type: ApiSuccessResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Answers submitted',
+    type: ApiSuccessResponseDto,
+  })
   async submitAnswer(
     @Param('attemptId') attemptId: string,
     @Body() submitAnswerDto: SubmitMultipleAnswersDto,
-    @Req() req: any,
+    @Req() req: any
   ) {
     const authContext: AuthContext = req.user;
-    
+
     // Submit all answers efficiently in one call
-    const result = await this.attemptsService.submitAnswer(attemptId, submitAnswerDto, authContext);
+    const result = await this.attemptsService.submitAnswer(
+      attemptId,
+      submitAnswerDto,
+      authContext
+    );
     return result;
   }
 
   @Post(':attemptId/submit')
   @ApiOperation({ summary: 'Submit a test attempt' })
-  @ApiResponse({ status: 200, description: 'Attempt submitted', type: ApiSuccessResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Attempt submitted',
+    type: ApiSuccessResponseDto,
+  })
   async submitAttempt(@Param('attemptId') attemptId: string, @Req() req: any) {
     const authContext: AuthContext = req.user;
-    const attempt = await this.attemptsService.submitAttempt(attemptId, authContext);
+    const attempt = await this.attemptsService.submitAttempt(
+      attemptId,
+      authContext
+    );
     return attempt;
   }
 
   @Post(':attemptId/review')
   @ApiOperation({ summary: 'Review a test attempt (for subjective questions)' })
-  @ApiResponse({ status: 200, description: 'Attempt reviewed', type: ApiSuccessResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Attempt reviewed',
+    type: ApiSuccessResponseDto,
+  })
   async reviewAttempt(
     @Param('attemptId') attemptId: string,
     @Body() reviewDto: ReviewAttemptDto,
-    @Req() req: any,
+    @Req() req: any
   ) {
     const authContext: AuthContext = req.user;
-    const attempt = await this.attemptsService.reviewAttempt(attemptId, reviewDto, authContext);
-    return { 
-      attemptId: attempt.attemptId, 
+    const attempt = await this.attemptsService.reviewAttempt(
+      attemptId,
+      reviewDto,
+      authContext
+    );
+    return {
+      attemptId: attempt.attemptId,
       score: attempt.score,
       result: attempt.result,
-      reviewStatus: attempt.reviewStatus 
+      reviewStatus: attempt.reviewStatus,
     };
   }
 
   @Get('reviews/pending')
   @ApiOperation({ summary: 'Get pending reviews for subjective questions' })
-  @ApiResponse({ status: 200, description: 'Pending reviews retrieved', type: ApiSuccessResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Pending reviews retrieved',
+    type: ApiSuccessResponseDto,
+  })
   async getPendingReviews(@Req() req: any) {
     const authContext: AuthContext = req.user;
     return this.attemptsService.getPendingReviews(authContext);
   }
 
   @Get(':attemptId/answersheet')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get attempt answersheet',
-    description: 'Retrieve the complete answersheet of a submitted attempt including scores, answers, and review status'
+    description:
+      'Retrieve the complete answersheet of a submitted attempt including scores, answers, and review status',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Attempt answersheet retrieved successfully',
   })
   @ApiResponse({
     status: 404,
     description: 'Attempt not found',
   })
-  async getAttemptAnswersheet(@Param('attemptId') attemptId: string, @Req() req: any): Promise<any> {
+  async getAttemptAnswersheet(
+    @Param('attemptId') attemptId: string,
+    @Req() req: any
+  ): Promise<any> {
     const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.getAttemptAnswersheet(attemptId, authContext);
+    const result = await this.attemptsService.getAttemptAnswersheet(
+      attemptId,
+      authContext
+    );
     return result;
   }
 
-
   @Post('review')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Review a test attempt by testId',
-    description: 'Find the attempt for the given testId based on allowResubmission and gradingType, then review and score the attempt'
+    description:
+      'Find the attempt for the given testId based on allowResubmission and gradingType, then review and score the attempt',
   })
-  @ApiResponse({ status: 200, description: 'Attempt reviewed successfully', type: ApiSuccessResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Attempt reviewed successfully',
+    type: ApiSuccessResponseDto,
+  })
   async reviewTestAttempt(
     @Body() reviewDto: ReviewTestAttemptDto,
-    @Req() req: any,
+    @Req() req: any
   ) {
     const authContext: AuthContext = req.user;
-    const attempt = await this.attemptsService.reviewTestAttempt(reviewDto.testId, reviewDto, authContext);
-    return { 
-      attemptId: attempt.attemptId, 
+    const attempt = await this.attemptsService.reviewTestAttempt(
+      reviewDto.testId,
+      reviewDto,
+      authContext
+    );
+    return {
+      attemptId: attempt.attemptId,
       score: attempt.score,
       result: attempt.result,
-      reviewStatus: attempt.reviewStatus 
+      reviewStatus: attempt.reviewStatus,
     };
   }
 
-  @Post('check-result-imported')
-  @ApiOperation({ 
+  @Post('check-result-status')
+  @ApiOperation({
     summary: 'Check if result is imported for a user and test',
-    description: 'Checks if the result is imported by verifying reviewStatus and result in testAttempts table. Returns isImported: true if reviewStatus is R (REVIEWED) and result is P (PASS) or F (FAIL). Returns isImported: false if reviewStatus is P (PENDING).'
+    description:
+      'Checks if the result is imported by verifying reviewStatus and result in testAttempts table. Returns isImported: true if reviewStatus is R (REVIEWED) and result is P (PASS) or F (FAIL). Returns isImported: false if reviewStatus is P (PENDING).',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Result import status retrieved successfully',
-    type: ApiSuccessResponseDto
+    type: ApiSuccessResponseDto,
   })
   async checkResultImported(
     @Body() checkDto: CheckResultImportedDto,
-    @Req() req: any,
+    @Req() req: any
   ) {
     const authContext: AuthContext = req.user;
     const result = await this.attemptsService.checkResultImported(
@@ -187,4 +258,4 @@ export class AttemptsController {
     );
     return result;
   }
-} 
+}
