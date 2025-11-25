@@ -235,7 +235,7 @@ export class AttemptsController {
     };
   }
 
-  @Post('check-result-status')
+  @Post('result-status')
   @ApiOperation({
     summary: 'Check if result is imported for a user and test',
     description:
