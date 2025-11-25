@@ -180,6 +180,30 @@ export class AttemptsController {
     return this.attemptsService.getPendingReviews(authContext);
   }
 
+  @Post('result-status')
+  @ApiOperation({
+    summary: 'Check if result is imported for a user and test',
+    description:
+      'Checks if the result is imported by verifying reviewStatus and result in testAttempts table. Returns isImported: true if reviewStatus is R (REVIEWED) and result is P (PASS) or F (FAIL). Returns isImported: false if reviewStatus is P (PENDING).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Result import status retrieved successfully',
+    type: ApiSuccessResponseDto,
+  })
+  async getAssessmentResultStatus(
+    @Body() checkDto: CheckResultImportedDto,
+    @Req() req: any
+  ) {
+    const authContext: AuthContext = req.user;
+    const result = await this.attemptsService.getAssessmentResultStatus(
+      checkDto.userId,
+      checkDto.testId,
+      authContext
+    );
+    return result;
+  }
+
   @Get(':attemptId/answersheet')
   @ApiOperation({
     summary: 'Get attempt answersheet',
@@ -233,31 +257,5 @@ export class AttemptsController {
       result: attempt.result,
       reviewStatus: attempt.reviewStatus,
     };
-  }
-
-  @Post('result-status')
-  @ApiOperation({
-    summary: 'Check if result is imported for a user and test',
-    description:
-      'Checks if the result is imported by verifying reviewStatus and result in testAttempts table. Returns isImported: true if reviewStatus is R (REVIEWED) and result is P (PASS) or F (FAIL). Returns isImported: false if reviewStatus is P (PENDING).',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Result import status retrieved successfully',
-    type: ApiSuccessResponseDto,
-  })
-  async getAssessmentResultStatus(
-    @Body() checkDto: CheckResultImportedDto,
-    @Req() req: any
-  ) {
-    const authContext: AuthContext = req.user;
-    const result = await this.attemptsService.getAssessmentResultStatus(
-      checkDto.userId,
-      checkDto.testId,
-      authContext
-    );
-    console.log('in controller result-----------');
-
-    return result;
   }
 }
