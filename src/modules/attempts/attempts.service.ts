@@ -3,44 +3,44 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Not, DataSource } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, In, Not, DataSource } from "typeorm";
+import { ConfigService } from "@nestjs/config";
+import axios from "axios";
 import {
   TestAttempt,
   AttemptStatus,
   SubmissionType,
   ReviewStatus,
   ResultType,
-} from '../tests/entities/test-attempt.entity';
+} from "../tests/entities/test-attempt.entity";
 import {
   TestUserAnswer,
   ReviewStatus as AnswerReviewStatus,
-} from '../tests/entities/test-user-answer.entity';
+} from "../tests/entities/test-user-answer.entity";
 import {
   Test,
   TestType,
   TestStatus,
   AttemptsGradeMethod,
-} from '../tests/entities/test.entity';
-import { TestQuestion } from '../tests/entities/test-question.entity';
-import { TestRule } from '../tests/entities/test-rule.entity';
-import { Question, QuestionType } from '../questions/entities/question.entity';
-import { QuestionOption } from '../questions/entities/question-option.entity';
-import { OptionQuestion } from '../questions/entities/option-question.entity';
-import { GradingType } from '../tests/entities/test.entity';
-import { AuthContext } from '@/common/interfaces/auth.interface';
-import { SubmitMultipleAnswersDto } from './dto/submit-answer.dto';
-import { ReviewAttemptDto } from './dto/review-answer.dto';
-import { ReviewTestAttemptDto } from './dto/review-test-attempt.dto';
-import { PluginManagerService } from '@/common/services/plugin-manager.service';
-import { QuestionPoolService } from '../tests/question-pool.service';
-import { ResumeAttemptDto } from './dto/resume-attempt.dto';
-import { TestSection } from '../tests/entities/test-section.entity';
-import { SectionStatus } from '../tests/dto/create-section.dto';
-import { QuestionStatus } from '../questions/entities/question.entity';
+} from "../tests/entities/test.entity";
+import { TestQuestion } from "../tests/entities/test-question.entity";
+import { TestRule } from "../tests/entities/test-rule.entity";
+import { Question, QuestionType } from "../questions/entities/question.entity";
+import { QuestionOption } from "../questions/entities/question-option.entity";
+import { OptionQuestion } from "../questions/entities/option-question.entity";
+import { GradingType } from "../tests/entities/test.entity";
+import { AuthContext } from "@/common/interfaces/auth.interface";
+import { SubmitMultipleAnswersDto } from "./dto/submit-answer.dto";
+import { ReviewAttemptDto } from "./dto/review-answer.dto";
+import { ReviewTestAttemptDto } from "./dto/review-test-attempt.dto";
+import { PluginManagerService } from "@/common/services/plugin-manager.service";
+import { QuestionPoolService } from "../tests/question-pool.service";
+import { ResumeAttemptDto } from "./dto/resume-attempt.dto";
+import { TestSection } from "../tests/entities/test-section.entity";
+import { SectionStatus } from "../tests/dto/create-section.dto";
+import { QuestionStatus } from "../questions/entities/question.entity";
 
 @Injectable()
 export class AttemptsService {
@@ -87,21 +87,21 @@ export class AttemptsService {
     });
 
     if (!test) {
-      throw new NotFoundException('Test not found');
+      throw new NotFoundException("Test not found");
     }
 
     // Check if test is published and active
     if (test.status !== TestStatus.PUBLISHED) {
-      throw new Error('Test is not available for attempts');
+      throw new Error("Test is not available for attempts");
     }
 
     // Check test availability dates
     const now = new Date();
     if (test.startDate && now < test.startDate) {
-      throw new Error('Test is not yet available for attempts');
+      throw new Error("Test is not yet available for attempts");
     }
     if (test.endDate && now > test.endDate) {
-      throw new Error('Test is no longer available for attempts');
+      throw new Error("Test is no longer available for attempts");
     }
     // Handle allowResubmission logic
     if (test.allowResubmission) {
@@ -114,7 +114,7 @@ export class AttemptsService {
           organisationId: authContext.organisationId,
           status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
         },
-        order: { attempt: 'DESC' }, // Get the most recent attempt
+        order: { attempt: "DESC" }, // Get the most recent attempt
       });
 
       if (existingAttempt) {
@@ -137,7 +137,7 @@ export class AttemptsService {
 
       if (lastAttempt?.status === AttemptStatus.IN_PROGRESS) {
         throw new Error(
-          'You have a incomplete attempt. Please complete it before starting a new attempt.'
+          "You have a incomplete attempt. Please complete it before starting a new attempt."
         );
       }
       if (
@@ -145,7 +145,7 @@ export class AttemptsService {
         lastAttempt?.reviewStatus === ReviewStatus.PENDING
       ) {
         throw new Error(
-          'Your last attempt is currently under review. Please wait for the review to finish before starting a new one.'
+          "Your last attempt is currently under review. Please wait for the review to finish before starting a new one."
         );
       }
     }
@@ -218,7 +218,7 @@ export class AttemptsService {
     // Step 1: Validate and retrieve the attempt
     const attempt = await this.findAttemptById(attemptId, userId, authContext);
     if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+      throw new NotFoundException("Attempt not found");
     }
 
     // Fetch user's answers for this attempt
@@ -228,8 +228,8 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      select: ['questionId', 'answer', 'updatedAt'],
-      order: { createdAt: 'ASC' },
+      select: ["questionId", "answer", "updatedAt"],
+      order: { createdAt: "ASC" },
     });
 
     // Parse JSON answers and transform the response
@@ -332,7 +332,7 @@ export class AttemptsService {
 
     // Validate attempt exists
     if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+      throw new NotFoundException("Attempt not found");
     }
 
     // Get test information to check allowResubmission setting
@@ -346,7 +346,7 @@ export class AttemptsService {
       !test.allowResubmission
     ) {
       throw new BadRequestException(
-        'Cannot resume a submitted attempt. Use the result endpoint to view submitted attempt details.'
+        "Cannot resume a submitted attempt. Use the result endpoint to view submitted attempt details."
       );
     }
 
@@ -385,7 +385,7 @@ export class AttemptsService {
     });
 
     if (!test) {
-      throw new NotFoundException('Test not found');
+      throw new NotFoundException("Test not found");
     }
 
     // Fetch test questions with proper ordering for question sequence
@@ -395,7 +395,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { ordering: 'ASC' },
+      order: { ordering: "ASC" },
     });
 
     // Extract question IDs and fetch complete question data with options
@@ -406,8 +406,8 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      relations: ['options'], // Include question options for answer processing
-      order: { ordering: 'ASC' },
+      relations: ["options"], // Include question options for answer processing
+      order: { ordering: "ASC" },
     });
 
     // Fetch test sections for organizing questions (if any exist)
@@ -417,7 +417,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { ordering: 'ASC' },
+      order: { ordering: "ASC" },
     });
 
     // Fetch user's answers for this attempt with chronological ordering
@@ -427,7 +427,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { createdAt: 'ASC' }, // Order by creation time for progress tracking
+      order: { createdAt: "ASC" }, // Order by creation time for progress tracking
     });
 
     return { test, testQuestions, questions, sections, userAnswers };
@@ -578,7 +578,7 @@ export class AttemptsService {
           return fillBlankAnswers.map((blank: any) => {
             return {
               blankIndex: blank.blankIndex,
-              text: blank.text || blank.answer || '',
+              text: blank.text || blank.answer || "",
             };
           });
         }
@@ -593,7 +593,7 @@ export class AttemptsService {
             );
             return {
               questionOptionId: match.optionId,
-              text: option?.text || '', // User needs to see what they selected
+              text: option?.text || "", // User needs to see what they selected
               matchWith: match.matchWith, // The text they matched with
             };
           });
@@ -858,7 +858,7 @@ export class AttemptsService {
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
       },
-      order: { ordering: 'ASC' },
+      order: { ordering: "ASC" },
     });
 
     const questionIds = testQuestions.map((tq) => tq.questionId);
@@ -927,7 +927,7 @@ export class AttemptsService {
     const globalTimeSpent = submitAnswerDto.timeSpent || 0;
 
     if (answersArray.length === 0) {
-      return { message: 'No answers provided to submit' };
+      return { message: "No answers provided to submit" };
     }
 
     // Use database transaction to ensure data consistency
@@ -944,11 +944,11 @@ export class AttemptsService {
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         },
-        relations: ['test'],
+        relations: ["test"],
       });
 
       if (!attempt) {
-        throw new NotFoundException('Attempt not found');
+        throw new NotFoundException("Attempt not found");
       }
 
       const test = attempt.test;
@@ -958,7 +958,7 @@ export class AttemptsService {
         attempt.status === AttemptStatus.SUBMITTED &&
         !test.allowResubmission
       ) {
-        throw new Error('Cannot submit answer to completed attempt');
+        throw new Error("Cannot submit answer to completed attempt");
       }
 
       // 2. Batch load all required data for optimal performance
@@ -974,7 +974,7 @@ export class AttemptsService {
         }),
         queryRunner.manager.find(QuestionOption, {
           where: { questionId: In(questionIds) },
-          order: { questionId: 'ASC', ordering: 'ASC' },
+          order: { questionId: "ASC", ordering: "ASC" },
         }),
         queryRunner.manager.find(TestUserAnswer, {
           where: {
@@ -1074,7 +1074,7 @@ export class AttemptsService {
             answer: JSON.stringify(answerDto.answer),
             score: finalScore,
             reviewStatus: reviewStatus,
-            anssOrder: '1',
+            anssOrder: "1",
             tenantId: authContext.tenantId,
             organisationId: authContext.organisationId,
           });
@@ -1118,11 +1118,11 @@ export class AttemptsService {
       // Commit the transaction
       await queryRunner.commitTransaction();
 
-      return { message: 'Answers submitted successfully' };
+      return { message: "Answers submitted successfully" };
     } catch (error) {
       // Rollback the transaction on error
       await queryRunner.rollbackTransaction();
-      console.error('Transaction rolled back due to error:', error);
+      console.error("Transaction rolled back due to error:", error);
       throw error;
     } finally {
       // Release the query runner
@@ -1154,32 +1154,32 @@ export class AttemptsService {
 
     // Single optimized query: Get compulsory questions that are NOT answered by the user
     const missingCompulsoryQuestions = await this.testQuestionRepository
-      .createQueryBuilder('tq')
-      .leftJoin('questions', 'q', 'q.questionId = tq.questionId')
+      .createQueryBuilder("tq")
+      .leftJoin("questions", "q", "q.questionId = tq.questionId")
       .leftJoin(
-        'testUserAnswers',
-        'tua',
-        'tua.questionId = tq.questionId AND tua.attemptId = :attemptId',
+        "testUserAnswers",
+        "tua",
+        "tua.questionId = tq.questionId AND tua.attemptId = :attemptId",
         { attemptId: attempt.attemptId }
       )
-      .where('tq.testId = :testId', { testId })
-      .andWhere('tq.isCompulsory = :isCompulsory', { isCompulsory: true })
-      .andWhere('tq.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('tq.organisationId = :organisationId', {
+      .where("tq.testId = :testId", { testId })
+      .andWhere("tq.isCompulsory = :isCompulsory", { isCompulsory: true })
+      .andWhere("tq.tenantId = :tenantId", { tenantId: authContext.tenantId })
+      .andWhere("tq.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
-      .andWhere('q.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('q.organisationId = :organisationId', {
+      .andWhere("q.tenantId = :tenantId", { tenantId: authContext.tenantId })
+      .andWhere("q.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
-      .andWhere('tua.questionId IS NULL') // This means no answer exists for this question
+      .andWhere("tua.questionId IS NULL") // This means no answer exists for this question
       .select([
-        'tq.questionId',
-        'tq.ordering',
-        'tq.sectionId',
-        'q.text as title',
+        "tq.questionId",
+        "tq.ordering",
+        "tq.sectionId",
+        "q.text as title",
       ])
-      .orderBy('tq.ordering', 'ASC')
+      .orderBy("tq.ordering", "ASC")
       .getRawMany();
 
     if (missingCompulsoryQuestions.length === 0) {
@@ -1224,7 +1224,7 @@ export class AttemptsService {
 
     // Check if attempt is already submitted (only for tests without allowResubmission)
     if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
-      throw new Error('Attempt is already submitted');
+      throw new Error("Attempt is already submitted");
     }
 
     // Validate compulsory questions before allowing submission
@@ -1316,7 +1316,7 @@ export class AttemptsService {
     );
 
     if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+      throw new NotFoundException("Attempt not found");
     }
 
     // Get test information for passing marks
@@ -1331,37 +1331,37 @@ export class AttemptsService {
     });
 
     if (!test) {
-      throw new NotFoundException('Test not found');
+      throw new NotFoundException("Test not found");
     }
 
     // Validate that the test has subjective questions
     if (test.isObjective) {
       throw new BadRequestException(
-        'Objective tests do not require manual review'
+        "Objective tests do not require manual review"
       );
     }
 
     // Validate attempt status
     if (attempt.status !== AttemptStatus.SUBMITTED) {
-      throw new BadRequestException('Only submitted attempts can be reviewed');
+      throw new BadRequestException("Only submitted attempts can be reviewed");
     }
 
     // Get all answers for this attempt to validate
     const attemptAnswers = await this.testUserAnswerRepository
-      .createQueryBuilder('answer')
+      .createQueryBuilder("answer")
       .innerJoin(
-        'questions',
-        'question',
-        'question.questionId = answer.questionId'
+        "questions",
+        "question",
+        "question.questionId = answer.questionId"
       )
-      .where('answer.attemptId = :attemptId', { attemptId })
-      .andWhere('answer.tenantId = :tenantId', {
+      .where("answer.attemptId = :attemptId", { attemptId })
+      .andWhere("answer.tenantId = :tenantId", {
         tenantId: authContext.tenantId,
       })
-      .andWhere('answer.organisationId = :organisationId', {
+      .andWhere("answer.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
-      .andWhere('question.type IN (:...questionTypes)', {
+      .andWhere("question.type IN (:...questionTypes)", {
         questionTypes: [QuestionType.SUBJECTIVE, QuestionType.ESSAY],
       })
       .getMany();
@@ -1450,42 +1450,42 @@ export class AttemptsService {
 
   async getPendingReviews(authContext: AuthContext): Promise<any[]> {
     return this.attemptRepository
-      .createQueryBuilder('attempt')
+      .createQueryBuilder("attempt")
       .leftJoin(
-        'testUserAnswers',
-        'answers',
-        'answers.attemptId = attempt.attemptId'
+        "testUserAnswers",
+        "answers",
+        "answers.attemptId = attempt.attemptId"
       )
       .leftJoin(
-        'questions',
-        'question',
-        'question.questionId = answers.questionId'
+        "questions",
+        "question",
+        "question.questionId = answers.questionId"
       )
-      .where('attempt.tenantId = :tenantId', { tenantId: authContext.tenantId })
-      .andWhere('attempt.organisationId = :organisationId', {
+      .where("attempt.tenantId = :tenantId", { tenantId: authContext.tenantId })
+      .andWhere("attempt.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
-      .andWhere('attempt.reviewStatus IN (:...reviewStatuses)', {
+      .andWhere("attempt.reviewStatus IN (:...reviewStatuses)", {
         reviewStatuses: [ReviewStatus.PENDING, ReviewStatus.UNDER_REVIEW],
       })
-      .andWhere('question.gradingType = :gradingType', {
+      .andWhere("question.gradingType = :gradingType", {
         gradingType: GradingType.ASSESSMENT,
       })
-      .andWhere('answers.reviewStatus = :answerReviewStatus', {
-        answerReviewStatus: 'P',
+      .andWhere("answers.reviewStatus = :answerReviewStatus", {
+        answerReviewStatus: "P",
       })
       .select([
-        'attempt.attemptId',
-        'attempt.testId',
-        'attempt.userId',
-        'attempt.submittedAt',
-        'attempt.reviewStatus',
-        'answers.questionId',
-        'question.text as title',
-        'question.type',
-        'question.marks',
-        'question.gradingType',
-        'question.params',
+        "attempt.attemptId",
+        "attempt.testId",
+        "attempt.userId",
+        "attempt.submittedAt",
+        "attempt.reviewStatus",
+        "answers.questionId",
+        "question.text as title",
+        "question.type",
+        "question.marks",
+        "question.gradingType",
+        "question.params",
       ])
       .getMany();
   }
@@ -1538,7 +1538,7 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
         isActive: true,
       },
-      order: { priority: 'DESC' },
+      order: { priority: "DESC" },
     });
 
     let questionOrder = 1;
@@ -1546,7 +1546,7 @@ export class AttemptsService {
     for (const rule of rules) {
       let selectedQuestionIds: string[] = [];
 
-      if (rule.selectionMode === 'PRESELECTED') {
+      if (rule.selectionMode === "PRESELECTED") {
         // Approach A: Use pre-selected questions from testQuestions table
         const availableQuestions = await this.testQuestionRepository.find({
           where: {
@@ -1555,7 +1555,7 @@ export class AttemptsService {
             tenantId: authContext.tenantId,
             organisationId: authContext.organisationId,
           },
-          order: { ordering: 'ASC' },
+          order: { ordering: "ASC" },
         });
 
         if (availableQuestions.length < rule.numberOfQuestions) {
@@ -1625,11 +1625,11 @@ export class AttemptsService {
     strategy: string
   ): string[] {
     switch (strategy) {
-      case 'random':
+      case "random":
         return this.shuffleArray(questionIds).slice(0, count);
-      case 'sequential':
+      case "sequential":
         return questionIds.slice(0, count);
-      case 'weighted':
+      case "weighted":
         // For weighted strategy, you might want to implement more complex logic
         // For now, using random selection
         return this.shuffleArray(questionIds).slice(0, count);
@@ -1652,11 +1652,11 @@ export class AttemptsService {
     strategy: string
   ): TestQuestion[] {
     switch (strategy) {
-      case 'random':
+      case "random":
         return this.shuffleArray([...availableQuestions]).slice(0, count);
-      case 'sequential':
+      case "sequential":
         return availableQuestions.slice(0, count);
-      case 'weighted':
+      case "weighted":
         // For weighted strategy, you might want to implement more complex logic
         // For now, using random selection
         return this.shuffleArray([...availableQuestions]).slice(0, count);
@@ -1679,18 +1679,18 @@ export class AttemptsService {
     authContext: AuthContext
   ): Promise<number> {
     const result = await this.testUserAnswerRepository
-      .createQueryBuilder('answer')
-      .select('COALESCE(SUM(answer.score), 0)', 'totalScore')
-      .where('answer.attemptId = :attemptId', { attemptId })
-      .andWhere('answer.tenantId = :tenantId', {
+      .createQueryBuilder("answer")
+      .select("COALESCE(SUM(answer.score), 0)", "totalScore")
+      .where("answer.attemptId = :attemptId", { attemptId })
+      .andWhere("answer.tenantId = :tenantId", {
         tenantId: authContext.tenantId,
       })
-      .andWhere('answer.organisationId = :organisationId', {
+      .andWhere("answer.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
       .getRawOne();
 
-    return parseFloat(result?.totalScore || '0');
+    return parseFloat(result?.totalScore || "0");
   }
 
   /**
@@ -1722,7 +1722,7 @@ export class AttemptsService {
     } else if (queryRunner) {
       questionOptions = await queryRunner.manager.find(QuestionOption, {
         where: { questionId: question.questionId },
-        order: { ordering: 'ASC' },
+        order: { ordering: "ASC" },
       });
     } else {
       // Fallback to repository (not recommended for transaction contexts)
@@ -1981,7 +1981,7 @@ export class AttemptsService {
   ): Promise<QuestionOption[]> {
     return this.questionOptionRepository.find({
       where: { questionId },
-      order: { ordering: 'ASC' },
+      order: { ordering: "ASC" },
     });
   }
 
@@ -2081,7 +2081,7 @@ export class AttemptsService {
       },
     });
     if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+      throw new NotFoundException("Attempt not found");
     }
 
     return attempt;
@@ -2098,16 +2098,16 @@ export class AttemptsService {
         organisationId: authContext.organisationId,
         status: TestStatus.PUBLISHED,
       },
-      relations: ['sections'],
+      relations: ["sections"],
       order: {
         sections: {
-          ordering: 'ASC',
+          ordering: "ASC",
         },
       },
     });
 
     if (!test) {
-      throw new NotFoundException('Test not found');
+      throw new NotFoundException("Test not found");
     }
 
     return test;
@@ -2126,13 +2126,13 @@ export class AttemptsService {
     });
 
     if (!attempt) {
-      throw new NotFoundException('Attempt not found');
+      throw new NotFoundException("Attempt not found");
     }
 
     // Only return results if attempt is submitted
     if (attempt.status !== AttemptStatus.SUBMITTED) {
       throw new BadRequestException(
-        'Attempt results are only available for submitted attempts'
+        "Attempt results are only available for submitted attempts"
       );
     }
 
@@ -2180,17 +2180,17 @@ export class AttemptsService {
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         },
-        order: { ordering: 'ASC' },
+        order: { ordering: "ASC" },
       }),
     ]);
 
     if (!test) {
-      throw new NotFoundException('Test not found');
+      throw new NotFoundException("Test not found");
     }
 
     if (!test.answerSheet) {
       throw new BadRequestException(
-        'Answer sheet is not enabled for this test'
+        "Answer sheet is not enabled for this test"
       );
     }
 
@@ -2315,7 +2315,7 @@ export class AttemptsService {
     // This replaces N queries with batched queries, dramatically improving performance
     // Get batch size from config (default: 30)
     const batchSize =
-      this.configService.get<number>('ANSWERSHEET_QUESTION_BATCH_SIZE') || 30;
+      this.configService.get<number>("ANSWERSHEET_QUESTION_BATCH_SIZE") || 30;
 
     const questions: Question[] = [];
     // Process question IDs in batches to avoid query size limits
@@ -2327,7 +2327,7 @@ export class AttemptsService {
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         },
-        relations: ['options'],
+        relations: ["options"],
       });
       questions.push(...batchQuestions);
     }
@@ -2423,7 +2423,7 @@ export class AttemptsService {
         transformedUserAnswer = {
           blanks: blanks.map((blank: any, index: number) => ({
             blankIndex: blank.blankIndex ?? index,
-            text: blank.text || blank.answer || blank || '',
+            text: blank.text || blank.answer || blank || "",
           })),
         };
         // For fill-blank, isCorrect is based on score
@@ -2436,8 +2436,8 @@ export class AttemptsService {
             const option = questionOptionsMap?.get(match.optionId);
             return {
               questionOptionId: match.optionId,
-              text: option?.text || '',
-              matchWith: match.matchWith || '',
+              text: option?.text || "",
+              matchWith: match.matchWith || "",
             };
           }),
         };
@@ -2549,7 +2549,7 @@ export class AttemptsService {
     });
 
     if (!test) {
-      throw new NotFoundException('Test not found');
+      throw new NotFoundException("Test not found");
     }
 
     // Find the attempt based on allowResubmission and gradingType logic
@@ -2564,7 +2564,7 @@ export class AttemptsService {
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
         },
-        order: { attempt: 'DESC' }, // Get the most recent attempt
+        order: { attempt: "DESC" }, // Get the most recent attempt
       });
     } else {
       // For tests without allowResubmission, find the most recent submitted attempt
@@ -2576,32 +2576,32 @@ export class AttemptsService {
           organisationId: authContext.organisationId,
           status: AttemptStatus.SUBMITTED,
         },
-        order: { attempt: 'DESC' }, // Get the most recent attempt
+        order: { attempt: "DESC" }, // Get the most recent attempt
       });
     }
 
     if (!attempt) {
-      throw new NotFoundException('No attempt found for review');
+      throw new NotFoundException("No attempt found for review");
     }
 
     // Validate attempt status - should be submitted for review
     if (attempt.status !== AttemptStatus.SUBMITTED) {
-      throw new BadRequestException('Only submitted attempts can be reviewed');
+      throw new BadRequestException("Only submitted attempts can be reviewed");
     }
 
     // Get all answers for this attempt to validate and update
     const attemptAnswers = await this.testUserAnswerRepository
-      .createQueryBuilder('answer')
+      .createQueryBuilder("answer")
       .innerJoin(
-        'questions',
-        'question',
-        'question.questionId = answer.questionId'
+        "questions",
+        "question",
+        "question.questionId = answer.questionId"
       )
-      .where('answer.attemptId = :attemptId', { attemptId: attempt.attemptId })
-      .andWhere('answer.tenantId = :tenantId', {
+      .where("answer.attemptId = :attemptId", { attemptId: attempt.attemptId })
+      .andWhere("answer.tenantId = :tenantId", {
         tenantId: authContext.tenantId,
       })
-      .andWhere('answer.organisationId = :organisationId', {
+      .andWhere("answer.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
       .getMany();
@@ -2625,7 +2625,7 @@ export class AttemptsService {
 
         await this.testUserAnswerRepository.save(existingAnswer);
       } else {
-        throw new NotFoundException('User answers not found');
+        throw new NotFoundException("User answers not found");
       }
     }
 
@@ -2657,7 +2657,7 @@ export class AttemptsService {
         `Failed to update LMS service for attempt ${attempt.attemptId}, rolling back attempt update`
       );
       throw new BadRequestException(
-        'Failed to update test progress in LMS service. Please try again.'
+        "Failed to update test progress in LMS service. Please try again."
       );
     }
 
@@ -2678,10 +2678,10 @@ export class AttemptsService {
     authContext: AuthContext
   ): Promise<boolean> {
     try {
-      const lmsServiceUrl = this.configService.get<string>('LMS_SERVICE_URL');
+      const lmsServiceUrl = this.configService.get<string>("LMS_SERVICE_URL");
 
       if (!lmsServiceUrl) {
-        this.logger.warn('LMS_SERVICE_URL not configured, skipping LMS update');
+        this.logger.warn("LMS_SERVICE_URL not configured, skipping LMS update");
         return true; // Return true to not block the process if LMS is not configured
       }
 
@@ -2705,12 +2705,12 @@ export class AttemptsService {
       );
 
       const response = await axios.patch(
-        lmsServiceUrl + '/course/tracking/update_test_progress',
+        lmsServiceUrl + "/course/tracking/update_test_progress",
         payload,
         {
           timeout: 10000, // 10 second timeout
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             tenantId: authContext.tenantId,
             organisationId: authContext.organisationId,
           },
@@ -2725,7 +2725,7 @@ export class AttemptsService {
         if (
           responseData &&
           responseData.params &&
-          responseData.params.status === 'successful'
+          responseData.params.status === "successful"
         ) {
           this.logger.log(
             `Successfully updated LMS test progress for attempt ${attempt.attemptId}`,
@@ -2781,33 +2781,43 @@ export class AttemptsService {
    * @param userId - The user ID to check
    * @param testId - The test ID to check
    * @param authContext - Authentication context for tenant/organization filtering
-   * @returns Promise<{isImported: boolean}> - Object containing the isImported flag
+   * @returns Promise<{isImported: boolean, aswaresheet: boolean}> - Object containing the isImported flag and aswaresheet value from tests table
    */
   async getAssessmentResultStatus(
     userId: string,
     testId: string,
     authContext: AuthContext
-  ): Promise<{ isImported: boolean }> {
+  ): Promise<{ isImported: boolean; aswaresheet: boolean }> {
+    // Fetch the test to get aswaresheet (answerSheet) value
+    const test = await this.testRepository
+      .createQueryBuilder("test")
+      .select(["test.answerSheet"])
+      .where("test.testId = :testId", { testId })
+      .getOne();
+
     // Optimized query: Only select the fields we need (reviewStatus and result)
     // This reduces memory usage and network transfer
     const attempt = await this.attemptRepository
-      .createQueryBuilder('attempt')
-      .select(['attempt.reviewStatus', 'attempt.result'])
-      .where('attempt.testId = :testId', { testId })
-      .andWhere('attempt.userId = :userId', { userId })
-      .andWhere('attempt.tenantId = :tenantId', {
+      .createQueryBuilder("attempt")
+      .select(["attempt.reviewStatus", "attempt.result"])
+      .where("attempt.testId = :testId", { testId })
+      .andWhere("attempt.userId = :userId", { userId })
+      .andWhere("attempt.tenantId = :tenantId", {
         tenantId: authContext.tenantId,
       })
-      .andWhere('attempt.organisationId = :organisationId', {
+      .andWhere("attempt.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
-      .orderBy('attempt.attempt', 'DESC') // Get the most recent attempt
+      .orderBy("attempt.attempt", "DESC") // Get the most recent attempt
       .limit(1) // Only need one record
       .getOne();
 
-    // If no attempt found, return false
+    // Get aswaresheet value from test (answerSheet column) - default to false if test not found
+    const aswaresheet = test?.answerSheet ?? false;
+
+    // If no attempt found, return false for isImported
     if (!attempt) {
-      return { isImported: false };
+      return { isImported: false, aswaresheet };
     }
 
     // Optimized logic: Check conditions in a single expression
@@ -2818,7 +2828,7 @@ export class AttemptsService {
       (attempt.result === ResultType.PASS ||
         attempt.result === ResultType.FAIL);
 
-    return { isImported };
+    return { isImported, aswaresheet };
   }
 
   private async triggerPluginEvent(
