@@ -953,6 +953,12 @@ export class AttemptsService {
 
       const test = attempt.test;
 
+      // Check test endDate before allowing answer submission
+      const now = new Date();
+      if (test.endDate && now > test.endDate) {
+        throw new BadRequestException("Test is no longer available for attempts");
+      }
+
       // Check if attempt is submitted (only for tests without allowResubmission)
       if (
         attempt.status === AttemptStatus.SUBMITTED &&
@@ -1221,6 +1227,12 @@ export class AttemptsService {
     // Get test information to check allowResubmission setting
     const testId = attempt.resolvedTestId || attempt.testId;
     const test = await this.findTestById(testId, authContext);
+
+    // Check test endDate before allowing attempt submission
+    const now = new Date();
+    if (test.endDate && now > test.endDate) {
+      throw new BadRequestException("Test is no longer available for attempts");
+    }
 
     // Check if attempt is already submitted (only for tests without allowResubmission)
     if (attempt.status === AttemptStatus.SUBMITTED && !test.allowResubmission) {
