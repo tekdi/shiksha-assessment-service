@@ -1208,6 +1208,179 @@ export class AttemptsService {
   }
 
   /**
+   * Validate compulsory questions for FEEDBACK type tests.
+   * This function handles child questions that should only be required when their triggering parent option is selected.
+   *
+   * @param attempt - The test attempt to validate
+   * @param authContext - Authentication context for tenant/organization filtering
+   * @returns Promise<{isValid: boolean, missingQuestions?: Array<{questionId: string, title: string, ordering: number, sectionId?: string}>}>
+   */
+  async validateCompulsoryQuestionsForFeedback(
+    attempt: TestAttempt,
+    authContext: AuthContext
+  ): Promise<{
+    isValid: boolean;
+    missingQuestions?: Array<{
+      questionId: string;
+      title: string;
+      ordering: number;
+      sectionId?: string;
+    }>;
+  }> {
+    const testId = attempt.resolvedTestId || attempt.testId;
+
+    // Get all compulsory questions that are NOT answered by the user
+    const allCompulsoryQuestions = await this.testQuestionRepository
+      .createQueryBuilder("tq")
+      .leftJoin("questions", "q", "q.questionId = tq.questionId")
+      .leftJoin(
+        "testUserAnswers",
+        "tua",
+        "tua.questionId = tq.questionId AND tua.attemptId = :attemptId",
+        { attemptId: attempt.attemptId }
+      )
+      .where("tq.testId = :testId", { testId })
+      .andWhere("tq.isCompulsory = :isCompulsory", { isCompulsory: true })
+      .andWhere("tq.tenantId = :tenantId", { tenantId: authContext.tenantId })
+      .andWhere("tq.organisationId = :organisationId", {
+        organisationId: authContext.organisationId,
+      })
+      .andWhere("q.tenantId = :tenantId", { tenantId: authContext.tenantId })
+      .andWhere("q.organisationId = :organisationId", {
+        organisationId: authContext.organisationId,
+      })
+      .andWhere("tua.questionId IS NULL") // This means no answer exists for this question
+      .select([
+        "tq.questionId",
+        "tq.ordering",
+        "tq.sectionId",
+        "q.text as title",
+        "q.parentId",
+      ])
+      .orderBy("tq.ordering", "ASC")
+      .getRawMany();
+
+    if (allCompulsoryQuestions.length === 0) {
+      // All compulsory questions are answered
+      return { isValid: true };
+    }
+
+    // Separate child questions from regular questions
+    const childQuestions = allCompulsoryQuestions.filter((q) => q.q_parentId);
+    const regularQuestions = allCompulsoryQuestions.filter((q) => !q.q_parentId);
+
+    // If there are no child questions, return all missing questions
+    if (childQuestions.length === 0) {
+      const missingQuestions = allCompulsoryQuestions.map((q) => ({
+        questionId: q.tq_questionId,
+        title: q.title,
+        ordering: q.tq_ordering,
+        sectionId: q.tq_sectionId,
+      }));
+
+      return {
+        isValid: false,
+        missingQuestions,
+      };
+    }
+
+    // Get option-question mappings for child questions
+    const childQuestionIds = childQuestions.map((q) => q.tq_questionId);
+    const optionQuestionMappings = await this.optionQuestionRepository.find({
+      where: {
+        questionId: In(childQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        isActive: true,
+      },
+    });
+
+    // Create a map: childQuestionId -> array of optionIds that trigger it
+    const childQuestionToOptionsMap = new Map<string, string[]>();
+    for (const mapping of optionQuestionMappings) {
+      if (!childQuestionToOptionsMap.has(mapping.questionId)) {
+        childQuestionToOptionsMap.set(mapping.questionId, []);
+      }
+      childQuestionToOptionsMap.get(mapping.questionId)!.push(mapping.optionId);
+    }
+
+    // Get unique parent question IDs
+    const parentQuestionIds = [
+      ...new Set(childQuestions.map((q) => q.q_parentId).filter(Boolean)),
+    ];
+
+    if (parentQuestionIds.length === 0) {
+      // No parent questions found, treat all child questions as required
+      const missingQuestions = allCompulsoryQuestions.map((q) => ({
+        questionId: q.tq_questionId,
+        title: q.title,
+        ordering: q.tq_ordering,
+        sectionId: q.tq_sectionId,
+      }));
+
+      return {
+        isValid: false,
+        missingQuestions,
+      };
+    }
+
+    // Get all user answers for parent questions to check which options were selected
+    const parentAnswers = await this.testUserAnswerRepository.find({
+      where: {
+        attemptId: attempt.attemptId,
+        questionId: In(parentQuestionIds),
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    // Create a map: parentQuestionId -> array of selected optionIds
+    const parentQuestionToSelectedOptionsMap = new Map<string, string[]>();
+    for (const answer of parentAnswers) {
+      try {
+        const answerData = JSON.parse(answer.answer);
+        if (answerData.selectedOptionIds && Array.isArray(answerData.selectedOptionIds)) {
+          parentQuestionToSelectedOptionsMap.set(answer.questionId, answerData.selectedOptionIds);
+        }
+      } catch (error) {
+        // If JSON parsing fails, skip this answer
+        this.logger.warn(
+          `Failed to parse answer for question ${answer.questionId}: ${error}`
+        );
+      }
+    }
+
+    // Filter child questions: only include if their triggering option was selected
+    const requiredChildQuestions = childQuestions.filter((q) => {
+      const triggeringOptions = childQuestionToOptionsMap.get(q.tq_questionId) || [];
+      const parentSelectedOptions = parentQuestionToSelectedOptionsMap.get(q.q_parentId) || [];
+
+      // Check if any of the triggering options were selected
+      return triggeringOptions.some((optionId) => parentSelectedOptions.includes(optionId));
+    });
+
+    // Combine regular questions with required child questions
+    const missingCompulsoryQuestions = [...regularQuestions, ...requiredChildQuestions];
+
+    if (missingCompulsoryQuestions.length === 0) {
+      return { isValid: true };
+    }
+
+    // Transform the raw results to match the expected format
+    const missingQuestions = missingCompulsoryQuestions.map((q) => ({
+      questionId: q.tq_questionId,
+      title: q.title,
+      ordering: q.tq_ordering,
+      sectionId: q.tq_sectionId,
+    }));
+
+    return {
+      isValid: false,
+      missingQuestions,
+    };
+  }
+
+  /**
    * Submit an attempt and validate compulsory questions.
    *
    * @param attemptId - The ID of the test attempt to validate
@@ -1240,10 +1413,11 @@ export class AttemptsService {
     }
 
     // Validate compulsory questions before allowing submission
-    const compulsoryValidation = await this.validateCompulsoryQuestions(
-      attempt,
-      authContext
-    );
+    // For FEEDBACK tests, use special validation that handles child questions
+    const compulsoryValidation =
+      test?.gradingType === GradingType.FEEDBACK 
+        ? await this.validateCompulsoryQuestionsForFeedback(attempt, authContext)
+        : await this.validateCompulsoryQuestions(attempt, authContext);
 
     if (!compulsoryValidation.isValid) {
       throw new BadRequestException({
