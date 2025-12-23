@@ -103,8 +103,21 @@ export class TestsService {
 
     // Create a map of questionId -> isCompulsory for all test questions (including child questions)
     const isCompulsoryMap = new Map<string, boolean>();
+    // Create a map of questionId -> ordering for all test questions (including child questions)
+    const questionOrderingMap = new Map<string, number>();
     for (const tq of testQuestions) {
       isCompulsoryMap.set(tq.questionId, tq.isCompulsory);
+      questionOrderingMap.set(tq.questionId, tq.ordering);
+    }
+    
+    // Log ordering map for debugging (only for conditional questions)
+    const conditionalOrderings = Array.from(questionOrderingMap.entries())
+      .filter(([questionId, ordering]) => {
+        const tq = testQuestions.find(t => t.questionId === questionId);
+        return tq?.isConditional;
+      });
+    if (conditionalOrderings.length > 0) {
+      this.logger.debug(`Child question orderings for test ${id}:`, Object.fromEntries(conditionalOrderings));
     }
 
     // Group test questions by section, filtering out conditional questions
@@ -129,7 +142,7 @@ export class TestsService {
       .map(testQuestion => testQuestion.questionId);
 
     if (questionIds.length === 0) {
-      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map(), isCompulsoryMap };
+      return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map(), isCompulsoryMap, questionOrderingMap };
     }
 
     // Fetch only parent questions (non-conditional) with options
@@ -149,20 +162,28 @@ export class TestsService {
     // Create a map for quick lookup
     const questionsMap = new Map(questions.map(q => [q.questionId, q]));
 
-    // Fetch all child questions for conditional display
-    const childQuestions = await this.questionRepository.find({
-      where: { 
-        parentId: Not(IsNull()) // Only fetch child questions
-      },
-      relations: ['options'],
-      order: {
-        options: {
-          ordering: 'ASC',
-        },
-      },
-    });
+    // Get child question IDs that belong to this test (from TestQuestion records with isConditional=true)
+    const childQuestionIds = testQuestions
+      .filter(tq => tq.isConditional)
+      .map(tq => tq.questionId);
+
+    // Fetch only child questions that belong to this test
+    const childQuestions = childQuestionIds.length > 0 
+      ? await this.questionRepository.find({
+          where: { 
+            questionId: In(childQuestionIds),
+            parentId: Not(IsNull()) // Only fetch child questions
+          },
+          relations: ['options'],
+          order: {
+            options: {
+              ordering: 'ASC',
+            },
+          },
+        })
+      : [];
     
-    // Create a map of child questions by parent ID
+    // Create a map of child questions by parent ID, ordered by TestQuestion.ordering
     const childQuestionsByParent = new Map<string, any[]>();
     for (const child of childQuestions) {
       if (!childQuestionsByParent.has(child.parentId!)) {
@@ -170,8 +191,21 @@ export class TestsService {
       }
       childQuestionsByParent.get(child.parentId!)!.push(child);
     }
+    
+    // Sort child questions by TestQuestion.ordering for each parent
+    for (const [parentId, children] of childQuestionsByParent.entries()) {
+      children.sort((a, b) => {
+        const orderA = questionOrderingMap.get(a.questionId) ?? 999999;
+        const orderB = questionOrderingMap.get(b.questionId) ?? 999999;
+        // Log for debugging
+        if (orderA !== orderB) {
+          this.logger.debug(`Sorting child questions for parent ${parentId}: ${a.questionId} (order: ${orderA}) vs ${b.questionId} (order: ${orderB})`);
+        }
+        return orderA - orderB;
+      });
+    }
 
-    return { test, testQuestions, questionsMap, childQuestionsByParent, isCompulsoryMap };
+    return { test, testQuestions, questionsMap, childQuestionsByParent, isCompulsoryMap, questionOrderingMap };
   }
 
   /**
@@ -183,6 +217,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param transformMethod - Method to use for transformation
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param questionOrderingMap - Map of questionId -> ordering from TestQuestion
    */
   private async transformAndAttachQuestions(
     test: Test,
@@ -190,8 +225,9 @@ export class TestsService {
     childQuestionsByParent: Map<string, Question[]>,
     showCorrectOptions: boolean,
     authContext: AuthContext,
-    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>) => Promise<any>,
-    isCompulsoryMap: Map<string, boolean>
+    transformMethod: (question: Question, showCorrectOptions: boolean, authContext: AuthContext, childQuestionsByParent: Map<string, Question[]>, isCompulsoryMap: Map<string, boolean>, questionOrderingMap: Map<string, number>) => Promise<any>,
+    isCompulsoryMap: Map<string, boolean>,
+    questionOrderingMap: Map<string, number>
   ) {
     // Transform questions and attach to test questions
     for (const section of test.sections) {
@@ -210,7 +246,8 @@ export class TestsService {
             showCorrectOptions, 
             authContext,
             childQuestionsByParent,
-            isCompulsoryMap
+            isCompulsoryMap,
+            questionOrderingMap
           );
 
           // For matching questions, add a separate array of matchWith options
@@ -440,7 +477,7 @@ export class TestsService {
 
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     // Fetch common test hierarchy data
-    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap } = await this.fetchTestHierarchyData(id, authContext);
+    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, questionOrderingMap } = await this.fetchTestHierarchyData(id, authContext);
 
     // Transform and attach questions using learner transformation method
     await this.transformAndAttachQuestions(
@@ -450,7 +487,8 @@ export class TestsService {
       showCorrectOptions,
       authContext,
       this.transformQuestionWithConditionals.bind(this),
-      isCompulsoryMap
+      isCompulsoryMap,
+      questionOrderingMap
     );
 
     return test;
@@ -459,7 +497,7 @@ export class TestsService {
   // Admin view
   async getTestHierarchyAdmin(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
     // Fetch common test hierarchy data
-    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap } = await this.fetchTestHierarchyData(id, authContext);
+    const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, questionOrderingMap } = await this.fetchTestHierarchyData(id, authContext);
 
     // Transform and attach questions using admin transformation method
     await this.transformAndAttachQuestions(
@@ -469,7 +507,8 @@ export class TestsService {
       showCorrectOptions,
       authContext,
       this.transformQuestionWithConditionalsAdmin.bind(this),
-      isCompulsoryMap
+      isCompulsoryMap,
+      questionOrderingMap
     );
 
     return test;
@@ -482,6 +521,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param questionOrderingMap - Map of questionId -> ordering from TestQuestion
    * @returns Transformed question with conditional structure
    */
   private async transformQuestionWithConditionals(
@@ -489,8 +529,13 @@ export class TestsService {
     showCorrectOptions: boolean, 
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    questionOrderingMap: Map<string, number>
   ): Promise<any> {
+    // Use TestQuestion ordering if available, otherwise fall back to Question ordering
+    const testOrdering = questionOrderingMap.get(question.questionId);
+    const ordering = testOrdering !== undefined ? testOrdering : question.ordering;
+    
     const transformedQuestion = {
       questionId: question.questionId,
       text: question.text,
@@ -498,7 +543,7 @@ export class TestsService {
       marks: question.marks,
       params: question.params,
       status: question.status,
-      ordering: question.ordering,
+      ordering: ordering,
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
       options: await this.transformOptionsWithConditionals(
@@ -507,7 +552,8 @@ export class TestsService {
         authContext,
         childQuestionsByParent,
         question.questionId,
-        isCompulsoryMap
+        isCompulsoryMap,
+        questionOrderingMap
       )
     };
 
@@ -522,6 +568,7 @@ export class TestsService {
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param parentQuestionId - ID of the parent question
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param questionOrderingMap - Map of questionId -> ordering from TestQuestion
    * @returns Transformed options with conditional structure
    */
   private async transformOptionsWithConditionals(
@@ -530,7 +577,8 @@ export class TestsService {
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     parentQuestionId: string,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    questionOrderingMap: Map<string, number>
   ): Promise<any[]> {
     // Get option-question mappings for this parent question
     const optionQuestionMappings = await this.optionQuestionRepository.find({
@@ -541,16 +589,35 @@ export class TestsService {
           questionId: parentQuestionId
         }
       },
-      relations: ['question', 'question.options', 'option']
+      relations: ['question', 'question.options', 'option'],
+      order: {
+        ordering: 'ASC'
+      }
     });
 
-    // Create a map of optionId -> array of child questions for quick lookup
-    const optionToChildQuestionsMap = new Map<string, any[]>();
+    // Create a map of optionId -> array of child questions with their OptionQuestion ordering
+    const optionToChildQuestionsMap = new Map<string, Array<{ question: any; optionOrdering: number }>>();
     for (const mapping of optionQuestionMappings) {
       if (!optionToChildQuestionsMap.has(mapping.optionId)) {
         optionToChildQuestionsMap.set(mapping.optionId, []);
       }
-      optionToChildQuestionsMap.get(mapping.optionId)!.push(mapping.question);
+      optionToChildQuestionsMap.get(mapping.optionId)!.push({
+        question: mapping.question,
+        optionOrdering: mapping.ordering
+      });
+    }
+    
+    // Sort child questions by TestQuestion.ordering (primary) and OptionQuestion.ordering (secondary) for each option
+    for (const [optionId, children] of optionToChildQuestionsMap.entries()) {
+      children.sort((a, b) => {
+        const testOrderA = questionOrderingMap.get(a.question.questionId) ?? 999999;
+        const testOrderB = questionOrderingMap.get(b.question.questionId) ?? 999999;
+        if (testOrderA !== testOrderB) {
+          return testOrderA - testOrderB;
+        }
+        // If TestQuestion ordering is the same, use OptionQuestion ordering as tie-breaker
+        return a.optionOrdering - b.optionOrdering;
+      });
     }
 
     return Promise.all(options.map(async (option) => {
@@ -572,20 +639,21 @@ export class TestsService {
       };
 
       // Check if this specific option has conditional child questions
-      const childQuestions = optionToChildQuestionsMap.get(option.questionOptionId);
+      const childQuestionsData = optionToChildQuestionsMap.get(option.questionOptionId);
       
-      if (childQuestions && childQuestions.length > 0) {
+      if (childQuestionsData && childQuestionsData.length > 0) {
         transformedOption.hasChildQuestion = true;
         
         // Recursively transform all child questions
         transformedOption.childQuestion = await Promise.all(
-          childQuestions.map(async (childQuestion) => {
+          childQuestionsData.map(async ({ question: childQuestion }) => {
             const transformed = await this.transformQuestionWithConditionals(
               childQuestion, 
               showCorrectOptions, 
               authContext,
               childQuestionsByParent,
-              isCompulsoryMap
+              isCompulsoryMap,
+              questionOrderingMap
             );
             // Add isCompulsory from map if available
             const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
@@ -610,6 +678,7 @@ export class TestsService {
    * @param authContext - Authentication context
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param questionOrderingMap - Map of questionId -> ordering from TestQuestion
    * @returns Transformed question with conditional structure including child questions
    */
   private async transformQuestionWithConditionalsAdmin(
@@ -617,8 +686,13 @@ export class TestsService {
     showCorrectOptions: boolean, 
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    questionOrderingMap: Map<string, number>
   ): Promise<any> {
+    // Use TestQuestion ordering if available, otherwise fall back to Question ordering
+    const testOrdering = questionOrderingMap.get(question.questionId);
+    const ordering = testOrdering !== undefined ? testOrdering : question.ordering;
+    
     const transformedQuestion: any = {
       questionId: question.questionId,
       text: question.text,
@@ -626,7 +700,7 @@ export class TestsService {
       marks: question.marks,
       params: question.params,
       status: question.status,
-      ordering: question.ordering,
+      ordering: ordering,
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
       options: await this.transformOptionsWithConditionalsAdmin(
@@ -635,7 +709,8 @@ export class TestsService {
         authContext,
         childQuestionsByParent,
         question.questionId,
-        isCompulsoryMap
+        isCompulsoryMap,
+        questionOrderingMap
       )
     };
 
@@ -649,13 +724,15 @@ export class TestsService {
             showCorrectOptions,
             authContext,
             childQuestionsByParent,
-            isCompulsoryMap
+            isCompulsoryMap,
+            questionOrderingMap
           );
           // Add isCompulsory from map if available
           const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
           if (isCompulsory !== undefined) {
             transformed.isCompulsory = isCompulsory;
           }
+          // Ensure ordering uses TestQuestion ordering (already set in transformQuestionWithConditionalsAdmin)
           return transformed;
         })
       );
@@ -672,6 +749,7 @@ export class TestsService {
    * @param childQuestionsByParent - Map of child questions by parent ID
    * @param parentQuestionId - ID of the parent question
    * @param isCompulsoryMap - Map of questionId -> isCompulsory
+   * @param questionOrderingMap - Map of questionId -> ordering from TestQuestion
    * @returns Transformed options with conditional structure including AssociatedQuestion array
    */
   private async transformOptionsWithConditionalsAdmin(
@@ -680,7 +758,8 @@ export class TestsService {
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     parentQuestionId: string,
-    isCompulsoryMap: Map<string, boolean>
+    isCompulsoryMap: Map<string, boolean>,
+    questionOrderingMap: Map<string, number>
   ): Promise<any[]> {
     // Get option-question mappings for this parent question
     const optionQuestionMappings = await this.optionQuestionRepository.find({
@@ -691,16 +770,39 @@ export class TestsService {
           questionId: parentQuestionId
         }
       },
-      relations: ['question', 'question.options', 'option']
+      relations: ['question', 'question.options', 'option'],
+      order: {
+        ordering: 'ASC'
+      }
     });
 
-    // Create a map of optionId -> child questions array for quick lookup
-    const optionToChildQuestionMap = new Map<string, any[]>();
+    // Create a map of optionId -> child questions array with their OptionQuestion ordering
+    const optionToChildQuestionMap = new Map<string, Array<{ question: any; optionOrdering: number }>>();
     for (const mapping of optionQuestionMappings) {
       if (!optionToChildQuestionMap.has(mapping.optionId)) {
         optionToChildQuestionMap.set(mapping.optionId, []);
       }
-      optionToChildQuestionMap.get(mapping.optionId)!.push(mapping.question);
+      optionToChildQuestionMap.get(mapping.optionId)!.push({
+        question: mapping.question,
+        optionOrdering: mapping.ordering
+      });
+    }
+    
+    // Sort child questions by TestQuestion.ordering (primary) and OptionQuestion.ordering (secondary) for each option
+    for (const [optionId, children] of optionToChildQuestionMap.entries()) {
+      children.sort((a, b) => {
+        const testOrderA = questionOrderingMap.get(a.question.questionId) ?? 999999;
+        const testOrderB = questionOrderingMap.get(b.question.questionId) ?? 999999;
+        // Log for debugging
+        if (testOrderA !== testOrderB) {
+          this.logger.debug(`Sorting AssociatedQuestion (admin) for option ${optionId}: ${a.question.questionId} (order: ${testOrderA}) vs ${b.question.questionId} (order: ${testOrderB})`);
+        }
+        if (testOrderA !== testOrderB) {
+          return testOrderA - testOrderB;
+        }
+        // If TestQuestion ordering is the same, use OptionQuestion ordering as tie-breaker
+        return a.optionOrdering - b.optionOrdering;
+      });
     }
 
     return Promise.all(options.map(async (option) => {
@@ -722,14 +824,14 @@ export class TestsService {
       };
 
       // Check if this specific option has conditional child questions
-      const childQuestions = optionToChildQuestionMap.get(option.questionOptionId);
+      const childQuestionsData = optionToChildQuestionMap.get(option.questionOptionId);
       
-      if (childQuestions && childQuestions.length > 0) {
+      if (childQuestionsData && childQuestionsData.length > 0) {
         transformedOption.hasChildQuestion = true;
         
         // Add AssociatedQuestion array for this option (without options)
-        transformedOption.AssociatedQuestion = childQuestions.map(childQuestion => {
-          const transformed = this.transformQuestionWithoutOptions(childQuestion);
+        transformedOption.AssociatedQuestion = childQuestionsData.map(({ question: childQuestion }) => {
+          const transformed = this.transformQuestionWithoutOptions(childQuestion, questionOrderingMap);
           // Add isCompulsory from map if available
           const isCompulsory = isCompulsoryMap.get(childQuestion.questionId);
           if (isCompulsory !== undefined) {
@@ -750,7 +852,11 @@ export class TestsService {
    * @param question - Question to transform
    * @returns Transformed question without options
    */
-  private transformQuestionWithoutOptions(question: any): any {
+  private transformQuestionWithoutOptions(question: any, questionOrderingMap?: Map<string, number>): any {
+    // Use TestQuestion ordering if available, otherwise fall back to Question ordering
+    const testOrdering = questionOrderingMap?.get(question.questionId);
+    const ordering = testOrdering !== undefined ? testOrdering : question.ordering;
+    
     return {
       questionId: question.questionId,
       text: question.text,
@@ -758,7 +864,7 @@ export class TestsService {
       marks: question.marks,
       params: question.params,
       status: question.status,
-      ordering: question.ordering,
+      ordering: ordering,
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
     };
