@@ -76,15 +76,33 @@ export class AttemptsService {
     userId: string,
     authContext: AuthContext
   ): Promise<TestAttempt> {
-    // Check if test exists and user can attempt
-    const test = await this.testRepository.findOne({
-      where: {
-        testId,
+    // OPTIMIZATION 1: Use select to load only required fields from test
+    const test = await this.testRepository
+      .createQueryBuilder("test")
+      .select([
+        "test.testId",
+        "test.status",
+        "test.startDate",
+        "test.endDate",
+        "test.allowResubmission",
+        "test.attempts",
+        "test.type",
+        "test.title",
+        "test.timeDuration",
+        "test.passingMarks",
+        "test.description",
+      ])
+      .where("test.testId = :testId", { testId })
+      .andWhere("test.tenantId = :tenantId", {
         tenantId: authContext.tenantId,
+      })
+      .andWhere("test.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
-        status: Not(TestStatus.ARCHIVED),
-      },
-    });
+      })
+      .andWhere("test.status != :archivedStatus", {
+        archivedStatus: TestStatus.ARCHIVED,
+      })
+      .getOne();
 
     if (!test) {
       throw new NotFoundException("Test not found");
@@ -103,19 +121,45 @@ export class AttemptsService {
     if (test.endDate && now > test.endDate) {
       throw new Error("Test is no longer available for attempts");
     }
+
+    // OPTIMIZATION 2: Combine attempt check and count in parallel queries
+    const attemptCheckQuery = this.attemptRepository
+      .createQueryBuilder("attempt")
+      .where("attempt.testId = :testId", { testId })
+      .andWhere("attempt.userId = :userId", { userId })
+      .andWhere("attempt.tenantId = :tenantId", {
+        tenantId: authContext.tenantId,
+      })
+      .andWhere("attempt.organisationId = :organisationId", {
+        organisationId: authContext.organisationId,
+      });
+
+    let totalAttempts: number;
+    let existingAttempt: TestAttempt | null = null;
+
     // Handle allowResubmission logic
     if (test.allowResubmission) {
       // For tests with allowResubmission, check if user already has an attempt
-      const existingAttempt = await this.attemptRepository.findOne({
-        where: {
-          testId,
-          userId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-          status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
-        },
-        order: { attempt: "DESC" }, // Get the most recent attempt
-      });
+      const [foundAttempt, count] = await Promise.all([
+        attemptCheckQuery
+          .clone()
+          .andWhere("attempt.status IN (:...statuses)", {
+            statuses: [AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED],
+          })
+          .orderBy("attempt.attempt", "DESC")
+          .getOne(),
+        this.attemptRepository.count({
+          where: {
+            testId,
+            userId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        }),
+      ]);
+
+      existingAttempt = foundAttempt;
+      totalAttempts = count;
 
       if (existingAttempt) {
         // Return the existing attempt instead of creating a new one
@@ -123,17 +167,28 @@ export class AttemptsService {
       }
     } else {
       // Original logic for tests without allowResubmission
-      // check if user has the last attempt which is in progress or submitted but not reviewed
-      const lastAttempt = await this.attemptRepository.findOne({
-        where: {
-          testId,
-          userId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-          status: In([AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED]),
-          reviewStatus: ReviewStatus.PENDING,
-        },
-      });
+      // OPTIMIZATION 3: Get last attempt and count in parallel
+      const [lastAttempt, count] = await Promise.all([
+        attemptCheckQuery
+          .clone()
+          .andWhere("attempt.status IN (:...statuses)", {
+            statuses: [AttemptStatus.IN_PROGRESS, AttemptStatus.SUBMITTED],
+          })
+          .andWhere("attempt.reviewStatus = :reviewStatus", {
+            reviewStatus: ReviewStatus.PENDING,
+          })
+          .getOne(),
+        this.attemptRepository.count({
+          where: {
+            testId,
+            userId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        }),
+      ]);
+
+      totalAttempts = count;
 
       if (lastAttempt?.status === AttemptStatus.IN_PROGRESS) {
         throw new Error(
@@ -150,58 +205,68 @@ export class AttemptsService {
       }
     }
 
-    // Get all existing attempts for this user and test
-    const totalAttempts = await this.attemptRepository.count({
-      where: {
-        testId,
-        userId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
-
     const maxAttempts = test.attempts;
-
-    // Check if user has reached maximum attempts
     if (totalAttempts >= maxAttempts) {
       throw new Error(
         `Maximum attempts (${maxAttempts}) reached for this test. You cannot start a new attempt.`
       );
     }
 
-    // Create attempt
-    const attempt = this.attemptRepository.create({
-      testId,
-      userId,
-      attempt: totalAttempts + 1,
-      status: AttemptStatus.IN_PROGRESS,
-      tenantId: authContext.tenantId,
-      organisationId: authContext.organisationId,
-    });
+    // OPTIMIZATION 4: Use transaction for atomicity (attempt creation + rule generation)
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    const savedAttempt = await this.attemptRepository.save(attempt);
+    try {
+      // Create attempt within transaction
+      // Use pre-calculated totalAttempts + 1 for attempt number
+      const attempt = queryRunner.manager.create(TestAttempt, {
+        testId,
+        userId,
+        attempt: totalAttempts + 1,
+        status: AttemptStatus.IN_PROGRESS,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      });
 
-    // Generate questions based on test type
-    if (test.type === TestType.RULE_BASED) {
-      await this.generateRuleBasedTestQuestions(
-        savedAttempt,
-        test,
-        authContext
-      );
-    }
+      const savedAttempt = await queryRunner.manager.save(TestAttempt, attempt);
 
-    // Trigger plugin event
-    await this.triggerPluginEvent(
-      PluginManagerService.EVENTS.ATTEMPT_STARTED,
-      authContext,
-      {
-        attemptId: savedAttempt.attemptId,
-        testId: savedAttempt.testId,
-        attemptNumber: savedAttempt.attempt,
+      // Generate questions based on test type (within transaction)
+      if (test.type === TestType.RULE_BASED) {
+        await this.generateRuleBasedTestQuestions(
+          savedAttempt,
+          test,
+          authContext,
+          queryRunner
+        );
       }
-    );
 
-    return savedAttempt;
+      // Commit transaction
+      await queryRunner.commitTransaction();
+
+      // OPTIMIZATION 5: Trigger plugin event asynchronously (non-blocking)
+      this.triggerPluginEvent(
+        PluginManagerService.EVENTS.ATTEMPT_STARTED,
+        authContext,
+        {
+          attemptId: savedAttempt.attemptId,
+          testId: savedAttempt.testId,
+          attemptNumber: savedAttempt.attempt,
+        }
+      ).catch((error) => {
+        this.logger.error(
+          `Failed to trigger plugin event for attempt ${savedAttempt.attemptId}`,
+          error
+        );
+      });
+
+      return savedAttempt;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   /**
@@ -1513,17 +1578,23 @@ export class AttemptsService {
    * 4. For each rule, selects questions either from pre-selected pool or dynamic criteria
    * 5. Adds selected questions to the generated test with proper ordering
    *
+   * OPTIMIZATION: Uses batch insert instead of individual saves for better performance
+   *
    * @param attempt - The test attempt that needs questions generated
    * @param originalTest - The original rule-based test
    * @param authContext - Authentication context for tenant/organization filtering
+   * @param queryRunner - Optional query runner for transaction support
    */
   private async generateRuleBasedTestQuestions(
     attempt: TestAttempt,
     originalTest: Test,
-    authContext: AuthContext
+    authContext: AuthContext,
+    queryRunner?: any
   ): Promise<void> {
+    const manager = queryRunner?.manager || this.dataSource.manager;
+
     // Create a new generated test for this specific attempt
-    const generatedTest = this.testRepository.create({
+    const generatedTest = manager.create(Test, {
       title: `Generated Test for ${originalTest.title} - Attempt ${attempt.attempt}`,
       type: TestType.GENERATED,
       timeDuration: originalTest.timeDuration,
@@ -1536,14 +1607,14 @@ export class AttemptsService {
       createdBy: authContext.userId,
     });
 
-    const savedGeneratedTest = await this.testRepository.save(generatedTest);
+    const savedGeneratedTest = await manager.save(Test, generatedTest);
 
     // Link the attempt to the generated test
     attempt.resolvedTestId = savedGeneratedTest.testId;
-    await this.attemptRepository.save(attempt);
+    await manager.save(TestAttempt, attempt);
 
     // Get rules for the original test
-    const rules = await this.testRuleRepository.find({
+    const rules = await manager.find(TestRule, {
       where: {
         testId: originalTest.testId,
         tenantId: authContext.tenantId,
@@ -1554,13 +1625,15 @@ export class AttemptsService {
     });
 
     let questionOrder = 1;
+    // OPTIMIZATION: Collect all questions to insert and batch insert at once
+    const questionsToInsert: Partial<TestQuestion>[] = [];
 
     for (const rule of rules) {
       let selectedQuestionIds: string[] = [];
 
       if (rule.selectionMode === "PRESELECTED") {
         // Approach A: Use pre-selected questions from testQuestions table
-        const availableQuestions = await this.testQuestionRepository.find({
+        const availableQuestions = await manager.find(TestQuestion, {
           where: {
             testId: originalTest.testId,
             ruleId: rule.ruleId,
@@ -1605,21 +1678,29 @@ export class AttemptsService {
         );
       }
 
-      // Add selected questions to the generated test
+      // OPTIMIZATION: Collect questions for batch insert instead of saving one by one
       for (const questionId of selectedQuestionIds) {
-        await this.testQuestionRepository.save(
-          this.testQuestionRepository.create({
-            testId: savedGeneratedTest.testId,
-            sectionId: rule.sectionId,
-            questionId: questionId,
-            ordering: questionOrder++,
-            ruleId: rule.ruleId,
-            isCompulsory: false, // Questions from rules are not compulsory by default
-            tenantId: authContext.tenantId,
-            organisationId: authContext.organisationId,
-          })
-        );
+        questionsToInsert.push({
+          testId: savedGeneratedTest.testId,
+          sectionId: rule.sectionId,
+          questionId: questionId,
+          ordering: questionOrder++,
+          ruleId: rule.ruleId,
+          isCompulsory: false, // Questions from rules are not compulsory by default
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        });
       }
+    }
+
+    // OPTIMIZATION: Batch insert all questions at once (much faster than individual saves)
+    if (questionsToInsert.length > 0) {
+      await manager
+        .createQueryBuilder()
+        .insert()
+        .into(TestQuestion)
+        .values(questionsToInsert)
+        .execute();
     }
   }
 
