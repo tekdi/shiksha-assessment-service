@@ -1119,7 +1119,7 @@ export class AttemptsService {
       
       // Check if any submitted question is a child question (has parentId)
       const hasChildQuestionsInSubmission = submittedQuestions.some(
-        (q) => q && q.parentId !== null && q.parentId !== undefined
+        (q) => q?.parentId != null
       );
 
       // OPTIMIZATION: Only fetch all existing answers if cleanup might be needed
