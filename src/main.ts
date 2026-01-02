@@ -5,7 +5,7 @@ if (typeof globalThis.crypto === 'undefined') {
 }
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, RequestMethod } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
@@ -15,9 +15,15 @@ import { ConfigurationService } from './modules/configuration/configuration.serv
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Global prefix
+  // Global prefix (exclude health endpoints)
   const apiPrefix = process.env.ASSESSMENT_PREFIX || 'assessment/v1';
-  app.setGlobalPrefix(apiPrefix);
+  app.setGlobalPrefix(apiPrefix, {
+    exclude: [
+      { path: 'health', method: RequestMethod.GET },
+      { path: 'health/live', method: RequestMethod.GET },
+      { path: 'health/ready', method: RequestMethod.GET },
+    ],
+  });
   console.log(`🔧 API prefix configured as: ${apiPrefix}`);
 
   // Global exception filter
