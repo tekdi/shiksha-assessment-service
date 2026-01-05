@@ -14,6 +14,7 @@ import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { OptionQuestion } from '../questions/entities/option-question.entity';
+import { QuestionOption } from '../questions/entities/question-option.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
 import { UserTestStatusDto } from './dto/user-test-status.dto';
 import { TestAttempt, AttemptStatus, ReviewStatus } from './entities/test-attempt.entity';
@@ -40,6 +41,8 @@ export class TestsService {
     private readonly questionRepository: Repository<Question>,
     @InjectRepository(OptionQuestion)
     private readonly optionQuestionRepository: Repository<OptionQuestion>,
+    @InjectRepository(QuestionOption)
+    private readonly questionOptionRepository: Repository<QuestionOption>,
     @InjectRepository(TestAttempt)
     private readonly testAttemptRepository: Repository<TestAttempt>,
     @InjectRepository(TestRule)
@@ -1681,24 +1684,186 @@ export class TestsService {
         sectionIdMapping.set(originalSection.sectionId, savedClonedSection.sectionId);
       }
 
-      // Clone test questions
-      for (const originalQuestion of originalTest.questions) {
-        const sectionId = originalQuestion.sectionId ? sectionIdMapping.get(originalQuestion.sectionId) : undefined;
-        if (sectionId === null) continue; // Skip questions with invalid section mapping
-        
-        const clonedQuestionData = {
-          testId: savedClonedTest.testId,
-          questionId: originalQuestion.questionId,
-          ordering: originalQuestion.ordering,
-          sectionId: sectionId,
-          ruleId: originalQuestion.ruleId,
-          isCompulsory: originalQuestion.isCompulsory,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        };
+      // Get all question IDs from test questions (parent questions only)
+      const parentQuestionIds = originalTest.questions.map(tq => tq.questionId);
+      
+      if (parentQuestionIds.length === 0) {
+        this.logger.warn(`No questions found in test ${testId}`);
+      } else {
+        // OPTIMIZATION: Fetch all parent questions in one query
+        const parentQuestions = await queryRunner.manager.find(Question, {
+          where: {
+            questionId: In(parentQuestionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+          relations: ['options'],
+        });
 
-        const clonedQuestion = queryRunner.manager.create(TestQuestion, clonedQuestionData);
-        await queryRunner.manager.save(clonedQuestion);
+        // OPTIMIZATION: Fetch all child questions in one query
+        const childQuestions = await queryRunner.manager.find(Question, {
+          where: {
+            parentId: In(parentQuestionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+          relations: ['options'],
+        });
+
+        // Create mapping: original question ID -> cloned question ID
+        const questionIdMapping = new Map<string, string>();
+        // Create mapping: original option ID -> cloned option ID
+        const optionIdMapping = new Map<string, string>();
+
+        // Clone parent questions first
+        for (const originalQuestion of parentQuestions) {
+          const clonedQuestionData = {
+            ...originalQuestion,
+            questionId: undefined, // Let database generate new ID
+            parentId: undefined, // Ensure parent questions have no parent
+            createdBy: authContext.userId,
+            updatedBy: authContext.userId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+            // Remove relations that shouldn't be copied
+            options: undefined,
+            childQuestions: undefined,
+            optionQuestions: undefined,
+            parent: undefined,
+          };
+
+          const clonedQuestion = queryRunner.manager.create(Question, clonedQuestionData);
+          const savedClonedQuestion = await queryRunner.manager.save(clonedQuestion);
+          questionIdMapping.set(originalQuestion.questionId, savedClonedQuestion.questionId);
+
+          // Clone question options
+          if (originalQuestion.options && originalQuestion.options.length > 0) {
+            for (const originalOption of originalQuestion.options) {
+              const clonedOptionData = {
+                ...originalOption,
+                questionOptionId: undefined, // Let database generate new ID
+                questionId: savedClonedQuestion.questionId,
+                tenantId: authContext.tenantId,
+                organisationId: authContext.organisationId,
+              };
+
+              const clonedOption = queryRunner.manager.create(QuestionOption, clonedOptionData);
+              const savedClonedOption = await queryRunner.manager.save(clonedOption);
+              optionIdMapping.set(originalOption.questionOptionId, savedClonedOption.questionOptionId);
+            }
+          }
+        }
+
+        // Clone child questions with updated parentId references
+        for (const originalChildQuestion of childQuestions) {
+          const newParentId = questionIdMapping.get(originalChildQuestion.parentId!);
+          if (!newParentId) {
+            this.logger.warn(
+              `Parent question ${originalChildQuestion.parentId} not found in mapping for child question ${originalChildQuestion.questionId}`,
+            );
+            continue;
+          }
+
+          const clonedChildQuestionData = {
+            ...originalChildQuestion,
+            questionId: undefined, // Let database generate new ID
+            parentId: newParentId, // Update parent reference
+            createdBy: authContext.userId,
+            updatedBy: authContext.userId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+            // Remove relations that shouldn't be copied
+            options: undefined,
+            childQuestions: undefined,
+            optionQuestions: undefined,
+            parent: undefined,
+          };
+
+          const clonedChildQuestion = queryRunner.manager.create(Question, clonedChildQuestionData);
+          const savedClonedChildQuestion = await queryRunner.manager.save(clonedChildQuestion);
+          questionIdMapping.set(originalChildQuestion.questionId, savedClonedChildQuestion.questionId);
+
+          // Clone child question options
+          if (originalChildQuestion.options && originalChildQuestion.options.length > 0) {
+            for (const originalOption of originalChildQuestion.options) {
+              const clonedOptionData = {
+                ...originalOption,
+                questionOptionId: undefined, // Let database generate new ID
+                questionId: savedClonedChildQuestion.questionId,
+                tenantId: authContext.tenantId,
+                organisationId: authContext.organisationId,
+              };
+
+              const clonedOption = queryRunner.manager.create(QuestionOption, clonedOptionData);
+              const savedClonedOption = await queryRunner.manager.save(clonedOption);
+              optionIdMapping.set(originalOption.questionOptionId, savedClonedOption.questionOptionId);
+            }
+          }
+        }
+
+        // OPTIMIZATION: Fetch all option-question associations in one query
+        const allOriginalQuestionIds = [...parentQuestionIds, ...childQuestions.map(cq => cq.questionId)];
+        const optionQuestionAssociations = await queryRunner.manager.find(OptionQuestion, {
+          where: {
+            questionId: In(allOriginalQuestionIds),
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        });
+
+        // Clone option-question associations with updated IDs
+        for (const originalAssociation of optionQuestionAssociations) {
+          const newQuestionId = questionIdMapping.get(originalAssociation.questionId);
+          const newOptionId = optionIdMapping.get(originalAssociation.optionId);
+
+          if (!newQuestionId || !newOptionId) {
+            this.logger.warn(
+              `Skipping option-question association: questionId=${originalAssociation.questionId}, optionId=${originalAssociation.optionId}`,
+            );
+            continue;
+          }
+
+          const clonedAssociationData = {
+            ...originalAssociation,
+            id: undefined, // Let database generate new ID (OptionQuestion uses 'id' as primary key)
+            questionId: newQuestionId,
+            optionId: newOptionId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          };
+
+          const clonedAssociation = queryRunner.manager.create(OptionQuestion, clonedAssociationData);
+          await queryRunner.manager.save(clonedAssociation);
+        }
+
+        // Create TestQuestion entries with cloned question IDs
+        for (const originalTestQuestion of originalTest.questions) {
+          const sectionId = originalTestQuestion.sectionId ? sectionIdMapping.get(originalTestQuestion.sectionId) : undefined;
+          if (sectionId === null) continue; // Skip questions with invalid section mapping
+          
+          const newQuestionId = questionIdMapping.get(originalTestQuestion.questionId);
+          if (!newQuestionId) {
+            this.logger.warn(
+              `Question ${originalTestQuestion.questionId} not found in mapping`,
+            );
+            continue;
+          }
+
+          const clonedTestQuestionData = {
+            testId: savedClonedTest.testId,
+            questionId: newQuestionId,
+            ordering: originalTestQuestion.ordering,
+            sectionId: sectionId,
+            ruleId: originalTestQuestion.ruleId,
+            isCompulsory: originalTestQuestion.isCompulsory,
+            isConditional: originalTestQuestion.isConditional || false,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          };
+
+          const clonedTestQuestion = queryRunner.manager.create(TestQuestion, clonedTestQuestionData);
+          await queryRunner.manager.save(clonedTestQuestion);
+        }
       }
 
       // Clone test rules (if any)
