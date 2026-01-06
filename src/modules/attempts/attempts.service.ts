@@ -1391,13 +1391,22 @@ export class AttemptsService {
       return { isValid: true };
     }
 
-    // Separate child questions from regular questions
-    const childQuestions = allCompulsoryQuestions.filter((q) => q.q_parentId);
-    const regularQuestions = allCompulsoryQuestions.filter((q) => !q.q_parentId);
+    // OPTIMIZATION: Single-pass filtering to separate child questions from regular questions
+    const childQuestions: typeof allCompulsoryQuestions = [];
+    const regularQuestions: typeof allCompulsoryQuestions = [];
+    
+    for (const q of allCompulsoryQuestions) {
+      if (q.q_parentId) {
+        childQuestions.push(q);
+      } else {
+        regularQuestions.push(q);
+      }
+    }
 
     // If there are no child questions, return all missing questions
     if (childQuestions.length === 0) {
-      const missingQuestions = allCompulsoryQuestions.map((q) => ({
+      // OPTIMIZATION: Use already-separated regularQuestions instead of re-mapping allCompulsoryQuestions
+      const missingQuestions = regularQuestions.map((q) => ({
         questionId: q.tq_questionId,
         title: q.title,
         ordering: q.tq_ordering,
@@ -1410,29 +1419,13 @@ export class AttemptsService {
       };
     }
 
-    // Get option-question mappings for child questions
-    const childQuestionIds = childQuestions.map((q) => q.tq_questionId);
-    const optionQuestionMappings = await this.optionQuestionRepository.find({
-      where: {
-        questionId: In(childQuestionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-        isActive: true,
-      },
-    });
-
-    // Create a map: childQuestionId -> array of optionIds that trigger it
-    const childQuestionToOptionsMap = new Map<string, string[]>();
-    for (const mapping of optionQuestionMappings) {
-      if (!childQuestionToOptionsMap.has(mapping.questionId)) {
-        childQuestionToOptionsMap.set(mapping.questionId, []);
-      }
-      childQuestionToOptionsMap.get(mapping.questionId)!.push(mapping.optionId);
-    }
-
     // Get unique parent question IDs
     const parentQuestionIds = [
-      ...new Set(childQuestions.map((q) => q.q_parentId).filter(Boolean)),
+      ...new Set(
+        childQuestions
+          .map((q) => q.q_parentId)
+          .filter((id): id is string => Boolean(id))
+      ),
     ];
 
     if (parentQuestionIds.length === 0) {
@@ -1450,39 +1443,89 @@ export class AttemptsService {
       };
     }
 
-    // Get all user answers for parent questions to check which options were selected
-    const parentAnswers = await this.testUserAnswerRepository.find({
-      where: {
-        attemptId: attempt.attemptId,
-        questionId: In(parentQuestionIds),
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    // OPTIMIZATION: Parallel query execution - fetch option mappings and parent answers simultaneously
+    const childQuestionIds = childQuestions.map((q) => q.tq_questionId);
+    const [optionQuestionMappings, parentAnswers] = await Promise.all([
+      this.optionQuestionRepository.find({
+        where: {
+          questionId: In(childQuestionIds),
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          isActive: true,
+        },
+      }),
+      this.testUserAnswerRepository.find({
+        where: {
+          attemptId: attempt.attemptId,
+          questionId: In(parentQuestionIds),
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      }),
+    ]);
 
-    // Create a map: parentQuestionId -> array of selected optionIds
-    const parentQuestionToSelectedOptionsMap = new Map<string, string[]>();
+    // OPTIMIZATION: More efficient map building - avoid has() check
+    const childQuestionToOptionsMap = new Map<string, string[]>();
+    for (const mapping of optionQuestionMappings) {
+      const existing = childQuestionToOptionsMap.get(mapping.questionId);
+      if (existing) {
+        existing.push(mapping.optionId);
+      } else {
+        childQuestionToOptionsMap.set(mapping.questionId, [mapping.optionId]);
+      }
+    }
+
+    // OPTIMIZATION: Create a map with Sets for O(1) lookups instead of O(n) array.includes()
+    const parentQuestionToSelectedOptionsMap = new Map<string, Set<string>>();
     for (const answer of parentAnswers) {
+      // OPTIMIZATION: Early skip if answer is null/undefined
+      if (!answer.answer) {
+        continue;
+      }
+
       try {
-        const answerData = JSON.parse(answer.answer);
-        if (answerData.selectedOptionIds && Array.isArray(answerData.selectedOptionIds)) {
-          parentQuestionToSelectedOptionsMap.set(answer.questionId, answerData.selectedOptionIds);
+        // OPTIMIZATION: Handle already-parsed objects
+        const answerData =
+          typeof answer.answer === 'string'
+            ? JSON.parse(answer.answer)
+            : answer.answer;
+
+        if (
+          answerData?.selectedOptionIds &&
+          Array.isArray(answerData.selectedOptionIds)
+        ) {
+          // Convert array to Set for O(1) lookups
+          parentQuestionToSelectedOptionsMap.set(
+            answer.questionId,
+            new Set(answerData.selectedOptionIds),
+          );
         }
       } catch (error) {
         // If JSON parsing fails, skip this answer
         this.logger.warn(
-          `Failed to parse answer for question ${answer.questionId}: ${error}`
+          `Failed to parse answer for question ${answer.questionId} in attempt ${attempt.attemptId}: ${error}`,
+          {
+            attemptId: attempt.attemptId,
+            questionId: answer.questionId,
+          },
         );
       }
     }
 
-    // Filter child questions: only include if their triggering option was selected
+    // OPTIMIZATION: Filter child questions using Set for O(1) lookups instead of O(n) array.includes()
     const requiredChildQuestions = childQuestions.filter((q) => {
       const triggeringOptions = childQuestionToOptionsMap.get(q.tq_questionId) || [];
-      const parentSelectedOptions = parentQuestionToSelectedOptionsMap.get(q.q_parentId) || [];
+      const parentSelectedOptionsSet =
+        parentQuestionToSelectedOptionsMap.get(q.q_parentId);
 
-      // Check if any of the triggering options were selected
-      return triggeringOptions.some((optionId) => parentSelectedOptions.includes(optionId));
+      if (!parentSelectedOptionsSet || triggeringOptions.length === 0) {
+        return false;
+      }
+
+      // Check if any of the triggering options were selected - O(1) lookup per option
+      return triggeringOptions.some((optionId) =>
+        parentSelectedOptionsSet.has(optionId),
+      );
     });
 
     // Combine regular questions with required child questions
