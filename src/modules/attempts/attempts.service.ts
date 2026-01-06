@@ -1424,7 +1424,7 @@ export class AttemptsService {
       ...new Set(
         childQuestions
           .map((q) => q.q_parentId)
-          .filter((id): id is string => Boolean(id))
+          .filter((id): id is string => !!id)
       ),
     ];
 
