@@ -12,7 +12,8 @@ import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
 import { TestSection } from './entities/test-section.entity';
-import { Question, QuestionType } from '../questions/entities/question.entity';
+import { Question, QuestionType, QuestionStatus } from '../questions/entities/question.entity';
+import { SectionStatus } from './dto/create-section.dto';
 import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
 import { HelperUtil } from '@/common/utils/helper.util';
@@ -82,8 +83,14 @@ export class TestsService {
       throw new NotFoundException('Test not found');
     }
 
+    // Filter out archived sections
+    test.sections = test.sections.filter(section => section.status !== SectionStatus.ARCHIVED);
+    
+    // Create a set of non-archived section IDs for filtering test questions
+    const nonArchivedSectionIds = new Set(test.sections.map(s => s.sectionId));
+
     // Then, get test questions with explicit field selection
-    const testQuestions = await this.testQuestionRepository.find({
+    const allTestQuestions = await this.testQuestionRepository.find({
       where: {
         testId: id,
         tenantId: authContext.tenantId,
@@ -103,6 +110,9 @@ export class TestsService {
       ],
       order: { ordering: 'ASC' },
     });
+
+    // Filter out test questions from archived sections
+    const testQuestions = allTestQuestions.filter(tq => nonArchivedSectionIds.has(tq.sectionId));
 
     // Create a map of questionId -> isCompulsory for all test questions (including child questions)
     const isCompulsoryMap = new Map<string, boolean>();
@@ -148,11 +158,12 @@ export class TestsService {
       return { test, testQuestions, questionsMap: new Map(), childQuestionsByParent: new Map(), isCompulsoryMap, questionOrderingMap };
     }
 
-    // Fetch only parent questions (non-conditional) with options
+    // Fetch only parent questions (non-conditional) with options, excluding archived
     const questions = await this.questionRepository.find({
       where: { 
         questionId: In(questionIds),
-        parentId: IsNull() // Only fetch parent questions
+        parentId: IsNull(), // Only fetch parent questions
+        status: Not(QuestionStatus.ARCHIVED) // Exclude archived questions
       },
       relations: ['options'],
       order: {
@@ -170,12 +181,13 @@ export class TestsService {
       .filter(tq => tq.isConditional)
       .map(tq => tq.questionId);
 
-    // Fetch only child questions that belong to this test
+    // Fetch only child questions that belong to this test, excluding archived
     const childQuestions = childQuestionIds.length > 0 
       ? await this.questionRepository.find({
           where: { 
             questionId: In(childQuestionIds),
-            parentId: Not(IsNull()) // Only fetch child questions
+            parentId: Not(IsNull()), // Only fetch child questions
+            status: Not(QuestionStatus.ARCHIVED) // Exclude archived questions
           },
           relations: ['options'],
           order: {
