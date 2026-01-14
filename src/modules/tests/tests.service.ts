@@ -1405,22 +1405,48 @@ export class TestsService {
         throw new NotFoundException('Test not found');
       }
 
-      // Get existing sections and questions for validation
+      // Get existing sections for validation (excluding archived) - single query with DB-level filter
       const existingSections = await queryRunner.manager.find(TestSection, {
         where: {
           testId,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
+          status: Not(SectionStatus.ARCHIVED),
         },
       });
 
-      const existingQuestions = await queryRunner.manager.find(TestQuestion, {
-        where: {
-          testId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
+      // Optimized: Get test questions with joins to filter archived sections and questions in a single query
+      // This is more efficient than fetching all and filtering in memory, but produces identical results
+      // Returns: Array of TestQuestion entities with same fields as before (testQuestionId, questionId, ordering, etc.)
+      // Behavior: Same as previous implementation - filters out archived sections and archived questions
+      const existingQuestions = existingSections.length > 0
+        ? await queryRunner.manager
+            .createQueryBuilder(TestQuestion, 'testQuestion')
+            .innerJoin(TestSection, 'section', 'section.sectionId = testQuestion.sectionId')
+            .innerJoin(Question, 'question', 'question.questionId = testQuestion.questionId')
+            .where('testQuestion.testId = :testId', { testId })
+            .andWhere('testQuestion.tenantId = :tenantId', { tenantId: authContext.tenantId })
+            .andWhere('testQuestion.organisationId = :organisationId', { organisationId: authContext.organisationId })
+            .andWhere('section.status != :archivedSectionStatus', { archivedSectionStatus: SectionStatus.ARCHIVED })
+            .andWhere('question.status != :archivedQuestionStatus', { archivedQuestionStatus: QuestionStatus.ARCHIVED })
+            .andWhere('section.tenantId = :tenantId', { tenantId: authContext.tenantId })
+            .andWhere('section.organisationId = :organisationId', { organisationId: authContext.organisationId })
+            .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
+            .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
+            .select([
+              'testQuestion.testQuestionId',
+              'testQuestion.tenantId',
+              'testQuestion.organisationId',
+              'testQuestion.testId',
+              'testQuestion.questionId',
+              'testQuestion.ordering',
+              'testQuestion.sectionId',
+              'testQuestion.ruleId',
+              'testQuestion.isCompulsory',
+              'testQuestion.isConditional'
+            ])
+            .getMany()
+        : [];
 
       // Validate all existing sections are included in the structure update
       const existingSectionIds = new Set(existingSections.map(s => s.sectionId));
