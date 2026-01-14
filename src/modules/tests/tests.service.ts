@@ -1405,8 +1405,21 @@ export class TestsService {
         throw new NotFoundException('Test not found');
       }
 
-      // Get existing sections and questions for validation
+      // Get existing sections and questions for validation (excluding archived)
       const existingSections = await queryRunner.manager.find(TestSection, {
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+          status: Not(SectionStatus.ARCHIVED),
+        },
+      });
+
+      // Get section IDs to filter questions from archived sections
+      const nonArchivedSectionIds = new Set(existingSections.map(s => s.sectionId));
+
+      // Get all test questions from non-archived sections
+      const allTestQuestions = await queryRunner.manager.find(TestQuestion, {
         where: {
           testId,
           tenantId: authContext.tenantId,
@@ -1414,13 +1427,27 @@ export class TestsService {
         },
       });
 
-      const existingQuestions = await queryRunner.manager.find(TestQuestion, {
-        where: {
-          testId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-      });
+      // Filter out questions from archived sections
+      const testQuestionsFromNonArchivedSections = allTestQuestions.filter(tq => nonArchivedSectionIds.has(tq.sectionId));
+
+      // Get question IDs and fetch questions to filter out archived ones
+      const questionIds = testQuestionsFromNonArchivedSections.map(tq => tq.questionId);
+      const nonArchivedQuestions = questionIds.length > 0
+        ? await queryRunner.manager.find(Question, {
+            where: {
+              questionId: In(questionIds),
+              status: Not(QuestionStatus.ARCHIVED),
+              tenantId: authContext.tenantId,
+              organisationId: authContext.organisationId,
+            },
+            select: ['questionId'],
+          })
+        : [];
+
+      const nonArchivedQuestionIds = new Set(nonArchivedQuestions.map(q => q.questionId));
+
+      // Filter to only include questions that are not archived
+      const existingQuestions = testQuestionsFromNonArchivedSections.filter(tq => nonArchivedQuestionIds.has(tq.questionId));
 
       // Validate all existing sections are included in the structure update
       const existingSectionIds = new Set(existingSections.map(s => s.sectionId));
