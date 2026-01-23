@@ -401,10 +401,38 @@ export class QuestionsService {
 
   async update(id: string, updateQuestionDto: UpdateQuestionDto, authContext: AuthContext): Promise<Question> {
     const question = await this.findOne(id, authContext);
-    const { options, optionId, parentId, ...questionData } = updateQuestionDto;
+    const { options, optionId, parentId, isCompulsory, testId, sectionId, ...questionData } = updateQuestionDto;
 
     // Validate conditional question parameters
     await this.validateConditionalQuestionParameters(optionId, parentId, authContext);
+
+    // Validate test and section if provided
+    if (testId && sectionId) {
+      // Validate test exists
+      const test = await this.testRepository.findOne({
+        where: {
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!test) {
+        throw new NotFoundException('Test not found');
+      }
+      
+      // Validate section exists
+      const section = await this.testSectionRepository.findOne({
+        where: {
+          sectionId,
+          testId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      });
+      if (!section) {
+        throw new NotFoundException('Section not found');
+      }
+    }
 
     // Create a merged DTO for validation
     const mergedDto = { ...updateQuestionDto, ...question };
@@ -482,6 +510,41 @@ export class QuestionsService {
     // Update testQuestion isConditional flag if question is in any tests
     if (parentId !== undefined) {
       await this.updateTestQuestionConditionalFlag(id, !!parentId, authContext);
+    }
+
+    // Update isCompulsory in TestQuestion if provided
+    if (isCompulsory !== undefined) {
+      if (testId && sectionId) {
+        // Update specific TestQuestion record
+        const testQuestion = await this.testQuestionRepository.findOne({
+          where: {
+            questionId: id,
+            testId,
+            sectionId,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+        });
+
+        if (testQuestion) {
+          testQuestion.isCompulsory = isCompulsory;
+          await this.testQuestionRepository.save(testQuestion);
+        } else {
+          throw new NotFoundException('Question is not associated with the specified test and section');
+        }
+      } else {
+        // Update isCompulsory for all TestQuestion records for this question
+        await this.testQuestionRepository.update(
+          {
+            questionId: id,
+            tenantId: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+          {
+            isCompulsory: isCompulsory,
+          }
+        );
+      }
     }
 
     // Invalidate cache
