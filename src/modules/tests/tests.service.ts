@@ -554,6 +554,7 @@ export class TestsService {
     const transformedQuestion = {
       questionId: question.questionId,
       text: question.text,
+      description: question.description,
       type: question.type,
       marks: question.marks,
       params: question.params,
@@ -711,6 +712,7 @@ export class TestsService {
     const transformedQuestion: any = {
       questionId: question.questionId,
       text: question.text,
+      description: question.description,
       type: question.type,
       marks: question.marks,
       params: question.params,
