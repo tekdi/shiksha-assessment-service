@@ -556,11 +556,15 @@ export class QuestionsService {
   async remove(id: string, authContext: AuthContext): Promise<void> {
     const question = await this.findOne(id, authContext);
     
-    // Remove options first
-    await this.questionOptionRepository.delete({ questionId: id });
-    
-    // Remove question
-    await this.questionRepository.remove(question);
+    // Soft delete: Update status to archived instead of hard delete
+    await this.questionRepository.update(
+      { 
+        questionId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId 
+      },
+      { status: QuestionStatus.ARCHIVED }
+    );
     
     // Invalidate cache
     await this.invalidateQuestionCache(authContext.tenantId);
