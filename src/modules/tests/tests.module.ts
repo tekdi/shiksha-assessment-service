@@ -17,6 +17,7 @@ import { Question } from '../questions/entities/question.entity';
 import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { QuestionOption } from '../questions/entities/question-option.entity';
 import { OrderingService } from '@/common/services/ordering.service';
+import { CacheModule } from '../cache/cache.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { OrderingService } from '@/common/services/ordering.service';
       OptionQuestion,
       QuestionOption,
     ]),
+    CacheModule,
   ],
   controllers: [TestsController, SectionsController, RulesController],
   providers: [TestsService, SectionsService, RulesService, QuestionPoolService, OrderingService],
