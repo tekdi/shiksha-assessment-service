@@ -176,6 +176,13 @@ export class TestsService {
     // Create a map for quick lookup
     const questionsMap = new Map(questions.map(q => [q.questionId, q]));
 
+    // Filter out test questions that don't have a corresponding question (archived questions)
+    // This ensures archived questions are not included in the hierarchy
+    const validQuestionIds = new Set(questionsMap.keys());
+    for (const section of test.sections) {
+      section.questions = section.questions.filter(tq => validQuestionIds.has(tq.questionId));
+    }
+
     // Get child question IDs that belong to this test (from TestQuestion records with isConditional=true)
     const childQuestionIds = testQuestions
       .filter(tq => tq.isConditional)
