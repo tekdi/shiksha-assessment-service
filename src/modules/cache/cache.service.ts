@@ -163,4 +163,107 @@ export class CacheService {
     await this.cacheManager.del(key); 
   
   }
+
+  /**
+   * Assessment cache specific methods - check ASSESSMENT_CACHE instead of CACHE_ENABLED
+   */
+
+  /**
+   * Get value from assessment cache
+   * @param key Cache key
+   * @returns Cached value or null if not found
+   */
+  async getAssessmentCache<T>(key: string): Promise<T | null> {
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      this.logger.debug(`Assessment cache is disabled, skipping get for key ${key}`);
+      return null;
+    }
+
+    try {
+      this.logger.debug(`Attempting to get assessment cache for key ${key}`);
+      const value = await this.cacheManager.get<T>(key);
+      if (value !== undefined && value !== null) {
+        this.logger.debug(`Assessment cache HIT for key ${key}`);
+        return value;
+      } else {
+        this.logger.debug(`Assessment cache MISS for key ${key}`);
+        return null;
+      }
+    } catch (error) {
+      this.logger.error(`Error getting assessment cache for key ${key}: ${error.message}`, error.stack);
+      return null;
+    }
+  }
+
+  /**
+   * Set value in assessment cache
+   * @param key Cache key
+   * @param value Value to cache
+   * @param ttl Time to live in seconds
+   */
+  async setAssessmentCache(key: string, value: any, ttl: number): Promise<void> {
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      this.logger.debug(`Assessment cache is disabled, skipping set for key ${key}`);
+      return;
+    }
+
+    try {
+      this.logger.debug(`Attempting to set assessment cache for key ${key} with TTL ${ttl}s`);
+      await this.cacheManager.set(key, value, ttl * 1000); // Convert to milliseconds
+      this.logger.debug(`Successfully set assessment cache for key ${key}`);
+    } catch (error) {
+      this.logger.error(`Error setting assessment cache for key ${key}: ${error.message}`, error.stack);
+    }
+  }
+
+  /**
+   * Delete value from assessment cache
+   * @param key Cache key
+   */
+  async delAssessmentCache(key: string): Promise<void> {
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      return;
+    }
+
+    try {
+      await this.cacheManager.del(key);
+      this.logger.debug(`Deleted assessment cache for key ${key}`);
+    } catch (error) {
+      this.logger.error(`Error deleting assessment cache for key ${key}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete multiple values from assessment cache using pattern
+   * @param pattern Cache key pattern (supports :* wildcard at the end)
+   */
+  async delAssessmentCacheByPattern(pattern: string): Promise<void> {
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      return;
+    }
+
+    try {
+      // Get all keys from the cache store
+      const store = (this.cacheManager as any).store;
+      if (!store || typeof store.keys !== 'function') {
+        return;
+      }
+
+      const keys = await store.keys();
+
+      // Convert pattern to regex if it ends with :*
+      const patternRegex = pattern.endsWith(':*') 
+        ? new RegExp(`^${pattern.slice(0, -2)}:.*$`)
+        : new RegExp(`^${pattern}$`);
+
+      const matchingKeys = keys.filter(key => patternRegex.test(key));
+      
+      if (matchingKeys.length > 0) {
+        this.logger.debug(`Found ${matchingKeys.length} keys matching pattern ${pattern} for assessment cache`);
+        await Promise.all(matchingKeys.map(key => this.delAssessmentCache(key)));
+      }
+    } catch (error) {
+      this.logger.error(`Error deleting assessment cache by pattern ${pattern}: ${error.message}`);
+    }
+  }
 } 

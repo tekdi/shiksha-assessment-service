@@ -26,6 +26,8 @@ import { TestRule } from './entities/test-rule.entity';
 import { ResultType } from './entities/test-attempt.entity';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { CacheService } from '../cache/cache.service';
+import { CacheConfigService } from '../cache/cache-config.service';
 
 @Injectable()
 export class TestsService {
@@ -54,6 +56,8 @@ export class TestsService {
     private readonly dataSource: DataSource,
     private readonly orderingService: OrderingService,
     private readonly configService: ConfigService,
+    private readonly cacheService: CacheService,
+    private readonly cacheConfig: CacheConfigService,
   ) {}
 
   /**
@@ -334,8 +338,8 @@ export class TestsService {
 
     const savedTest = await this.testRepository.save(test);
     
-    // Invalidate cache
-    await this.invalidateTestCache(authContext.tenantId);
+    // Invalidate cache for this test hierarchy (if it exists)
+    await this.invalidateTestHierarchyCache(savedTest.testId, authContext.tenantId, authContext.organisationId);
     
     return savedTest;
   }
@@ -433,8 +437,8 @@ export class TestsService {
 
     const updatedTest = await this.testRepository.save(test);
     
-    // Invalidate cache
-    await this.invalidateTestCache(authContext.tenantId);
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(id, authContext.tenantId, authContext.organisationId);
     
     return updatedTest;
   }
@@ -471,8 +475,8 @@ export class TestsService {
       );
     }
     
-    // Invalidate cache
-    await this.invalidateTestCache(authContext.tenantId);
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(id, authContext.tenantId, authContext.organisationId);
   }
 
   /**
@@ -498,6 +502,51 @@ export class TestsService {
   // Learner view
 
   async getTestHierarchy(id: string, showCorrectOptions: boolean, authContext: AuthContext) {
+    // Check if assessment cache is enabled
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      // Cache disabled - fetch directly from database
+      this.logger.debug(`Assessment cache disabled, fetching test hierarchy from DB: ${id}`);
+      
+      // Fetch common test hierarchy data
+      const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, questionOrderingMap } = await this.fetchTestHierarchyData(id, authContext);
+
+      // Transform and attach questions using learner transformation method
+      await this.transformAndAttachQuestions(
+        test,
+        questionsMap,
+        childQuestionsByParent,
+        showCorrectOptions,
+        authContext,
+        this.transformQuestionWithConditionals.bind(this),
+        isCompulsoryMap,
+        questionOrderingMap
+      );
+
+      return test;
+    }
+
+    // Generate cache key
+    const cacheKey = this.cacheConfig.getTestHierarchyKey(
+      id,
+      authContext.tenantId,
+      authContext.organisationId,
+    );
+
+    // Try to get from cache first
+    try {
+      const cachedResult = await this.cacheService.getAssessmentCache<any>(cacheKey);
+      if (cachedResult) {
+        this.logger.debug(`Cache HIT for test hierarchy: ${id}`);
+        return cachedResult;
+      }
+    } catch (error) {
+      // Log cache error but continue to fetch from DB
+      this.logger.warn(`Cache read error for test hierarchy ${id}: ${error.message}`);
+    }
+
+    // Cache miss - fetch from database
+    this.logger.debug(`Cache MISS for test hierarchy: ${id}`);
+
     // Fetch common test hierarchy data
     const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, questionOrderingMap } = await this.fetchTestHierarchyData(id, authContext);
 
@@ -512,6 +561,20 @@ export class TestsService {
       isCompulsoryMap,
       questionOrderingMap
     );
+
+    // Cache the result (best-effort, non-blocking)
+    try {
+      await this.cacheService.setAssessmentCache(
+        cacheKey,
+        test,
+        this.cacheConfig.TEST_HIERARCHY_TTL,
+      );
+      this.logger.debug(`Cached test hierarchy: ${id}`);
+    } catch (error) {
+      // Log cache write failure but don't break the request
+      // Cache is an optimization - API should work even if Redis is down
+      this.logger.warn(`Failed to cache test hierarchy ${id}: ${error.message}`);
+    }
 
     return test;
   }
@@ -936,7 +999,8 @@ export class TestsService {
 
     await this.testRepository.update(testId, { isObjective });
 
-    
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(testId, authContext.tenantId, authContext.organisationId);
   }
 
   async addQuestionsBulkToTest(testId: string, sectionId: string, questions: Array<{ questionId: string; ordering?: number; isCompulsory?: boolean }>, authContext: AuthContext): Promise<{ added: number; skipped: number; errors: string[] }> {
@@ -1052,18 +1116,90 @@ export class TestsService {
 
     await this.testRepository.update(testId, { isObjective });
 
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(testId, authContext.tenantId, authContext.organisationId);
+
     return result;
   }
 
   private async invalidateTestCache(tenantId: string): Promise<void> {
-    // For now, we'll use a simple approach to invalidate cache
-    // In a production environment, you might want to use Redis SCAN or similar
+    // Invalidate test hierarchy cache for all tests in this tenant
+    // Use pattern matching to invalidate all hierarchy caches
     try {
-      // Set a cache invalidation timestamp that can be checked
-      await this.cacheManager.set(`test_cache_invalidated:${tenantId}`, Date.now(), 86400);
+      const pattern = `${this.cacheConfig.TEST_HIERARCHY_PREFIX}*:${tenantId}:*`;
+      await this.cacheService.delAssessmentCacheByPattern(pattern);
+      this.logger.debug(`Invalidated test hierarchy cache for tenant: ${tenantId}`);
     } catch (error) {
       // Log error but don't fail the operation
-      console.warn('Failed to invalidate test cache:', error);
+      this.logger.warn(`Failed to invalidate test cache for tenant ${tenantId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Invalidate cache for a specific test hierarchy
+   * @param testId - The test ID
+   * @param tenantId - The tenant ID
+   * @param organisationId - The organisation ID
+   */
+  public async invalidateTestHierarchyCache(
+    testId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    // Only invalidate if assessment cache is enabled
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      return;
+    }
+
+    try {
+      const cacheKey = this.cacheConfig.getTestHierarchyKey(testId, tenantId, organisationId);
+      await this.cacheService.delAssessmentCache(cacheKey);
+      this.logger.debug(`Invalidated test hierarchy cache for test: ${testId}`);
+    } catch (error) {
+      // Log error but don't fail the operation
+      this.logger.warn(`Failed to invalidate test hierarchy cache for test ${testId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Invalidate cache for all tests that use a specific question
+   * @param questionId - The question ID
+   * @param tenantId - The tenant ID
+   * @param organisationId - The organisation ID
+   */
+  public async invalidateTestHierarchyCacheForQuestion(
+    questionId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    // Only invalidate if assessment cache is enabled
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      return;
+    }
+
+    try {
+      // Find all tests that use this question
+      const testQuestions = await this.testQuestionRepository.find({
+        where: {
+          questionId,
+          tenantId,
+          organisationId,
+        },
+        select: ['testId'],
+      });
+
+      // Get unique test IDs
+      const testIds = [...new Set(testQuestions.map(tq => tq.testId))];
+
+      // Invalidate cache for each test
+      for (const testId of testIds) {
+        await this.invalidateTestHierarchyCache(testId, tenantId, organisationId);
+      }
+
+      this.logger.debug(`Invalidated test hierarchy cache for ${testIds.length} tests using question: ${questionId}`);
+    } catch (error) {
+      // Log error but don't fail the operation
+      this.logger.warn(`Failed to invalidate test hierarchy cache for question ${questionId}: ${error.message}`);
     }
   }
 
@@ -1559,8 +1695,8 @@ export class TestsService {
       // Commit transaction
       await queryRunner.commitTransaction();
 
-      // Invalidate cache
-      await this.invalidateTestCache(authContext.tenantId);
+      // Invalidate cache for this test hierarchy
+      await this.invalidateTestHierarchyCache(testId, authContext.tenantId, authContext.organisationId);
 
     } catch (error) {
       // Rollback transaction on error
@@ -1953,8 +2089,8 @@ export class TestsService {
       // Commit transaction
       await queryRunner.commitTransaction();
 
-      // Invalidate cache
-      await this.invalidateTestCache(authContext.tenantId);
+      // Invalidate cache for the cloned test hierarchy (if it exists)
+      await this.invalidateTestHierarchyCache(savedClonedTest.testId, authContext.tenantId, authContext.organisationId);
 
       return savedClonedTest.testId;
 
@@ -2000,8 +2136,8 @@ export class TestsService {
     // Remove the question from the test
     await this.testQuestionRepository.remove(testQuestion);
     
-    // Invalidate cache
-    await this.invalidateTestCache(authContext.tenantId);
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(testId, authContext.tenantId, authContext.organisationId);
   }
 
   /**

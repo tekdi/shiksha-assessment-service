@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TestSection } from './entities/test-section.entity';
@@ -11,9 +11,13 @@ import { TestRule } from './entities/test-rule.entity';
 import { OrderingService } from '@/common/services/ordering.service';
 import { TestAttempt } from './entities/test-attempt.entity';
 import { TestQuestion } from './entities/test-question.entity';
+import { CacheService } from '../cache/cache.service';
+import { CacheConfigService } from '../cache/cache-config.service';
 
 @Injectable()
 export class SectionsService {
+  private readonly logger = new Logger(SectionsService.name);
+
   constructor(
     @InjectRepository(TestSection)
     private readonly sectionRepository: Repository<TestSection>,
@@ -26,6 +30,8 @@ export class SectionsService {
     @InjectRepository(TestQuestion)
     private readonly testQuestionRepository: Repository<TestQuestion>,
     private readonly orderingService: OrderingService,
+    private readonly cacheService: CacheService,
+    private readonly cacheConfig: CacheConfigService,
   ) {}
 
   async create(createSectionDto: CreateSectionDto, authContext: AuthContext): Promise<TestSection> {
@@ -45,7 +51,12 @@ export class SectionsService {
       organisationId: authContext.organisationId,
       createdBy: authContext.userId,
     });
-    return this.sectionRepository.save(section);
+    const savedSection = await this.sectionRepository.save(section);
+
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(createSectionDto.testId, authContext.tenantId, authContext.organisationId);
+
+    return savedSection;
   }
 
   async findAll(authContext: AuthContext): Promise<TestSection[]> {
@@ -89,7 +100,12 @@ export class SectionsService {
   async update(id: string, updateSectionDto: UpdateSectionDto, authContext: AuthContext): Promise<TestSection> {
     const section = await this.findOne(id, authContext);
     Object.assign(section, updateSectionDto);
-    return this.sectionRepository.save(section);
+    const updatedSection = await this.sectionRepository.save(section);
+
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(section.testId, authContext.tenantId, authContext.organisationId);
+
+    return updatedSection;
   }
 
   async remove(id: string, authContext: AuthContext, isHardDelete: boolean = false): Promise<void> {
@@ -105,6 +121,8 @@ export class SectionsService {
       organisationId: authContext.organisationId,
     });
 
+    const testId = section.testId;
+
     if (isHardDelete) {
       // Then remove the section
       await this.sectionRepository.remove(section);
@@ -112,6 +130,9 @@ export class SectionsService {
       // Soft delete: Archive the section
       await this.sectionRepository.update(id, { status: TestStatus.ARCHIVED });
     }
+
+    // Invalidate cache for this test hierarchy
+    await this.invalidateTestHierarchyCache(testId, authContext.tenantId, authContext.organisationId);
   }
 
   /**
@@ -175,5 +196,30 @@ export class SectionsService {
     }
   }
 
+  /**
+   * Invalidate cache for a specific test hierarchy
+   * @param testId - The test ID
+   * @param tenantId - The tenant ID
+   * @param organisationId - The organisation ID
+   */
+  private async invalidateTestHierarchyCache(
+    testId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    // Only invalidate if assessment cache is enabled
+    if (!this.cacheConfig.assessmentCacheEnabled) {
+      return;
+    }
+
+    try {
+      const cacheKey = this.cacheConfig.getTestHierarchyKey(testId, tenantId, organisationId);
+      await this.cacheService.delAssessmentCache(cacheKey);
+      this.logger.debug(`Invalidated test hierarchy cache for test: ${testId}`);
+    } catch (error) {
+      // Log error but don't fail the operation
+      this.logger.warn(`Failed to invalidate test hierarchy cache for test ${testId}: ${error.message}`);
+    }
+  }
 
 } 
