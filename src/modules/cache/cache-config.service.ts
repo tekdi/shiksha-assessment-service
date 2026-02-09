@@ -7,14 +7,14 @@ export class CacheConfigService {
   readonly CONFIG_PREFIX = 'tenant_config:';
   readonly TEST_HIERARCHY_PREFIX = 'test_hierarchy:';
 
-  // Default TTL values (in seconds)
-  TEST_HIERARCHY_TTL = 300; // 5 minutes
+  // TTL values (in seconds) - read from environment
+  readonly TEST_HIERARCHY_TTL: number;
 
   // Assessment cache enabled flag
   readonly assessmentCacheEnabled: boolean;
 
   constructor(private configService: ConfigService) {
-    // Override TTLs from config if available
+    // Read TTL from environment, default to 300 seconds (5 minutes) if not set
     this.TEST_HIERARCHY_TTL = parseInt(
       this.configService.get('CACHE_TEST_HIERARCHY_TTL') || '300',
       10,
