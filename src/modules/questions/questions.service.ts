@@ -210,8 +210,24 @@ export class QuestionsService {
       }      
       
       await queryRunner.commitTransaction();
-      // Invalidate cache
+      
+      // Invalidate old question cache (don't change)
       await this.invalidateQuestionCache(authContext.tenantId);
+      
+      // If question was added to a test, invalidate test hierarchy cache for that specific test
+      if (testId && sectionId) {
+        try {
+          await this.testsService.invalidateTestHierarchyCache(
+            testId,
+            authContext.tenantId,
+            authContext.organisationId,
+          );
+        } catch (error) {
+          // Log error but don't fail the operation
+          console.warn(`Failed to invalidate test hierarchy cache for test ${testId}:`, error);
+        }
+      }
+      
       // Return the created question (with options)
       return this.findOne(savedQuestion.questionId, authContext);
     } catch (error) {

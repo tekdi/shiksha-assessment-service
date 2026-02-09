@@ -1141,7 +1141,7 @@ export class TestsService {
    * @param tenantId - The tenant ID
    * @param organisationId - The organisation ID
    */
-  private async invalidateTestHierarchyCache(
+  public async invalidateTestHierarchyCache(
     testId: string,
     tenantId: string,
     organisationId: string,
