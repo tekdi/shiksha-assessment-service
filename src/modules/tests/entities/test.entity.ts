@@ -29,7 +29,7 @@ export enum TestStatus {
 export enum GradingType {
   QUIZ = 'quiz',
   ASSESSMENT = 'assessment',
-  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SECIFIC - ASPRE_LEADER
+  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SPECIFIC - ASPRE_LEADER
   FEEDBACK = 'feedback',
 }
 export enum AttemptsGradeMethod {
@@ -189,6 +189,10 @@ export class Test {
   @Column({ type: 'timestamp with time zone', nullable: true })
   checkedOutTime: Date;
 
+  @ApiProperty({ required: false, description: 'JSON metadata e.g. { isPathway, pathway_eventId } for pathway vs LMS test differentiation' })
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
+
   @ApiProperty()
   @Column({ type: 'uuid' })
   createdBy: string;
@@ -223,4 +227,4 @@ export class Test {
   get id(): string {
     return this.testId;
   }
-} 
+}

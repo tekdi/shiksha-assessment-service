@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, IsInt } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsEnum, IsNumber, IsBoolean, IsUUID } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
 
@@ -38,6 +38,17 @@ export class QueryTestDto extends PaginationDto {
   @IsNumber()
   maxMarks?: number;
 
+  @ApiPropertyOptional({ description: 'Filter by pathway tests (metadata.isPathway = true)' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  isPathway?: boolean;
+
+  @ApiPropertyOptional({ description: 'Filter by pathway event UUID (metadata.pathway_eventId)' })
+  @IsOptional()
+  @IsUUID()
+  pathway_eventId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -48,4 +59,4 @@ export class QueryTestDto extends PaginationDto {
   @IsEnum(SortOrder)
   declare sortOrder?: SortOrder;
   
-} 
+}

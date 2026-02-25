@@ -329,11 +329,13 @@ export class TestsService {
       }
     }
 
+    const { metadata: meta, ...restDto } = createTestDto;
     const test = this.testRepository.create({
-      ...createTestDto,
+      ...restDto,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
       createdBy: authContext.userId,
+      ...(meta && { metadata: { ...meta } as Record<string, unknown> }),
     });
 
     const savedTest = await this.testRepository.save(test);
@@ -352,7 +354,7 @@ export class TestsService {
       return cached;
     }
 
-    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, isPathway, pathway_eventId, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
 
     const queryBuilder = this.testRepository
       .createQueryBuilder('test')
@@ -385,6 +387,14 @@ export class TestsService {
         queryBuilder.andWhere('test.totalMarks <= :maxMarks', { maxMarks });
       }
     }
+
+    if (isPathway === true) {
+      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'isPathway' = :isPathwayVal", { isPathwayVal: 'true' });
+    }
+    if (pathway_eventId) {
+      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'pathway_eventId' = :pathway_eventId", { pathway_eventId });
+    }
+
 
     const total = await queryBuilder.getCount();
 

@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, IsNotEmpty, Validate } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, IsNotEmpty, Validate, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
 import { ValidateDatetimeConstraints } from '@/common/utils/helper.util';
+import { TestMetadataDto } from './test-metadata.dto';
 
 
 export class CreateTestDto {
@@ -173,4 +175,10 @@ export class CreateTestDto {
   @IsOptional()
   @IsDateString()
   checkedOutTime?: string;
-} 
+
+  @ApiPropertyOptional({ description: 'Metadata for pathway vs LMS differentiation (e.g. isPathway, pathway_eventId)' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TestMetadataDto)
+  metadata?: TestMetadataDto;
+}
