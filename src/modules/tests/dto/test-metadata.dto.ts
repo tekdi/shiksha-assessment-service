@@ -1,18 +1,24 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsArray, IsUUID } from 'class-validator';
 
 /**
  * Metadata for pathway vs LMS test differentiation.
- * Used in test create/update and list filter.
+ * context (PATHWAY), subType (EVENT), Ids (event IDs).
  */
 export class TestMetadataDto {
-  @ApiPropertyOptional({ description: 'Whether this test is linked to a pathway (vs LMS)' })
+  @ApiPropertyOptional({ description: 'Context e.g. PATHWAY', example: 'PATHWAY' })
   @IsOptional()
-  @IsBoolean()
-  isPathway?: boolean;
+  @IsString()
+  context?: string;
 
-  @ApiPropertyOptional({ description: 'Pathway event UUID when isPathway is true' })
+  @ApiPropertyOptional({ description: 'SubType e.g. EVENT', example: 'EVENT' })
   @IsOptional()
-  @IsUUID()
-  pathway_eventId?: string;
+  @IsString()
+  subType?: string;
+
+  @ApiPropertyOptional({ description: 'Array of IDs e.g. event UUIDs', type: [String], example: ['9a9e0daa-50dd-4d0e-8d10-36e7bc808f88'] })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  Ids?: string[];
 }

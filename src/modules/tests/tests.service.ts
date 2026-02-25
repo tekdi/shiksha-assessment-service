@@ -354,7 +354,7 @@ export class TestsService {
       return cached;
     }
 
-    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, isPathway, pathway_eventId, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, context, subType, Ids, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
 
     const queryBuilder = this.testRepository
       .createQueryBuilder('test')
@@ -388,13 +388,15 @@ export class TestsService {
       }
     }
 
-    if (isPathway === true) {
-      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'isPathway' = :isPathwayVal", { isPathwayVal: 'true' });
+    if (context) {
+      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'context' = :context", { context });
     }
-    if (pathway_eventId) {
-      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'pathway_eventId' = :pathway_eventId", { pathway_eventId });
+    if (subType) {
+      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'subType' = :subType", { subType });
     }
-
+    if (Ids?.length) {
+      queryBuilder.andWhere("test.metadata IS NOT NULL AND (test.metadata->'Ids') && :idsJson::jsonb", { idsJson: JSON.stringify(Ids) });
+    }
 
     const total = await queryBuilder.getCount();
 
@@ -440,9 +442,11 @@ export class TestsService {
   async update(id: string, updateTestDto: UpdateTestDto, authContext: AuthContext): Promise<Test> {
     const test = await this.findOne(id, authContext);
 
+    const { metadata: meta, ...rest } = updateTestDto;
     Object.assign(test, {
-      ...updateTestDto,
+      ...rest,
       updatedBy: authContext.userId,
+      ...(meta !== undefined && { metadata: { ...meta } as Record<string, unknown> }),
     });
 
     const updatedTest = await this.testRepository.save(test);
