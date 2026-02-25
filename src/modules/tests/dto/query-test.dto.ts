@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, IsInt } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsEnum, IsNumber, IsArray } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
 
@@ -10,7 +10,7 @@ export enum SortOrder {
 }
 
 export class QueryTestDto extends PaginationDto {
-  
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -38,6 +38,20 @@ export class QueryTestDto extends PaginationDto {
   @IsNumber()
   maxMarks?: number;
 
+  /** Filter by contextType (e.g. PATHWAY, EVENT) */
+  @ApiPropertyOptional({ description: 'Filter by contextType e.g. PATHWAY, EVENT' })
+  @IsOptional()
+  @IsString()
+  contextType?: string;
+
+  /** Filter by contextId - comma-separated UUIDs */
+  @ApiPropertyOptional({ description: 'Filter by contextId (comma-separated UUIDs)' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : value))
+  @IsArray()
+  @IsString({ each: true })
+  contextId?: string[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -47,5 +61,4 @@ export class QueryTestDto extends PaginationDto {
   @IsOptional()
   @IsEnum(SortOrder)
   declare sortOrder?: SortOrder;
-  
-} 
+}

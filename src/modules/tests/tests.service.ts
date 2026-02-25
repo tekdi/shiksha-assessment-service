@@ -352,7 +352,7 @@ export class TestsService {
       return cached;
     }
 
-    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
 
     const queryBuilder = this.testRepository
       .createQueryBuilder('test')
@@ -383,6 +383,18 @@ export class TestsService {
         queryBuilder.andWhere('test.totalMarks >= :minMarks', { minMarks });
       } else if (maxMarks !== undefined) {
         queryBuilder.andWhere('test.totalMarks <= :maxMarks', { maxMarks });
+      }
+    }
+
+    // Context filters: use indexed columns contextType, contextId.
+    // 1) contextType only → pathway-only (contextType=PATHWAY, contextId IS NULL).  2) contextType + contextId → pathway/event test.  3) contextId only → by id.
+    if (contextType || contextId?.length) {
+      if (contextType && !contextId?.length) {
+        queryBuilder.andWhere('test.contextType = :contextType AND test.contextId IS NULL', { contextType });
+      } else if (contextType && contextId?.length) {
+        queryBuilder.andWhere('test.contextType = :contextType AND test.contextId IN (:...contextIds)', { contextType, contextIds: contextId });
+      } else {
+        queryBuilder.andWhere('test.contextId IN (:...contextIds)', { contextIds: contextId });
       }
     }
 

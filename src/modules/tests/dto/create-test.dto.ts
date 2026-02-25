@@ -3,7 +3,6 @@ import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString
 import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
 import { ValidateDatetimeConstraints } from '@/common/utils/helper.util';
 
-
 export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -173,4 +172,14 @@ export class CreateTestDto {
   @IsOptional()
   @IsDateString()
   checkedOutTime?: string;
-} 
+
+  @ApiPropertyOptional({ description: 'Context type e.g. PATHWAY, EVENT' })
+  @IsOptional()
+  @IsString()
+  contextType?: string;
+
+  @ApiPropertyOptional({ description: 'Context id (pathway or event UUID)' })
+  @IsOptional()
+  @IsUUID()
+  contextId?: string;
+}
