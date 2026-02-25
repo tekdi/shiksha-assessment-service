@@ -38,14 +38,14 @@ export class QueryTestDto extends PaginationDto {
   @IsNumber()
   maxMarks?: number;
 
-  /** Filter by metadata.context.type (e.g. PATHWAY, EVENT) - uses JSONB index-friendly path */
-  @ApiPropertyOptional({ description: 'Filter by metadata.context.type e.g. PATHWAY, EVENT' })
+  /** Filter by contextType (e.g. PATHWAY, EVENT) */
+  @ApiPropertyOptional({ description: 'Filter by contextType e.g. PATHWAY, EVENT' })
   @IsOptional()
   @IsString()
   contextType?: string;
 
-  /** Filter by metadata.context.id - comma-separated; matches string id or id in array */
-  @ApiPropertyOptional({ description: 'Filter by metadata.context.id (comma-separated)', example: 'EVT_501' })
+  /** Filter by contextId - comma-separated UUIDs */
+  @ApiPropertyOptional({ description: 'Filter by contextId (comma-separated UUIDs)' })
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : value))
   @IsArray()

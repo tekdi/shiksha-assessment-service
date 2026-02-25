@@ -7,6 +7,7 @@ import {
   OneToMany,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { TestSection } from './test-section.entity';
@@ -41,6 +42,7 @@ export enum AttemptsGradeMethod {
 
 
 @Entity('tests')
+@Index('idx_test_context', ['contextType', 'contextId'])
 export class Test {
   @ApiProperty()
   @PrimaryGeneratedColumn('uuid')
@@ -189,9 +191,13 @@ export class Test {
   @Column({ type: 'timestamp with time zone', nullable: true })
   checkedOutTime: Date;
 
-  @ApiProperty({ required: false, description: 'JSON metadata e.g. { isPathway, pathway_eventId } for pathway vs LMS test differentiation' })
-  @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, unknown> | null;
+  @ApiProperty({ required: false, description: 'Context type e.g. PATHWAY, EVENT' })
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  contextType: string | null;
+
+  @ApiProperty({ required: false, description: 'Context id (pathway or event UUID)' })
+  @Column({ type: 'uuid', nullable: true })
+  contextId: string | null;
 
   @ApiProperty()
   @Column({ type: 'uuid' })

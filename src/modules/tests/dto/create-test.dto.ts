@@ -1,10 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, IsNotEmpty, Validate, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, IsNotEmpty, Validate } from 'class-validator';
 import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
 import { ValidateDatetimeConstraints } from '@/common/utils/helper.util';
-import { TestMetadataDto } from './test-metadata.dto';
 
+/** UUID string (e.g. pathway or event id) */
+export type UUID = string;
 
 export class CreateTestDto {
   @ApiPropertyOptional()
@@ -176,9 +176,13 @@ export class CreateTestDto {
   @IsDateString()
   checkedOutTime?: string;
 
-  @ApiPropertyOptional({ description: 'Metadata for pathway vs LMS differentiation (e.g. isPathway, pathway_eventId)' })
+  @ApiPropertyOptional({ description: 'Context type e.g. PATHWAY, EVENT' })
   @IsOptional()
-  @ValidateNested()
-  @Type(() => TestMetadataDto)
-  metadata?: TestMetadataDto;
+  @IsString()
+  contextType?: string;
+
+  @ApiPropertyOptional({ description: 'Context id (pathway or event UUID)' })
+  @IsOptional()
+  @IsUUID()
+  contextId?: UUID;
 }

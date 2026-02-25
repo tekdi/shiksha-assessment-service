@@ -329,13 +329,11 @@ export class TestsService {
       }
     }
 
-    const { metadata: meta, ...restDto } = createTestDto;
     const test = this.testRepository.create({
-      ...restDto,
+      ...createTestDto,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
       createdBy: authContext.userId,
-      ...(meta && { metadata: { ...meta } as Record<string, unknown> }),
     });
 
     const savedTest = await this.testRepository.save(test);
@@ -388,66 +386,16 @@ export class TestsService {
       }
     }
 
-    // Metadata filters: single AND block. No N+1 (one query).
-    // 1) contextType only → match type and no id (6-month / pathway-only: { type: "PATHWAY" }).
-    // 2) contextType + contextId → match type and id (pathway test or event test).
-    // 3) contextId only → match id in any context (optional).
+    // Context filters: use indexed columns contextType, contextId.
+    // 1) contextType only → pathway-only (contextType=PATHWAY, contextId IS NULL).  2) contextType + contextId → pathway/event test.  3) contextId only → by id.
     if (contextType || contextId?.length) {
-      let typeCondition: string;
-      let idCondition: string;
-
       if (contextType && !contextId?.length) {
-        // Only type: return tests that have context with this type and NO id (6-month / pathway-only).
-        typeCondition = `(
-          (test.metadata->'context'->>'type' = :contextType AND test.metadata->'context'->'id' IS NULL)
-          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
-            WHERE ctx->>'type' = :contextType AND ctx->'id' IS NULL
-          ))
-        )`;
-        idCondition = 'TRUE';
+        queryBuilder.andWhere('test.contextType = :contextType AND test.contextId IS NULL', { contextType });
       } else if (contextType && contextId?.length) {
-        // Type + id: return tests that have context with this type AND matching id (pathway test or event test).
-        typeCondition = `(
-          test.metadata->'context'->>'type' = :contextType
-          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx WHERE ctx->>'type' = :contextType
-          ))
-        )`;
-        idCondition = `(
-          (test.metadata->'context'->>'id') IN (:...contextIds)
-          OR (jsonb_typeof(test.metadata->'context'->'id') = 'array' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(test.metadata->'context'->'id') AS id_elem WHERE id_elem IN (:...contextIds)
-          ))
-          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
-            WHERE (ctx->>'id') IN (:...contextIds)
-               OR (jsonb_typeof(ctx->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(ctx->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
-          ))
-        )`;
+        queryBuilder.andWhere('test.contextType = :contextType AND test.contextId IN (:...contextIds)', { contextType, contextIds: contextId });
       } else {
-        // contextId only (no contextType): match any context with this id.
-        typeCondition = 'TRUE';
-        idCondition = `(
-          (test.metadata->'context'->>'id') IN (:...contextIds)
-          OR (jsonb_typeof(test.metadata->'context'->'id') = 'array' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(test.metadata->'context'->'id') AS id_elem WHERE id_elem IN (:...contextIds)
-          ))
-          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
-            WHERE (ctx->>'id') IN (:...contextIds)
-               OR (jsonb_typeof(ctx->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(ctx->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
-          ))
-        )`;
+        queryBuilder.andWhere('test.contextId IN (:...contextIds)', { contextIds: contextId });
       }
-
-      const params: Record<string, unknown> = {};
-      if (contextType) params.contextType = contextType;
-      if (contextId?.length) params.contextIds = contextId;
-      queryBuilder.andWhere(
-        `test.metadata IS NOT NULL AND test.metadata->'context' IS NOT NULL AND (${typeCondition} AND ${idCondition})`,
-        params,
-      );
     }
 
     const total = await queryBuilder.getCount();
@@ -494,11 +442,9 @@ export class TestsService {
   async update(id: string, updateTestDto: UpdateTestDto, authContext: AuthContext): Promise<Test> {
     const test = await this.findOne(id, authContext);
 
-    const { metadata: meta, ...rest } = updateTestDto;
     Object.assign(test, {
-      ...rest,
+      ...updateTestDto,
       updatedBy: authContext.userId,
-      ...(meta !== undefined && { metadata: { ...meta } as Record<string, unknown> }),
     });
 
     const updatedTest = await this.testRepository.save(test);
