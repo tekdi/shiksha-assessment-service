@@ -3,9 +3,6 @@ import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString
 import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
 import { ValidateDatetimeConstraints } from '@/common/utils/helper.util';
 
-/** UUID string (e.g. pathway or event id) */
-export type UUID = string;
-
 export class CreateTestDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -184,5 +181,5 @@ export class CreateTestDto {
   @ApiPropertyOptional({ description: 'Context id (pathway or event UUID)' })
   @IsOptional()
   @IsUUID()
-  contextId?: UUID;
+  contextId?: string;
 }
