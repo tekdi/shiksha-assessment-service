@@ -388,22 +388,59 @@ export class TestsService {
       }
     }
 
-    // Metadata filters: single AND block to avoid duplicate checks and help planner. No N+1 (one query).
-    // Optional indexes for large tables: (metadata->'context'->>'type'); or GIN (metadata jsonb_path_ops).
+    // Metadata filters: single AND block. No N+1 (one query).
+    // 1) contextType only → match type and no id (6-month / pathway-only: { type: "PATHWAY" }).
+    // 2) contextType + contextId → match type and id (pathway test or event test).
+    // 3) contextId only → match id in any context (optional).
     if (contextType || contextId?.length) {
-      const typeCondition = contextType
-        ? `(test.metadata->'context'->>'type' = :contextType OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx WHERE ctx->>'type' = :contextType)))`
-        : 'TRUE';
-      const idCondition =
-        contextId?.length
-          ? `((test.metadata->'context'->>'id') IN (:...contextIds)
-             OR (jsonb_typeof(test.metadata->'context'->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(test.metadata->'context'->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
-             OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
-               WHERE (ctx->>'id') IN (:...contextIds)
-                  OR (jsonb_typeof(ctx->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(ctx->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
-             )))`
-          : 'TRUE';
+      let typeCondition: string;
+      let idCondition: string;
+
+      if (contextType && !contextId?.length) {
+        // Only type: return tests that have context with this type and NO id (6-month / pathway-only).
+        typeCondition = `(
+          (test.metadata->'context'->>'type' = :contextType AND test.metadata->'context'->'id' IS NULL)
+          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
+            WHERE ctx->>'type' = :contextType AND ctx->'id' IS NULL
+          ))
+        )`;
+        idCondition = 'TRUE';
+      } else if (contextType && contextId?.length) {
+        // Type + id: return tests that have context with this type AND matching id (pathway test or event test).
+        typeCondition = `(
+          test.metadata->'context'->>'type' = :contextType
+          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx WHERE ctx->>'type' = :contextType
+          ))
+        )`;
+        idCondition = `(
+          (test.metadata->'context'->>'id') IN (:...contextIds)
+          OR (jsonb_typeof(test.metadata->'context'->'id') = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(test.metadata->'context'->'id') AS id_elem WHERE id_elem IN (:...contextIds)
+          ))
+          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
+            WHERE (ctx->>'id') IN (:...contextIds)
+               OR (jsonb_typeof(ctx->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(ctx->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
+          ))
+        )`;
+      } else {
+        // contextId only (no contextType): match any context with this id.
+        typeCondition = 'TRUE';
+        idCondition = `(
+          (test.metadata->'context'->>'id') IN (:...contextIds)
+          OR (jsonb_typeof(test.metadata->'context'->'id') = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(test.metadata->'context'->'id') AS id_elem WHERE id_elem IN (:...contextIds)
+          ))
+          OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
+            WHERE (ctx->>'id') IN (:...contextIds)
+               OR (jsonb_typeof(ctx->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(ctx->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
+          ))
+        )`;
+      }
+
       const params: Record<string, unknown> = {};
       if (contextType) params.contextType = contextType;
       if (contextId?.length) params.contextIds = contextId;
