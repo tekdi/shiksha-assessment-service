@@ -1,24 +1,34 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsArray, IsUUID } from 'class-validator';
+import { IsOptional, ValidateNested, ValidateIf, IsArray } from 'class-validator';
+import { Type } from 'class-transformer';
+import { TestContextDto } from './test-context.dto';
 
 /**
  * Metadata for pathway vs LMS test differentiation.
- * context (PATHWAY), subType (EVENT), Ids (event IDs).
+ * context: single object { type, id? } OR array of contexts (e.g. both PATHWAY and EVENT).
  */
 export class TestMetadataDto {
-  @ApiPropertyOptional({ description: 'Context e.g. PATHWAY', example: 'PATHWAY' })
+  @ApiPropertyOptional({
+    description: 'Single context or array of contexts (e.g. PATHWAY + EVENT)',
+    oneOf: [
+      { $ref: '#/components/schemas/TestContextDto' },
+      { type: 'array', items: { $ref: '#/components/schemas/TestContextDto' } },
+    ],
+    examples: [
+      { type: 'PATHWAY' },
+      [
+        { type: 'PATHWAY', id: ['d770cae8-8bc4-4f0b-ac4b-b30ff55f4cff'] },
+        { type: 'EVENT', id: ['844a3433-0ec0-4bf1-9ac5-f5010f55a054'] },
+      ],
+    ],
+  })
   @IsOptional()
-  @IsString()
-  context?: string;
-
-  @ApiPropertyOptional({ description: 'SubType e.g. EVENT', example: 'EVENT' })
-  @IsOptional()
-  @IsString()
-  subType?: string;
-
-  @ApiPropertyOptional({ description: 'Array of IDs e.g. event UUIDs', type: [String], example: ['9a9e0daa-50dd-4d0e-8d10-36e7bc808f88'] })
-  @IsOptional()
+  @ValidateIf((o) => o.context !== undefined && o.context !== null && !Array.isArray(o.context))
+  @ValidateNested()
+  @Type(() => TestContextDto)
+  @ValidateIf((o) => o.context !== undefined && o.context !== null && Array.isArray(o.context))
   @IsArray()
-  @IsUUID('4', { each: true })
-  Ids?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => TestContextDto)
+  context?: TestContextDto | TestContextDto[];
 }

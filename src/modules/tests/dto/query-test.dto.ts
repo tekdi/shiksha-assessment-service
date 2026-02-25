@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, IsArray, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsNumber, IsArray } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
@@ -38,22 +38,19 @@ export class QueryTestDto extends PaginationDto {
   @IsNumber()
   maxMarks?: number;
 
-  @ApiPropertyOptional({ description: 'Filter by metadata context e.g. PATHWAY' })
+  /** Filter by metadata.context.type (e.g. PATHWAY, EVENT) - uses JSONB index-friendly path */
+  @ApiPropertyOptional({ description: 'Filter by metadata.context.type e.g. PATHWAY, EVENT' })
   @IsOptional()
   @IsString()
-  context?: string;
+  contextType?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by metadata subType e.g. EVENT' })
-  @IsOptional()
-  @IsString()
-  subType?: string;
-
-  @ApiPropertyOptional({ description: 'Filter tests whose metadata.Ids contains any of these IDs (comma-separated)', example: '9a9e0daa-50dd-4d0e-8d10-36e7bc808f88' })
+  /** Filter by metadata.context.id - comma-separated; matches string id or id in array */
+  @ApiPropertyOptional({ description: 'Filter by metadata.context.id (comma-separated)', example: 'EVT_501' })
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : value))
   @IsArray()
-  @IsUUID('4', { each: true })
-  Ids?: string[];
+  @IsString({ each: true })
+  contextId?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

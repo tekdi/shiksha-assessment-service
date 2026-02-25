@@ -354,7 +354,7 @@ export class TestsService {
       return cached;
     }
 
-    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, context, subType, Ids, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
 
     const queryBuilder = this.testRepository
       .createQueryBuilder('test')
@@ -388,14 +388,29 @@ export class TestsService {
       }
     }
 
-    if (context) {
-      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'context' = :context", { context });
-    }
-    if (subType) {
-      queryBuilder.andWhere("test.metadata IS NOT NULL AND test.metadata->>'subType' = :subType", { subType });
-    }
-    if (Ids?.length) {
-      queryBuilder.andWhere("test.metadata IS NOT NULL AND (test.metadata->'Ids') && :idsJson::jsonb", { idsJson: JSON.stringify(Ids) });
+    // Metadata filters: single AND block to avoid duplicate checks and help planner. No N+1 (one query).
+    // Optional indexes for large tables: (metadata->'context'->>'type'); or GIN (metadata jsonb_path_ops).
+    if (contextType || contextId?.length) {
+      const typeCondition = contextType
+        ? `(test.metadata->'context'->>'type' = :contextType OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx WHERE ctx->>'type' = :contextType)))`
+        : 'TRUE';
+      const idCondition =
+        contextId?.length
+          ? `((test.metadata->'context'->>'id') IN (:...contextIds)
+             OR (jsonb_typeof(test.metadata->'context'->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(test.metadata->'context'->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
+             OR (jsonb_typeof(test.metadata->'context') = 'array' AND EXISTS (
+               SELECT 1 FROM jsonb_array_elements(test.metadata->'context') AS ctx
+               WHERE (ctx->>'id') IN (:...contextIds)
+                  OR (jsonb_typeof(ctx->'id') = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(ctx->'id') AS id_elem WHERE id_elem IN (:...contextIds)))
+             )))`
+          : 'TRUE';
+      const params: Record<string, unknown> = {};
+      if (contextType) params.contextType = contextType;
+      if (contextId?.length) params.contextIds = contextId;
+      queryBuilder.andWhere(
+        `test.metadata IS NOT NULL AND test.metadata->'context' IS NOT NULL AND (${typeCondition} AND ${idCondition})`,
+        params,
+      );
     }
 
     const total = await queryBuilder.getCount();
