@@ -691,6 +691,17 @@ export class AttemptsService {
           ];
         }
         break;
+
+      case QuestionType.FILE:
+        // For file upload questions (feedback/reflection), return the S3 file URL
+        if (answerData.file) {
+          return [
+            {
+              file: answerData.file,
+            },
+          ];
+        }
+        break;
     }
 
     return null;
@@ -2185,6 +2196,11 @@ export class AttemptsService {
         score = 0;
         break;
 
+      case QuestionType.FILE:
+        // File questions (feedback/reflection) are not auto-scored
+        score = 0;
+        break;
+
       default:
         score = 0;
     }
@@ -2827,6 +2843,15 @@ export class AttemptsService {
         };
         // For subjective questions, isCorrect is based on score (if scored, consider it correct)
         questionIsCorrect = userAnswer.score > 0;
+      } else if (
+        question.type === QuestionType.FILE &&
+        parsedAnswer.file
+      ) {
+        // Handle file upload questions (feedback/reflection) - S3 URL from LMS file upload
+        transformedUserAnswer = {
+          file: parsedAnswer.file,
+        };
+        questionIsCorrect = false; // File answers are not scored
       } else if (
         question.type === QuestionType.FILL_BLANK &&
         (parsedAnswer.blanks || parsedAnswer.selectedOptionIds)

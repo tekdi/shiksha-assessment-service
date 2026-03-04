@@ -993,6 +993,11 @@ export class QuestionsService {
         // These question types don't support partial scoring with options
         // They use rubric-based scoring instead
         break;
+
+      case QuestionType.FILE:
+      case QuestionType.RATING:
+        // File (feedback/reflection) and rating don't use option-based partial scoring
+        break;
         
       default:
         throw new BadRequestException(`Partial scoring is not supported for question type: ${type}`);

@@ -2373,6 +2373,9 @@ export class TestsService {
         if (answerData.text) {
           // Subjective question with text
           processedAnswer = answerData.text;
+        } else if (answerData.file) {
+          // File question (feedback/reflection) - AWS S3 URL from LMS file upload
+          processedAnswer = answerData.file;
         } else if (answerData.selectedOptionIds && Array.isArray(answerData.selectedOptionIds)) {
           // Objective question with selected option IDs
           const options = optionsMap.get(answer.questionId);

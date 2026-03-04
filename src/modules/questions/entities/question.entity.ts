@@ -24,6 +24,7 @@ export enum QuestionType {
   DROPDOWN = 'dropdown', //dropdown selection question
   RATING = 'rating', //star rating question
   CHECKBOX = 'checkbox', //checkbox question
+  FILE = 'file', //file upload (e.g. feedback/reflection forms); answer is AWS S3 URL from LMS file upload
 }
 
 export enum QuestionLevel {
