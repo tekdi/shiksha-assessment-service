@@ -405,24 +405,41 @@ export class TestsService {
       }
     }
 
-    // Date filters on createdAt using operator objects: { gt, sm, eq }
+    // Date filters on startDate using operator objects: { gt, gte, lt, lte, eq }
     if (startDate) {
       if (startDate.gt) {
-        queryBuilder.andWhere('test.createdAt > :startDate', { startDate: startDate.gt });
-      } else if (startDate.lt) {
-        queryBuilder.andWhere('test.createdAt < :startDate', { startDate: startDate.lt });
-      } else if (startDate.eq) {
-        queryBuilder.andWhere('test.createdAt = :startDate', { startDate: startDate.eq });
+        queryBuilder.andWhere('test.startDate > :startDate_gt', { startDate_gt: startDate.gt });
+      }
+      if (startDate.gte) {
+        queryBuilder.andWhere('test.startDate >= :startDate_gte', { startDate_gte: startDate.gte });
+      }
+      if (startDate.lt) {
+        queryBuilder.andWhere('test.startDate < :startDate_lt', { startDate_lt: startDate.lt });
+      }
+      if (startDate.lte) {
+        queryBuilder.andWhere('test.startDate <= :startDate_lte', { startDate_lte: startDate.lte });
+      }
+      if (startDate.eq) {
+        queryBuilder.andWhere('test.startDate = :startDate_eq', { startDate_eq: startDate.eq });
       }
     }
 
+    // Date filters on endDate using operator objects: { gt, gte, lt, lte, eq }
     if (endDate) {
       if (endDate.gt) {
-        queryBuilder.andWhere('test.createdAt > :endDate', { endDate: endDate.gt });
-      } else if (endDate.lt) {
-        queryBuilder.andWhere('test.createdAt < :endDate', { endDate: endDate.lt });
-      } else if (endDate.eq) {
-        queryBuilder.andWhere('test.createdAt = :endDate', { endDate: endDate.eq });
+        queryBuilder.andWhere('test.endDate > :endDate_gt', { endDate_gt: endDate.gt });
+      }
+      if (endDate.gte) {
+        queryBuilder.andWhere('test.endDate >= :endDate_gte', { endDate_gte: endDate.gte });
+      }
+      if (endDate.lt) {
+        queryBuilder.andWhere('test.endDate < :endDate_lt', { endDate_lt: endDate.lt });
+      }
+      if (endDate.lte) {
+        queryBuilder.andWhere('test.endDate <= :endDate_lte', { endDate_lte: endDate.lte });
+      }
+      if (endDate.eq) {
+        queryBuilder.andWhere('test.endDate = :endDate_eq', { endDate_eq: endDate.eq });
       }
     }
 
