@@ -23,10 +23,10 @@ export class DateFilterDto {
   @IsString()
   gt?: string;
 
-  @ApiPropertyOptional({ description: 'Smaller than (<) the given date' })
+  @ApiPropertyOptional({ description: 'Less than (<) the given date' })
   @IsOptional()
   @IsString()
-  sm?: string;
+  lt?: string;
 
   @ApiPropertyOptional({ description: 'Equal to (=) the given date' })
   @IsOptional()
@@ -97,7 +97,7 @@ export class QueryTestDto extends PaginationDto {
   startDate?: DateFilterDto;
 
   @ApiPropertyOptional({
-    description: 'Filter by endDate with operator. e.g. {"gt":"2026-03-09"} | {"sm":"2026-03-09"} | {"eq":"2026-03-09"}',
+    description: 'Filter by endDate with operator. e.g. {"gt":"2026-03-09"} | {"lt":"2026-03-09"} | {"eq":"2026-03-09"}',
     type: DateFilterDto,
   })
   @IsOptional()

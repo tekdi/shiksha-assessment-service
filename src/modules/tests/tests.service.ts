@@ -409,8 +409,8 @@ export class TestsService {
     if (startDate) {
       if (startDate.gt) {
         queryBuilder.andWhere('test.createdAt > :startDate', { startDate: startDate.gt });
-      } else if (startDate.sm) {
-        queryBuilder.andWhere('test.createdAt < :startDate', { startDate: startDate.sm });
+      } else if (startDate.lt) {
+        queryBuilder.andWhere('test.createdAt < :startDate', { startDate: startDate.lt });
       } else if (startDate.eq) {
         queryBuilder.andWhere('test.createdAt = :startDate', { startDate: startDate.eq });
       }
@@ -419,8 +419,8 @@ export class TestsService {
     if (endDate) {
       if (endDate.gt) {
         queryBuilder.andWhere('test.createdAt > :endDate', { endDate: endDate.gt });
-      } else if (endDate.sm) {
-        queryBuilder.andWhere('test.createdAt < :endDate', { endDate: endDate.sm });
+      } else if (endDate.lt) {
+        queryBuilder.andWhere('test.createdAt < :endDate', { endDate: endDate.lt });
       } else if (endDate.eq) {
         queryBuilder.andWhere('test.createdAt = :endDate', { endDate: endDate.eq });
       }
