@@ -88,7 +88,7 @@ export class QueryTestDto extends PaginationDto {
   @IsArray()
   @IsString({ each: true })
   contextId?: string[];
-
+ 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
