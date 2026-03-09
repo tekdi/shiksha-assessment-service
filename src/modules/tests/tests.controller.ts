@@ -17,7 +17,6 @@ import { TestsService } from './tests.service';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
-import { SearchTestDto } from './dto/search-test.dto';
 import { AddQuestionToTestDto } from './dto/add-question-to-test.dto';
 import { AddQuestionsBulkDto } from './dto/add-questions-bulk.dto';
 import { ApiSuccessResponseDto } from '@/common/dto/api-response.dto';
@@ -30,7 +29,7 @@ import { QuestionAnswerReportResponseDto } from './dto/question-answer-report-re
 
 @ApiTags('Tests')
 @ApiBearerAuth()
-@Controller('test')
+@Controller('tests')
 @UseInterceptors(AuthContextInterceptor)
 export class TestsController {
   constructor(private readonly testsService: TestsService) {}
@@ -74,9 +73,9 @@ export class TestsController {
     description: 'Tests retrieved successfully',
     type: ApiSuccessResponseDto,
   })
-  async listsearch(@Body() searchDto: SearchTestDto, @Req() req: any) {
+  async listsearch(@Body() queryDto: QueryTestDto, @Req() req: any) {
     const authContext: AuthContext = req.user;
-    return this.testsService.listsearch(searchDto, authContext);
+    return this.testsService.findAll(queryDto, authContext);
   }
 
   @Get(':id')

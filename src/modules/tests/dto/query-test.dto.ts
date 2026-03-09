@@ -61,4 +61,14 @@ export class QueryTestDto extends PaginationDto {
   @IsOptional()
   @IsEnum(SortOrder)
   declare sortOrder?: SortOrder;
+
+  @ApiPropertyOptional({ description: 'Filter by startDate (createdAt > startDate)' })
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by endDate (createdAt < endDate)' })
+  @IsOptional()
+  @IsString()
+  endDate?: string;
 }

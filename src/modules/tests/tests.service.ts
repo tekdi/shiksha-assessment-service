@@ -8,7 +8,6 @@ import { Test } from './entities/test.entity';
 import { CreateTestDto } from './dto/create-test.dto';
 import { UpdateTestDto } from './dto/update-test.dto';
 import { QueryTestDto } from './dto/query-test.dto';
-import { SearchTestDto } from './dto/search-test.dto';
 import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestStatus, TestType, AttemptsGradeMethod } from './entities/test.entity';
 import { TestQuestion } from './entities/test-question.entity';
@@ -360,39 +359,10 @@ export class TestsService {
 
     this.logger.debug(`Tests list cache MISS for key ${cacheKey}`);
 
-    const { limit = 10, offset = 0, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC', startDate, endDate } = queryDto;
 
-    const queryBuilder = this.testRepository.createQueryBuilder('test');
-    this.applyTestFilters(queryBuilder, queryDto, authContext);
-
-    const total = await queryBuilder.getCount();
-
-    queryBuilder
-      .orderBy(`test.${sortBy}`, sortOrder as 'ASC' | 'DESC')
-      .skip(offset)
-      .take(limit);
-
-    const tests = await queryBuilder.getMany();
-
-    const result = {
-      content: tests,
-      totalElements: total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: Math.floor(offset / limit) + 1,
-      size: limit,
-    };
-
-    // Cache for 1 day
-    await this.cacheManager.set(cacheKey, result, 86400);
-    this.logger.debug(`Tests list cache SET for key ${cacheKey}`);
-
-    return result;
-  }
-
-  private applyTestFilters(queryBuilder: any, filters: QueryTestDto | SearchTestDto, authContext: AuthContext) {
-    const { search, status, type, minMarks, maxMarks, contextType, contextId } = filters;
-
-    queryBuilder
+    const queryBuilder = this.testRepository
+      .createQueryBuilder('test')
       .where('test.tenantId = :tenantId', { tenantId: authContext.tenantId })
       .andWhere('test.organisationId = :organisationId', { organisationId: authContext.organisationId });
 
@@ -434,23 +404,14 @@ export class TestsService {
       }
     }
 
-    // Date filters on createdAt (only for SearchTestDto)
-    if ('startDate' in filters && filters.startDate) {
-      queryBuilder.andWhere('test.createdAt > :startDate', { startDate: filters.startDate });
+    // Date filters on createdAt
+    if (startDate) {
+      queryBuilder.andWhere('test.createdAt > :startDate', { startDate });
     }
     
-    if ('endDate' in filters && filters.endDate) {
-      queryBuilder.andWhere('test.createdAt < :endDate', { endDate: filters.endDate });
+    if (endDate) {
+      queryBuilder.andWhere('test.createdAt < :endDate', { endDate });
     }
-  }
-
-  async listsearch(searchDto: SearchTestDto, authContext: AuthContext) {
-    this.logger.debug(`Searching tests for tenant ${authContext.tenantId}`);
-
-    const { limit = 10, offset = 0, sortBy = 'createdAt', sortOrder = 'DESC' } = searchDto;
-
-    const queryBuilder = this.testRepository.createQueryBuilder('test');
-    this.applyTestFilters(queryBuilder, searchDto, authContext);
 
     const total = await queryBuilder.getCount();
 
@@ -469,8 +430,13 @@ export class TestsService {
       size: limit,
     };
 
+    // Cache for 1 day
+    await this.cacheManager.set(cacheKey, result, 86400);
+    this.logger.debug(`Tests list cache SET for key ${cacheKey}`);
+
     return result;
   }
+
 
   async findOne(id: string, authContext: AuthContext): Promise<Test> {
     const test = await this.testRepository.findOne({
