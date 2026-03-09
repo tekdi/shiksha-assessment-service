@@ -359,7 +359,7 @@ export class TestsService {
 
     this.logger.debug(`Tests list cache MISS for key ${cacheKey}`);
 
-    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC', startDate, endDate } = queryDto;
 
     const queryBuilder = this.testRepository
       .createQueryBuilder('test')
@@ -405,6 +405,15 @@ export class TestsService {
       }
     }
 
+    // Date filters on createdAt
+    if (startDate) {
+      queryBuilder.andWhere('test.createdAt > :startDate', { startDate });
+    }
+    
+    if (endDate) {
+      queryBuilder.andWhere('test.createdAt < :endDate', { endDate });
+    }
+
     const total = await queryBuilder.getCount();
 
     queryBuilder
@@ -428,6 +437,7 @@ export class TestsService {
 
     return result;
   }
+
 
   async findOne(id: string, authContext: AuthContext): Promise<Test> {
     const test = await this.testRepository.findOne({

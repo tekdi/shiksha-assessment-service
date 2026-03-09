@@ -204,6 +204,7 @@ export class Test {
   createdBy: string;
 
   @ApiProperty()
+  @Index('idx_test_created_at')
   @CreateDateColumn({ type: 'timestamp with time zone' })
   createdAt: Date;
 
