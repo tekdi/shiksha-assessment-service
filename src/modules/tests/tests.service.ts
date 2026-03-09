@@ -405,13 +405,25 @@ export class TestsService {
       }
     }
 
-    // Date filters on createdAt
+    // Date filters on createdAt using operator objects: { gt, sm, eq }
     if (startDate) {
-      queryBuilder.andWhere('test.createdAt > :startDate', { startDate });
+      if (startDate.gt) {
+        queryBuilder.andWhere('test.createdAt > :startDate', { startDate: startDate.gt });
+      } else if (startDate.lt) {
+        queryBuilder.andWhere('test.createdAt < :startDate', { startDate: startDate.lt });
+      } else if (startDate.eq) {
+        queryBuilder.andWhere('test.createdAt = :startDate', { startDate: startDate.eq });
+      }
     }
-    
+
     if (endDate) {
-      queryBuilder.andWhere('test.createdAt < :endDate', { endDate });
+      if (endDate.gt) {
+        queryBuilder.andWhere('test.createdAt > :endDate', { endDate: endDate.gt });
+      } else if (endDate.lt) {
+        queryBuilder.andWhere('test.createdAt < :endDate', { endDate: endDate.lt });
+      } else if (endDate.eq) {
+        queryBuilder.andWhere('test.createdAt = :endDate', { endDate: endDate.eq });
+      }
     }
 
     const total = await queryBuilder.getCount();

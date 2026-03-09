@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, IsArray } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsNumber, IsArray, ValidateNested } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
@@ -7,6 +7,31 @@ import { PaginationDto } from '@/common/dto/base.dto';
 export enum SortOrder {
   ASC = 'ASC',
   DESC = 'DESC',
+}
+
+/**
+ * Date filter DTO that supports comparison operators.
+ *
+ * Usage:
+ *   { "gt": "2026-03-09" }  → createdAt > '2026-03-09'
+ *   { "sm": "2026-03-09" }  → createdAt < '2026-03-09'
+ *   { "eq": "2026-03-09" }  → createdAt = '2026-03-09'
+ */
+export class DateFilterDto {
+  @ApiPropertyOptional({ description: 'Greater than (>) the given date' })
+  @IsOptional()
+  @IsString()
+  gt?: string;
+
+  @ApiPropertyOptional({ description: 'Less than (<) the given date' })
+  @IsOptional()
+  @IsString()
+  lt?: string;
+
+  @ApiPropertyOptional({ description: 'Equal to (=) the given date' })
+  @IsOptional()
+  @IsString()
+  eq?: string;
 }
 
 export class QueryTestDto extends PaginationDto {
@@ -62,13 +87,21 @@ export class QueryTestDto extends PaginationDto {
   @IsEnum(SortOrder)
   declare sortOrder?: SortOrder;
 
-  @ApiPropertyOptional({ description: 'Filter by startDate (createdAt > startDate)' })
+  @ApiPropertyOptional({
+    description: 'Filter by startDate with operator. e.g. {"gt":"2026-03-09"} | {"sm":"2026-03-09"} | {"eq":"2026-03-09"}',
+    type: DateFilterDto,
+  })
   @IsOptional()
-  @IsString()
-  startDate?: string;
+  @ValidateNested()
+  @Type(() => DateFilterDto)
+  startDate?: DateFilterDto;
 
-  @ApiPropertyOptional({ description: 'Filter by endDate (createdAt < endDate)' })
+  @ApiPropertyOptional({
+    description: 'Filter by endDate with operator. e.g. {"gt":"2026-03-09"} | {"lt":"2026-03-09"} | {"eq":"2026-03-09"}',
+    type: DateFilterDto,
+  })
   @IsOptional()
-  @IsString()
-  endDate?: string;
+  @ValidateNested()
+  @Type(() => DateFilterDto)
+  endDate?: DateFilterDto;
 }
