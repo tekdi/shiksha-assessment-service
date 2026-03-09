@@ -394,6 +394,7 @@ export class TestsService {
     }
 
     // Context filters: use indexed columns contextType, contextId.
+    // 1) contextType only → pathway-only (contextType=PATHWAY, contextId IS NULL).  2) contextType + contextId → pathway/event test.  3) contextId only → by id.
     if (contextType || contextId?.length) {
       if (contextType && !contextId?.length) {
         queryBuilder.andWhere('test.contextType = :contextType AND test.contextId IS NULL', { contextType });
