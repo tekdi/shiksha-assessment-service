@@ -51,12 +51,12 @@ export class ValidateDatetimeConstraints implements ValidatorConstraintInterface
 
   defaultMessage(args: ValidationArguments) {
     if (args.property === 'startDate') {
-      return 'Start date is invalid or conflicts with end date';
+      return 'Start date and time is invalid or conflicts with end date and time';
     }
     if (args.property === 'endDate') {
-      return 'End date is invalid or must be greater than start date';
+      return 'End date and time is invalid or must be greater than start date and time';
     }
-    return 'Invalid datetime constraints';
+    return 'Invalid date-time constraints';
   }
 }
 
