@@ -210,8 +210,24 @@ export class QuestionsService {
       }      
       
       await queryRunner.commitTransaction();
-      // Invalidate cache
+      
+      // Invalidate old question cache (don't change)
       await this.invalidateQuestionCache(authContext.tenantId);
+      
+      // If question was added to a test, invalidate test hierarchy cache for that specific test
+      if (testId && sectionId) {
+        try {
+          await this.testsService.invalidateTestHierarchyCache(
+            testId,
+            authContext.tenantId,
+            authContext.organisationId,
+          );
+        } catch (error) {
+          // Log error but don't fail the operation
+          console.warn(`Failed to invalidate test hierarchy cache for test ${testId}:`, error);
+        }
+      }
+      
       // Return the created question (with options)
       return this.findOne(savedQuestion.questionId, authContext);
     } catch (error) {
@@ -547,8 +563,15 @@ export class QuestionsService {
       }
     }
 
-    // Invalidate cache
+    // Invalidate old question cache (don't change)
     await this.invalidateQuestionCache(authContext.tenantId);
+    
+    // Invalidate test hierarchy cache for all tests using this question
+    await this.invalidateTestHierarchyCacheForQuestion(
+      id,
+      authContext.tenantId,
+      authContext.organisationId,
+    );
     
     return this.findOne(id, authContext);
   }
@@ -556,14 +579,25 @@ export class QuestionsService {
   async remove(id: string, authContext: AuthContext): Promise<void> {
     const question = await this.findOne(id, authContext);
     
-    // Remove options first
-    await this.questionOptionRepository.delete({ questionId: id });
+    // Soft delete: Update status to archived instead of hard delete
+    await this.questionRepository.update(
+      { 
+        questionId: id,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId 
+      },
+      { status: QuestionStatus.ARCHIVED }
+    );
     
-    // Remove question
-    await this.questionRepository.remove(question);
-    
-    // Invalidate cache
+    // Invalidate old question cache (don't change)
     await this.invalidateQuestionCache(authContext.tenantId);
+    
+    // Invalidate test hierarchy cache for all tests using this question
+    await this.invalidateTestHierarchyCacheForQuestion(
+      id,
+      authContext.tenantId,
+      authContext.organisationId,
+    );
   }
 
   /**
@@ -607,11 +641,35 @@ export class QuestionsService {
    */
   private async invalidateQuestionCache(tenantId: string): Promise<void> {
     try {
-      // Set a cache invalidation timestamp that can be checked
+      // Set a cache invalidation timestamp that can be checked (old cache - don't change)
       await this.cacheManager.set(`question_cache_invalidated:${tenantId}`, Date.now(), 86400);
     } catch (error) {
       // Log error but don't fail the operation
       console.warn('Failed to invalidate question cache:', error);
+    }
+  }
+
+  /**
+   * Invalidate test hierarchy cache for all tests using a specific question
+   * @param questionId - The question ID
+   * @param tenantId - The tenant ID
+   * @param organisationId - The organisation ID
+   */
+  private async invalidateTestHierarchyCacheForQuestion(
+    questionId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<void> {
+    try {
+      // Use TestsService to invalidate test hierarchy cache
+      await this.testsService.invalidateTestHierarchyCacheForQuestion(
+        questionId,
+        tenantId,
+        organisationId,
+      );
+    } catch (error) {
+      // Log error but don't fail the operation
+      console.warn(`Failed to invalidate test hierarchy cache for question ${questionId}:`, error);
     }
   }
 
@@ -1273,8 +1331,15 @@ export class QuestionsService {
     // Update testQuestion isConditional flag if question is in any tests
     await this.updateTestQuestionConditionalFlag(questionId, true, authContext);
 
-    // Invalidate cache
+    // Invalidate old question cache (don't change)
     await this.invalidateQuestionCache(authContext.tenantId);
+    
+    // Invalidate test hierarchy cache for all tests using this question
+    await this.invalidateTestHierarchyCacheForQuestion(
+      questionId,
+      authContext.tenantId,
+      authContext.organisationId,
+    );
   }
 
   /**
@@ -1314,8 +1379,15 @@ export class QuestionsService {
     // Update testQuestion isConditional flag based on remaining associations
     await this.updateTestQuestionConditionalFlag(questionId, remainingAssociations > 0, authContext);
 
-    // Invalidate cache
+    // Invalidate old question cache (don't change)
     await this.invalidateQuestionCache(authContext.tenantId);
+    
+    // Invalidate test hierarchy cache for all tests using this question
+    await this.invalidateTestHierarchyCacheForQuestion(
+      questionId,
+      authContext.tenantId,
+      authContext.organisationId,
+    );
   }
 
   /**

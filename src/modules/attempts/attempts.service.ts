@@ -1304,6 +1304,7 @@ export class AttemptsService {
       .andWhere("q.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
+      .andWhere("q.status != :archivedStatus", { archivedStatus: QuestionStatus.ARCHIVED }) // Exclude archived questions
       .andWhere("tua.questionId IS NULL") // This means no answer exists for this question
       .select([
         "tq.questionId",
@@ -1375,6 +1376,7 @@ export class AttemptsService {
       .andWhere("q.organisationId = :organisationId", {
         organisationId: authContext.organisationId,
       })
+      .andWhere("q.status != :archivedStatus", { archivedStatus: QuestionStatus.ARCHIVED }) // Exclude archived questions
       .andWhere("tua.questionId IS NULL") // This means no answer exists for this question
       .select([
         "tq.questionId",

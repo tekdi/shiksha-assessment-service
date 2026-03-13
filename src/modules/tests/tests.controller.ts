@@ -66,6 +66,18 @@ export class TestsController {
     return this.testsService.findAll(queryDto, authContext);
   }
 
+  @Post('listsearch')
+  @ApiOperation({ summary: 'Search all tests with pagination and filters' })
+  @ApiResponse({
+    status: 200,
+    description: 'Tests retrieved successfully',
+    type: ApiSuccessResponseDto,
+  })
+  async listsearch(@Body() queryDto: QueryTestDto, @Req() req: any) {
+    const authContext: AuthContext = req.user;
+    return this.testsService.findAll(queryDto, authContext);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a test by ID' })
   @ApiResponse({

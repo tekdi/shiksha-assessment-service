@@ -7,6 +7,7 @@ import {
   OneToMany,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { TestSection } from './test-section.entity';
@@ -29,7 +30,7 @@ export enum TestStatus {
 export enum GradingType {
   QUIZ = 'quiz',
   ASSESSMENT = 'assessment',
-  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SECIFIC - ASPRE_LEADER
+  REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SPECIFIC - ASPRE_LEADER
   FEEDBACK = 'feedback',
 }
 export enum AttemptsGradeMethod {
@@ -41,6 +42,7 @@ export enum AttemptsGradeMethod {
 
 
 @Entity('tests')
+@Index('idx_test_context', ['contextType', 'contextId'])
 export class Test {
   @ApiProperty()
   @PrimaryGeneratedColumn('uuid')
@@ -189,11 +191,20 @@ export class Test {
   @Column({ type: 'timestamp with time zone', nullable: true })
   checkedOutTime: Date;
 
+  @ApiProperty({ required: false, description: 'Context type e.g. PATHWAY, EVENT' })
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  contextType: string | null;
+
+  @ApiProperty({ required: false, description: 'Context id (pathway or event UUID)' })
+  @Column({ type: 'uuid', nullable: true })
+  contextId: string | null;
+
   @ApiProperty()
   @Column({ type: 'uuid' })
   createdBy: string;
 
   @ApiProperty()
+  @Index('idx_test_created_at')
   @CreateDateColumn({ type: 'timestamp with time zone' })
   createdAt: Date;
 
@@ -223,4 +234,4 @@ export class Test {
   get id(): string {
     return this.testId;
   }
-} 
+}
