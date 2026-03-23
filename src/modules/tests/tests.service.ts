@@ -340,19 +340,26 @@ export class TestsService {
     
     // Invalidate cache for this test hierarchy (if it exists)
     await this.invalidateTestHierarchyCache(savedTest.testId, authContext.tenantId, authContext.organisationId);
-    
+    await this.invalidateTestsListCache(authContext.tenantId);
+
     return savedTest;
   }
 
   async findAll(queryDto: QueryTestDto, authContext: AuthContext) {
-    const cacheKey = `tests:${authContext.tenantId}:${JSON.stringify(queryDto)}`;
+    const tenantId = authContext.tenantId;
+    const versionKey = `tests:list:version:${tenantId}`;
+    const listVersion = (await this.cacheManager.get<number>(versionKey)) ?? 0;
+    const cacheKey = `tests:${tenantId}:v${listVersion}:${JSON.stringify(queryDto)}`;
     const cached = await this.cacheManager.get(cacheKey);
-    
+
     if (cached) {
+      this.logger.debug(`Tests list cache HIT for key ${cacheKey}`);
       return cached;
     }
 
-    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC' } = queryDto;
+    this.logger.debug(`Tests list cache MISS for key ${cacheKey}`);
+
+    const { limit = 10, offset = 0, search, status, type, minMarks, maxMarks, contextType, contextId, sortBy = 'createdAt', sortOrder = 'DESC', startDate, endDate } = queryDto;
 
     const queryBuilder = this.testRepository
       .createQueryBuilder('test')
@@ -398,6 +405,45 @@ export class TestsService {
       }
     }
 
+    // Date filters on startDate using operator objects: { gt, gte, lt, lte, eq }
+    if (startDate) {
+      if (startDate.gt) {
+        queryBuilder.andWhere('test.startDate > :startDate_gt', { startDate_gt: startDate.gt });
+      }
+      if (startDate.gte) {
+        queryBuilder.andWhere('test.startDate >= :startDate_gte', { startDate_gte: startDate.gte });
+      }
+      if (startDate.lt) {
+        queryBuilder.andWhere('test.startDate < :startDate_lt', { startDate_lt: startDate.lt });
+      }
+      if (startDate.lte) {
+        queryBuilder.andWhere('test.startDate <= :startDate_lte', { startDate_lte: startDate.lte });
+      }
+      if (startDate.eq) {
+        queryBuilder.andWhere('test.startDate = :startDate_eq', { startDate_eq: startDate.eq });
+      }
+    }
+
+       
+    // Date filters on endDate using operator objects: { gt, gte, lt, lte, eq }
+    if (endDate) {
+      if (endDate.gt) {
+        queryBuilder.andWhere('test.endDate > :endDate_gt', { endDate_gt: endDate.gt });
+      }
+      if (endDate.gte) {
+        queryBuilder.andWhere('test.endDate >= :endDate_gte', { endDate_gte: endDate.gte });
+      }
+      if (endDate.lt) {
+        queryBuilder.andWhere('test.endDate < :endDate_lt', { endDate_lt: endDate.lt });
+      }
+      if (endDate.lte) {
+        queryBuilder.andWhere('test.endDate <= :endDate_lte', { endDate_lte: endDate.lte });
+      }
+      if (endDate.eq) {
+        queryBuilder.andWhere('test.endDate = :endDate_eq', { endDate_eq: endDate.eq });
+      }
+    }
+
     const total = await queryBuilder.getCount();
 
     queryBuilder
@@ -417,9 +463,11 @@ export class TestsService {
 
     // Cache for 1 day
     await this.cacheManager.set(cacheKey, result, 86400);
+    this.logger.debug(`Tests list cache SET for key ${cacheKey}`);
 
     return result;
   }
+
 
   async findOne(id: string, authContext: AuthContext): Promise<Test> {
     const test = await this.testRepository.findOne({
@@ -448,10 +496,11 @@ export class TestsService {
     });
 
     const updatedTest = await this.testRepository.save(test);
-    
+
     // Invalidate cache for this test hierarchy
     await this.invalidateTestHierarchyCache(id, authContext.tenantId, authContext.organisationId);
-    
+    await this.invalidateTestsListCache(authContext.tenantId);
+
     return updatedTest;
   }
 
@@ -489,6 +538,7 @@ export class TestsService {
     
     // Invalidate cache for this test hierarchy
     await this.invalidateTestHierarchyCache(id, authContext.tenantId, authContext.organisationId);
+    await this.invalidateTestsListCache(authContext.tenantId);
   }
 
   /**
@@ -1144,6 +1194,23 @@ export class TestsService {
     } catch (error) {
       // Log error but don't fail the operation
       this.logger.warn(`Failed to invalidate test cache for tenant ${tenantId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Invalidate tests list cache for a tenant (e.g. after create/update/remove/clone)
+   * by bumping the list version so all existing list cache keys become obsolete.
+   * (Redis store does not expose keys(), so pattern delete is not available.)
+   */
+  private async invalidateTestsListCache(tenantId: string): Promise<void> {
+    try {
+      const versionKey = `tests:list:version:${tenantId}`;
+      const currentVersion = (await this.cacheManager.get<number>(versionKey)) ?? 0;
+      const newVersion = currentVersion + 1;
+      await this.cacheManager.set(versionKey, newVersion, 86400 * 7 * 1000); // 7 days TTL (ms)
+      this.logger.debug(`Invalidated tests list cache for tenant: ${tenantId} (version ${currentVersion} -> ${newVersion})`);
+    } catch (error) {
+      this.logger.warn(`Failed to invalidate tests list cache for tenant ${tenantId}: ${error.message}`);
     }
   }
 
@@ -2103,6 +2170,7 @@ export class TestsService {
 
       // Invalidate cache for the cloned test hierarchy (if it exists)
       await this.invalidateTestHierarchyCache(savedClonedTest.testId, authContext.tenantId, authContext.organisationId);
+      await this.invalidateTestsListCache(authContext.tenantId);
 
       return savedClonedTest.testId;
 

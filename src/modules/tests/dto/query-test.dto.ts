@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, IsArray } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsNumber, IsArray, ValidateNested } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
@@ -7,6 +7,43 @@ import { PaginationDto } from '@/common/dto/base.dto';
 export enum SortOrder {
   ASC = 'ASC',
   DESC = 'DESC',
+}
+
+/**
+ * Date filter DTO that supports comparison operators.
+ *
+ * Usage:
+ *   { "gt": "2026-03-09" }   → column > '2026-03-09'
+ *   { "gte": "2026-03-09" }  → column >= '2026-03-09'
+ *   { "lt": "2026-03-09" }   → column < '2026-03-09'
+ *   { "lte": "2026-03-09" }  → column <= '2026-03-09'
+ *   { "eq": "2026-03-09" }   → column = '2026-03-09'
+ */
+export class DateFilterDto {
+  @ApiPropertyOptional({ description: 'Greater than (>) the given date' })
+  @IsOptional()
+  @IsString()
+  gt?: string;
+
+  @ApiPropertyOptional({ description: 'Greater than or equal to (>=) the given date' })
+  @IsOptional()
+  @IsString()
+  gte?: string;
+
+  @ApiPropertyOptional({ description: 'Less than (<) the given date' })
+  @IsOptional()
+  @IsString()
+  lt?: string;
+
+  @ApiPropertyOptional({ description: 'Less than or equal to (<=) the given date' })
+  @IsOptional()
+  @IsString()
+  lte?: string;
+
+  @ApiPropertyOptional({ description: 'Equal to (=) the given date' })
+  @IsOptional()
+  @IsString()
+  eq?: string;
 }
 
 export class QueryTestDto extends PaginationDto {
@@ -51,7 +88,7 @@ export class QueryTestDto extends PaginationDto {
   @IsArray()
   @IsString({ each: true })
   contextId?: string[];
-
+  
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -61,4 +98,22 @@ export class QueryTestDto extends PaginationDto {
   @IsOptional()
   @IsEnum(SortOrder)
   declare sortOrder?: SortOrder;
+
+  @ApiPropertyOptional({
+    description: 'Filter by startDate with operator. e.g. {"gt":"2026-03-09"} | {"gte":"2026-03-09"} | {"lt":"2026-03-09"} | {"lte":"2026-03-09"} | {"eq":"2026-03-09"}',
+    type: DateFilterDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DateFilterDto)
+  startDate?: DateFilterDto;
+
+  @ApiPropertyOptional({
+    description: 'Filter by endDate with operator. e.g. {"gt":"2026-03-09"} | {"gte":"2026-03-09"} | {"lt":"2026-03-09"} | {"lte":"2026-03-09"} | {"eq":"2026-03-09"}',
+    type: DateFilterDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DateFilterDto)
+  endDate?: DateFilterDto;
 }
