@@ -463,7 +463,7 @@ export class QuestionsService {
     this.validateQuestionData(mergedDto, authContext);
 
     this.assertFileQuestionGradingAllowed({
-      type: mergedDto.type as QuestionType,
+      type: mergedDto.type,
       gradingType: mergedDto.gradingType,
     });
 
