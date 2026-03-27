@@ -17,7 +17,6 @@ import { DataSource } from 'typeorm';
 import { TestQuestion } from '../tests/entities/test-question.entity';
 import {
   Test,
-  TestStatus,
   allowsFileTypeQuestion,
   isFormStyleTestGrading,
 } from '../tests/entities/test.entity';

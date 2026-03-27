@@ -13,6 +13,22 @@ import {
   getAssessmentFileMaxSizeBytes,
 } from '@/common/config/file-upload.config';
 
+function multerErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === 'string') {
+    return err;
+  }
+  if (err !== null && typeof err === 'object' && 'message' in err) {
+    const msg = (err as { message: unknown }).message;
+    if (typeof msg === 'string' && msg.trim().length > 0) {
+      return msg;
+    }
+  }
+  return 'Upload failed';
+}
+
 /**
  * Multer upload: only limits.fileSize (from getAssessmentFileMaxSizeBytes: env + hard RAM cap).
  * Other multipart limits use library defaults to avoid surprising existing clients.
@@ -38,7 +54,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
 
       upload(req, res, (err: unknown) => {
         if (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = multerErrorMessage(err);
           const code = (err as { code?: string })?.code;
           if (message === 'File too large' || code === 'LIMIT_FILE_SIZE') {
             observer.error(
