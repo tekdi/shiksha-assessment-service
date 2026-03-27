@@ -33,6 +33,36 @@ export enum GradingType {
   REFLECTION_PROMPT = 'reflection.prompt', // PROJECT SPECIFIC - ASPRE_LEADER
   FEEDBACK = 'feedback',
 }
+
+/** Grading types that may include `QuestionType.FILE` (feedback / reflection / assessment tests). */
+export const GRADING_TYPES_ALLOWING_FILE_QUESTION: ReadonlySet<GradingType> = new Set([
+  GradingType.FEEDBACK,
+  GradingType.REFLECTION_PROMPT,
+  GradingType.ASSESSMENT,
+]);
+
+export function allowsFileTypeQuestion(
+  gradingType: string | GradingType | undefined | null,
+): boolean {
+  if (gradingType == null || gradingType === '') return false;
+  return GRADING_TYPES_ALLOWING_FILE_QUESTION.has(gradingType as GradingType);
+}
+
+/**
+ * Feedback & reflection tests: skip strict option rules on create, form-style compulsory check, no pass/fail on submit.
+ * Not used for `assessment` (graded tests still validate options and score normally).
+ */
+export const FORM_STYLE_TEST_GRADING_TYPES: ReadonlySet<GradingType> = new Set([
+  GradingType.FEEDBACK,
+  GradingType.REFLECTION_PROMPT,
+]);
+
+export function isFormStyleTestGrading(
+  gradingType: string | GradingType | undefined | null,
+): boolean {
+  if (gradingType == null || gradingType === '') return false;
+  return FORM_STYLE_TEST_GRADING_TYPES.has(gradingType as GradingType);
+}
 export enum AttemptsGradeMethod {
   FIRST_ATTEMPT = 'first_attempt',
   LAST_ATTEMPT = 'last_attempt',

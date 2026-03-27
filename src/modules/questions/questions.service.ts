@@ -15,7 +15,12 @@ import { AuthContext } from '@/common/interfaces/auth.interface';
 import { TestsService } from '../tests/tests.service';
 import { DataSource } from 'typeorm';
 import { TestQuestion } from '../tests/entities/test-question.entity';
-import { Test, TestStatus } from '../tests/entities/test.entity';
+import {
+  Test,
+  TestStatus,
+  allowsFileTypeQuestion,
+  isFormStyleTestGrading,
+} from '../tests/entities/test.entity';
 import { OrderingService } from '../../common/services/ordering.service';
 import { TestSection } from '../tests/entities/test-section.entity';
 import { SectionStatus } from '../tests/dto/create-section.dto';
@@ -132,8 +137,10 @@ export class QuestionsService {
     // Validate question data (includes duplicate text check)
     await this.validateQuestionData(createQuestionDto, authContext);
 
-    // Skip validation of correct answers and marks for reflection.prompt and feedback grading types
-    const shouldSkipAnswerValidation = createQuestionDto.gradingType === 'reflection.prompt' || createQuestionDto.gradingType === 'feedback';
+    this.assertFileQuestionGradingAllowed(createQuestionDto);
+
+    // Skip strict option validation only for feedback / reflection (not assessment — MCQ etc. still validated)
+    const shouldSkipAnswerValidation = isFormStyleTestGrading(createQuestionDto.gradingType);
     
     if (!shouldSkipAnswerValidation) {
       // Validate question options
@@ -189,7 +196,7 @@ export class QuestionsService {
         const isTestObjective = await this.testsService.checkIfTestIsObjective(testId, authContext);
 
         let isObjective = false;
-        if(isTestObjective && savedQuestion.type !== QuestionType.SUBJECTIVE && savedQuestion.type !== QuestionType.ESSAY) {
+        if(isTestObjective && savedQuestion.type !== QuestionType.SUBJECTIVE && savedQuestion.type !== QuestionType.ESSAY && savedQuestion.type !== QuestionType.FILE) {
           isObjective = true;
         }
 
@@ -456,8 +463,12 @@ export class QuestionsService {
     // Validate question data
     this.validateQuestionData(mergedDto, authContext);
 
-    // Skip validation of correct answers and marks for reflection.prompt and feedback grading types
-    const shouldSkipAnswerValidation = mergedDto.gradingType === 'reflection.prompt' || mergedDto.gradingType === 'feedback';
+    this.assertFileQuestionGradingAllowed({
+      type: mergedDto.type as QuestionType,
+      gradingType: mergedDto.gradingType,
+    });
+
+    const shouldSkipAnswerValidation = isFormStyleTestGrading(mergedDto.gradingType);
     
     if (!shouldSkipAnswerValidation) {
       // If question type is being updated, validate the new type with options
@@ -844,6 +855,20 @@ export class QuestionsService {
   }
 
   /**
+   * File-type questions are only valid for feedback, reflection.prompt, and assessment grading.
+   */
+  private assertFileQuestionGradingAllowed(dto: {
+    type?: QuestionType;
+    gradingType?: string | null;
+  }): void {
+    if (dto.type === QuestionType.FILE && !allowsFileTypeQuestion(dto.gradingType)) {
+      throw new BadRequestException(
+        'Question type "file" is only allowed when gradingType is feedback, reflection.prompt, or assessment.',
+      );
+    }
+  }
+
+  /**
    * Validates basic question data including marks and text
    * Performs basic validation of question properties
    * @param createQuestionDto - The question DTO to validate
@@ -992,11 +1017,6 @@ export class QuestionsService {
       case QuestionType.ESSAY:
         // These question types don't support partial scoring with options
         // They use rubric-based scoring instead
-        break;
-
-      case QuestionType.FILE:
-      case QuestionType.RATING:
-        // File (feedback/reflection) and rating don't use option-based partial scoring
         break;
         
       default:

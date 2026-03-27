@@ -24,13 +24,14 @@ import {
   TestType,
   TestStatus,
   AttemptsGradeMethod,
+  GradingType,
+  isFormStyleTestGrading,
 } from "../tests/entities/test.entity";
 import { TestQuestion } from "../tests/entities/test-question.entity";
 import { TestRule } from "../tests/entities/test-rule.entity";
 import { Question, QuestionType } from "../questions/entities/question.entity";
 import { QuestionOption } from "../questions/entities/question-option.entity";
 import { OptionQuestion } from "../questions/entities/option-question.entity";
-import { GradingType } from "../tests/entities/test.entity";
 import { AuthContext } from "@/common/interfaces/auth.interface";
 import { SubmitMultipleAnswersDto } from "./dto/submit-answer.dto";
 import { ReviewAttemptDto } from "./dto/review-answer.dto";
@@ -693,13 +694,8 @@ export class AttemptsService {
         break;
 
       case QuestionType.FILE:
-        // For file upload questions (feedback/reflection), return the S3 file URL
         if (answerData.file) {
-          return [
-            {
-              file: answerData.file,
-            },
-          ];
+          return [{ file: answerData.file }];
         }
         break;
     }
@@ -1174,6 +1170,21 @@ export class AttemptsService {
           throw new NotFoundException(`Question not found`);
         }
 
+        const rawAns = answerDto.answer;
+        if (
+          rawAns &&
+          typeof rawAns === "object" &&
+          "file" in rawAns &&
+          rawAns.file != null &&
+          String(rawAns.file).trim() !== ""
+        ) {
+          if (question.type !== QuestionType.FILE) {
+            throw new BadRequestException(
+              'Answer field "file" is only allowed for questions of type "file".'
+            );
+          }
+        }
+
         const options = optionsMap.get(answerDto.questionId) || [];
         const existingAnswer = existingAnswersMap.get(answerDto.questionId);
 
@@ -1612,8 +1623,7 @@ export class AttemptsService {
 
     // Validate compulsory questions before allowing submission
     // For FEEDBACK tests, use special validation that handles child questions
-    const compulsoryValidation =
-      test?.gradingType === GradingType.FEEDBACK 
+    const compulsoryValidation = isFormStyleTestGrading(test?.gradingType)
         ? await this.validateCompulsoryQuestionsForFeedback(attempt, authContext)
         : await this.validateCompulsoryQuestions(attempt, authContext);
 
@@ -1625,11 +1635,8 @@ export class AttemptsService {
 
     // Get test information (already retrieved above)
 
-    // Check if the test itself is a FEEDBACK type test
-    if (
-      test.gradingType === GradingType.FEEDBACK ||
-      test.gradingType === GradingType.REFLECTION_PROMPT
-    ) {
+    // Form-style tests: no pass/fail score on submit
+    if (isFormStyleTestGrading(test.gradingType)) {
       // For feedback tests, set score to null and result to null (no pass/fail)
       attempt.score = null;
       attempt.result = null;
@@ -2197,7 +2204,6 @@ export class AttemptsService {
         break;
 
       case QuestionType.FILE:
-        // File questions (feedback/reflection) are not auto-scored
         score = 0;
         break;
 
@@ -2847,11 +2853,7 @@ export class AttemptsService {
         question.type === QuestionType.FILE &&
         parsedAnswer.file
       ) {
-        // Handle file upload questions (feedback/reflection) - S3 URL from LMS file upload
-        transformedUserAnswer = {
-          file: parsedAnswer.file,
-        };
-        questionIsCorrect = false; // File answers are not scored
+        transformedUserAnswer = { file: parsedAnswer.file };
       } else if (
         question.type === QuestionType.FILL_BLANK &&
         (parsedAnswer.blanks || parsedAnswer.selectedOptionIds)

@@ -6,9 +6,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { extname } from 'path';
+import { extname } from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
-import { FILE_UPLOAD_CONFIG } from '@/common/config/file-upload.config';
+import {
+  FILE_UPLOAD_CONFIG,
+  getAssessmentFileMaxSizeBytes,
+} from '@/common/config/file-upload.config';
 
 export interface FileUploadResult {
   /** AWS S3 URL to use in answer payload as { "file": "<this url>" } */
@@ -81,10 +84,7 @@ export class FileUploadService {
       );
     }
 
-    const maxBytes =
-      Number(this.configService.get<string>('ASSESSMENT_FILE_MAX_SIZE_MB')) *
-        1024 * 1024 ||
-      FILE_UPLOAD_CONFIG.maxSizeInBytes;
+    const maxBytes = getAssessmentFileMaxSizeBytes(this.configService);
     if (file.size > maxBytes) {
       throw new BadRequestException(
         `File size exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB)`,
