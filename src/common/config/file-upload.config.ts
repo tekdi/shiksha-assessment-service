@@ -3,13 +3,24 @@ import { ConfigService } from '@nestjs/config';
 /** Default max upload size when env is missing or invalid (MB). */
 export const DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB = 10;
 
+/**
+ * Hard ceiling (MB) for uploads using multer `memoryStorage()` — entire file is buffered in RAM per request.
+ * Values above this are clamped even if ASSESSMENT_FILE_MAX_SIZE_MB is higher (prevents accidental OOM).
+ */
+export const HARD_CAP_ASSESSMENT_FILE_SIZE_MB = 100;
+
 /** Legacy constant: same as default bytes; prefer getAssessmentFileMaxSizeBytes() for env-driven value. */
 export function getDefaultMaxSizeInBytes(): number {
   return DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB * 1024 * 1024;
 }
 
+function clampFileSizeMb(mb: number): number {
+  const capped = Math.min(mb, HARD_CAP_ASSESSMENT_FILE_SIZE_MB);
+  return Math.max(capped, 1);
+}
+
 /**
- * Max file size in bytes from ASSESSMENT_FILE_MAX_SIZE_MB (MB), default 10 MB.
+ * Max file size in bytes from ASSESSMENT_FILE_MAX_SIZE_MB (MB), default 10 MB, capped at HARD_CAP (100 MB).
  * Read via ConfigService so values stay in sync with Nest env loading at runtime.
  */
 export function getAssessmentFileMaxSizeBytes(configService: ConfigService): number {
@@ -17,9 +28,9 @@ export function getAssessmentFileMaxSizeBytes(configService: ConfigService): num
   const trimmed = raw === undefined || raw === null ? '' : String(raw).trim();
   const mb = trimmed === '' ? DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB : Number(trimmed);
   if (!Number.isFinite(mb) || mb <= 0) {
-    return DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB * 1024 * 1024;
+    return clampFileSizeMb(DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB) * 1024 * 1024;
   }
-  return Math.floor(mb * 1024 * 1024);
+  return Math.floor(clampFileSizeMb(mb) * 1024 * 1024);
 }
 
 export const FILE_UPLOAD_CONFIG = {
