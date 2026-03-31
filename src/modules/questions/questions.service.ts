@@ -1018,10 +1018,6 @@ export class QuestionsService {
         // They use rubric-based scoring instead
         break;
 
-      case QuestionType.FILE:
-     
-        // No option-mark sums to validate for these types
-        break;
 
       default:
         throw new BadRequestException(`Partial scoring is not supported for question type: ${type}`);
