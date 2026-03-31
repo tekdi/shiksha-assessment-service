@@ -1019,7 +1019,7 @@ export class QuestionsService {
         break;
 
       case QuestionType.FILE:
-      case QuestionType.RATING:
+     
         // No option-mark sums to validate for these types
         break;
 

@@ -55,6 +55,7 @@ export function allowsFileTypeQuestion(
 export const FORM_STYLE_TEST_GRADING_TYPES: ReadonlySet<GradingType> = new Set([
   GradingType.FEEDBACK,
   GradingType.REFLECTION_PROMPT,
+  GradingType.ASSESSMENT,
 ]);
 
 export function isFormStyleTestGrading(
