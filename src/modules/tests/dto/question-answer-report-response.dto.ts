@@ -23,7 +23,7 @@ export class ColumnDefinitionDto {
   @ApiProperty({
     description: 'Type of the column (question type for questions, metadata type for others)',
     example: 'mcq',
-    enum: ['mcq', 'essay', 'text', 'string', 'number', 'datetime', 'boolean']
+    enum: ['mcq', 'essay', 'text', 'string', 'number', 'datetime', 'boolean', 'file']
   })
   type: string;
 }
