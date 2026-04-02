@@ -9,8 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { from, Observable } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { from, Observable, of, throwError } from 'rxjs';
+import { mergeMap, switchMap } from 'rxjs/operators';
 import multer, { memoryStorage } from 'multer';
 import {
   createAssessmentUploadFileFilter,
@@ -61,28 +61,36 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
     const req = http.getRequest();
     const res = http.getResponse();
 
-    return from(this.resolveFileFilter(req)).pipe(
+    return of(undefined).pipe(
+      mergeMap(() => {
+        const contentLength = req.headers['content-length'];
+        if (contentLength !== undefined) {
+          const total = Number(contentLength);
+          if (Number.isFinite(total) && total > maxBytes + MULTIPART_OVERHEAD_BYTES) {
+            return throwError(
+              () =>
+                new PayloadTooLargeException(
+                  `Upload exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB file limit)`,
+                ),
+            );
+          }
+        }
+        return from(this.resolveFileFilter(req));
+      }),
       switchMap((fileFilter) => {
         const upload = multer({
           storage: memoryStorage(),
-          limits: { fileSize: maxBytes },
+          limits: {
+            fileSize: maxBytes,
+            files: 1,
+            fields: 24,
+            fieldSize: 1024 * 1024,
+            parts: 48,
+          },
           fileFilter,
         }).single('file');
 
         return new Observable<unknown>((observer) => {
-          const contentLength = req.headers['content-length'];
-          if (contentLength !== undefined) {
-            const total = Number(contentLength);
-            if (Number.isFinite(total) && total > maxBytes + MULTIPART_OVERHEAD_BYTES) {
-              observer.error(
-                new PayloadTooLargeException(
-                  `Upload exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB file limit)`,
-                ),
-              );
-              return;
-            }
-          }
-
           upload(req, res, (err: unknown) => {
             if (err) {
               const message = multerErrorMessage(err);
@@ -91,6 +99,21 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
                 observer.error(
                   new BadRequestException(
                     `File size exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB)`,
+                  ),
+                );
+                return;
+              }
+              if (
+                code === 'LIMIT_FIELD_KEY' ||
+                code === 'LIMIT_FIELD_VALUE' ||
+                code === 'LIMIT_FIELD_COUNT' ||
+                code === 'LIMIT_PART_COUNT' ||
+                code === 'LIMIT_FILE_COUNT' ||
+                code === 'LIMIT_UNEXPECTED_FILE'
+              ) {
+                observer.error(
+                  new BadRequestException(
+                    'Multipart request exceeds allowed size or part limits for this upload',
                   ),
                 );
                 return;
