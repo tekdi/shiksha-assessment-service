@@ -61,23 +61,81 @@ export const FILE_UPLOAD_CONFIG = {
   ],
 } as const;
 
+/** Extension (no dot, lowercase) → primary MIME for uploads */
+export const EXTENSION_TO_MIME: Readonly<Record<string, string>> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
+
+export function normalizeFileExtension(raw: string): string {
+  return String(raw).trim().replace(/^\.+/, '').toLowerCase();
+}
+
+/** Normalized extensions the server will ever accept (question `allowedFileExtensions` must be a subset). */
+export const SERVER_ALLOWED_FILE_EXTENSIONS: readonly string[] = FILE_UPLOAD_CONFIG.allowedExtensions.map((e) =>
+  e.replace('.', '').toLowerCase(),
+);
+
+export function assertExtensionsSubsetOfServerAllowlist(extensions: string[]): void {
+  const server = new Set(SERVER_ALLOWED_FILE_EXTENSIONS);
+  for (const raw of extensions) {
+    const e = normalizeFileExtension(raw);
+    if (!e || !server.has(e)) {
+      throw new Error(
+        `Unsupported file extension "${raw}". Allowed on server: ${SERVER_ALLOWED_FILE_EXTENSIONS.join(', ')}`,
+      );
+    }
+  }
+}
+
+/**
+ * Multer file filter. Pass `null`/undefined/empty array to use full server allowlist.
+ * Non-empty `allowedExtensions` restricts to that subset (for `file` questions with `params.allowedFileExtensions`).
+ */
+export function createAssessmentUploadFileFilter(
+  allowedExtensions?: string[] | null,
+): (_req: any, file: Express.Multer.File, cb: (err: Error | null, acceptFile: boolean) => void) => void {
+  const normalized = (allowedExtensions ?? [])
+    .map((x) => normalizeFileExtension(x))
+    .filter((x) => x.length > 0);
+  const useSubset = normalized.length > 0;
+  const extSet = useSubset ? new Set(normalized) : new Set(SERVER_ALLOWED_FILE_EXTENSIONS);
+  const fullMimeSet = new Set(FILE_UPLOAD_CONFIG.allowedMimeTypes as readonly string[]);
+
+  return (_req: any, file: Express.Multer.File, cb: (err: Error | null, acceptFile: boolean) => void): void => {
+    const ext = file.originalname.toLowerCase().split('.').pop();
+    if (!ext || !extSet.has(ext)) {
+      const list = [...extSet].map((e) => `.${e}`).join(', ');
+      cb(new Error(`Invalid file type. Allowed: ${list}`), false);
+      return;
+    }
+    const expectedMime = EXTENSION_TO_MIME[ext];
+    if (useSubset && expectedMime) {
+      if (file.mimetype !== expectedMime) {
+        cb(new Error(`Invalid MIME type for .${ext}. Expected ${expectedMime}.`), false);
+        return;
+      }
+    } else if (!fullMimeSet.has(file.mimetype)) {
+      cb(
+        new Error(`Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')}`),
+        false,
+      );
+      return;
+    }
+    cb(null, true);
+  };
+}
+
 export function assessmentUploadFileFilter(
   _req: any,
   file: Express.Multer.File,
   cb: (err: Error | null, acceptFile: boolean) => void,
 ): void {
-  const ext = file.originalname.toLowerCase().split('.').pop();
-  const allowedExt = FILE_UPLOAD_CONFIG.allowedExtensions.map((e) => e.replace('.', ''));
-  if (!ext || !allowedExt.includes(ext)) {
-    cb(new Error(`Invalid file type. Allowed: ${FILE_UPLOAD_CONFIG.allowedExtensions.join(', ')}`), false);
-    return;
-  }
-  if (!(FILE_UPLOAD_CONFIG.allowedMimeTypes as readonly string[]).includes(file.mimetype)) {
-    cb(
-      new Error(`Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')}`),
-      false,
-    );
-    return;
-  }
-  cb(null, true);
+  createAssessmentUploadFileFilter(null)(_req, file, cb);
 }

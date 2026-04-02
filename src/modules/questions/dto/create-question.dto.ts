@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min, ArrayMaxSize, Matches, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionType, QuestionLevel, QuestionStatus } from '../entities/question.entity';
 import { GradingType } from '../../tests/entities/test.entity';
@@ -96,6 +96,20 @@ export class QuestionParamsDto {
   rubric?: {
     criteria: RubricCriteriaDto[];
   };
+
+  @ApiPropertyOptional({
+    description:
+      'For type `file` only: allowed file extensions without dot (e.g. pdf, jpg, png). Omit to allow all server-supported types.',
+    example: ['pdf', 'jpg', 'jpeg'],
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1, { message: 'allowedFileExtensions cannot be empty; omit the field to allow all supported types' })
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Matches(/^[a-z0-9]{1,15}$/i, { each: true, message: 'Each extension must be alphanumeric (no dot), max 15 chars' })
+  allowedFileExtensions?: string[];
 }
 
 export class CreateQuestionOptionDto {

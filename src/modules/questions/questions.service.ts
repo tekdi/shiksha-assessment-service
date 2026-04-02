@@ -23,6 +23,10 @@ import {
 import { OrderingService } from '../../common/services/ordering.service';
 import { TestSection } from '../tests/entities/test-section.entity';
 import { SectionStatus } from '../tests/dto/create-section.dto';
+import {
+  assertExtensionsSubsetOfServerAllowlist,
+  normalizeFileExtension,
+} from '@/common/config/file-upload.config';
 
 @Injectable()
 export class QuestionsService {
@@ -138,6 +142,8 @@ export class QuestionsService {
 
     this.assertFileQuestionGradingAllowed(createQuestionDto);
 
+    this.validateFileQuestionAllowedExtensions(createQuestionDto.type, createQuestionDto.params);
+
     // Skip strict option validation only for feedback / reflection (not assessment — MCQ etc. still validated)
     const shouldSkipAnswerValidation = isFormStyleTestGrading(createQuestionDto.gradingType);
     
@@ -156,13 +162,19 @@ export class QuestionsService {
    
     try {
       // Create question with parentId if provided
-      const question = this.questionRepository.create({
+      const questionPayload: Record<string, unknown> = {
         ...questionData,
         parentId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
         createdBy: authContext.userId,
-      });
+      };
+      if (questionData.params !== undefined) {
+        questionPayload.params = this.cloneParamsWithNormalizedFileExtensions(
+          questionData.params as Record<string, unknown>,
+        );
+      }
+      const question = this.questionRepository.create(questionPayload as unknown as Question);
       const savedQuestion = await queryRunner.manager.save(Question, question);
       
       // Create options if provided
@@ -467,6 +479,12 @@ export class QuestionsService {
       gradingType: mergedDto.gradingType,
     });
 
+    const effectiveType =
+      updateQuestionDto.type !== undefined ? updateQuestionDto.type : question.type;
+    const effectiveParams =
+      updateQuestionDto.params !== undefined ? updateQuestionDto.params : question.params;
+    this.validateFileQuestionAllowedExtensions(effectiveType, effectiveParams);
+
     const shouldSkipAnswerValidation = isFormStyleTestGrading(mergedDto.gradingType);
     
     if (!shouldSkipAnswerValidation) {
@@ -486,11 +504,17 @@ export class QuestionsService {
       this.validateQuestionParams(mergedDto.type, mergedDto.params, mergedDto.marks);
     }
 
-    Object.assign(question, {
+    const patch: Record<string, unknown> = {
       ...questionData,
       parentId,
       updatedBy: authContext.userId,
-    });
+    };
+    if (questionData.params !== undefined) {
+      patch.params = this.cloneParamsWithNormalizedFileExtensions(
+        questionData.params as Record<string, unknown>,
+      );
+    }
+    Object.assign(question, patch);
 
     const updatedQuestion = await this.questionRepository.save(question);
 
@@ -835,6 +859,55 @@ export class QuestionsService {
    * @param params - Optional parameters object containing validation rules
    * @param marks - Optional question marks for validation
    */
+  /**
+   * Validates params.allowedFileExtensions for `file` questions (and rejects on other types).
+   * Runs for all grading types so feedback/reflection file questions still get this check.
+   */
+  private validateFileQuestionAllowedExtensions(
+    type: QuestionType,
+    params?: { allowedFileExtensions?: string[] } | null,
+  ): void {
+    const list = params?.allowedFileExtensions;
+    if (list === undefined || list === null) {
+      return;
+    }
+    if (!Array.isArray(list)) {
+      return;
+    }
+    if (type !== QuestionType.FILE) {
+      if (list.length > 0) {
+        throw new BadRequestException('params.allowedFileExtensions is only valid for question type "file".');
+      }
+      return;
+    }
+    if (list.length === 0) {
+      throw new BadRequestException(
+        'params.allowedFileExtensions cannot be empty. Omit the field to allow all supported file types.',
+      );
+    }
+    try {
+      assertExtensionsSubsetOfServerAllowlist(list);
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  private cloneParamsWithNormalizedFileExtensions(
+    params?: Record<string, unknown> | null,
+  ): Record<string, unknown> | undefined | null {
+    if (params == null) {
+      return params as undefined;
+    }
+    const list = (params as { allowedFileExtensions?: string[] }).allowedFileExtensions;
+    if (!Array.isArray(list) || list.length === 0) {
+      return params as Record<string, unknown>;
+    }
+    return {
+      ...params,
+      allowedFileExtensions: list.map((x) => normalizeFileExtension(x)),
+    };
+  }
+
   private validateQuestionParams(type: QuestionType, params?: any, marks?: number): void {
     if (!params) return;
 
@@ -1018,7 +1091,7 @@ export class QuestionsService {
         // They use rubric-based scoring instead
         break;
 
-
+      
       default:
         throw new BadRequestException(`Partial scoring is not supported for question type: ${type}`);
     }

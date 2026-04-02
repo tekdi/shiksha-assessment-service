@@ -7,12 +7,18 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Observable } from 'rxjs';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { from, Observable } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 import multer, { memoryStorage } from 'multer';
 import {
+  createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
   getAssessmentFileMaxSizeBytes,
 } from '@/common/config/file-upload.config';
+import { Question, QuestionType } from '../questions/entities/question.entity';
+import { AuthContext } from '@/common/interfaces/auth.interface';
 
 function multerErrorMessage(err: unknown): string {
   if (err instanceof Error) {
@@ -38,55 +44,102 @@ const MULTIPART_OVERHEAD_BYTES = 2 * 1024 * 1024;
  * ASSESSMENT_FILE_MAX_SIZE_MB, hard-capped for OOM safety). HTTP Content-Length is the whole body;
  * we optionally reject when it clearly exceeds file limit + overhead (chunked uploads skip this).
  */
+const QUESTION_ID_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class AssessmentFileUploadInterceptor implements NestInterceptor {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(Question)
+    private readonly questionRepository: Repository<Question>,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const maxBytes = getAssessmentFileMaxSizeBytes(this.configService);
-    const upload = multer({
-      storage: memoryStorage(),
-      // Only enforce per-file size (aligned with env + hard cap in file-upload.config).
-      // Avoid custom fields/files/parts limits so behavior stays default multer/busboy — least risk to existing clients.
-      limits: { fileSize: maxBytes },
-      fileFilter: assessmentUploadFileFilter,
-    }).single('file');
+    const http = context.switchToHttp();
+    const req = http.getRequest();
+    const res = http.getResponse();
 
-    return new Observable((observer) => {
-      const http = context.switchToHttp();
-      const req = http.getRequest();
-      const res = http.getResponse();
+    return from(this.resolveFileFilter(req)).pipe(
+      switchMap((fileFilter) => {
+        const upload = multer({
+          storage: memoryStorage(),
+          limits: { fileSize: maxBytes },
+          fileFilter,
+        }).single('file');
 
-      const contentLength = req.headers['content-length'];
-      if (contentLength !== undefined) {
-        const total = Number(contentLength);
-        if (Number.isFinite(total) && total > maxBytes + MULTIPART_OVERHEAD_BYTES) {
-          observer.error(
-            new PayloadTooLargeException(
-              `Upload exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB file limit)`,
-            ),
-          );
-          return;
-        }
-      }
-
-      upload(req, res, (err: unknown) => {
-        if (err) {
-          const message = multerErrorMessage(err);
-          const code = (err as { code?: string })?.code;
-          if (message === 'File too large' || code === 'LIMIT_FILE_SIZE') {
-            observer.error(
-              new BadRequestException(
-                `File size exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB)`,
-              ),
-            );
-            return;
+        return new Observable<unknown>((observer) => {
+          const contentLength = req.headers['content-length'];
+          if (contentLength !== undefined) {
+            const total = Number(contentLength);
+            if (Number.isFinite(total) && total > maxBytes + MULTIPART_OVERHEAD_BYTES) {
+              observer.error(
+                new PayloadTooLargeException(
+                  `Upload exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB file limit)`,
+                ),
+              );
+              return;
+            }
           }
-          observer.error(new BadRequestException(message || 'Upload failed'));
-          return;
-        }
-        next.handle().subscribe(observer);
-      });
+
+          upload(req, res, (err: unknown) => {
+            if (err) {
+              const message = multerErrorMessage(err);
+              const code = (err as { code?: string })?.code;
+              if (message === 'File too large' || code === 'LIMIT_FILE_SIZE') {
+                observer.error(
+                  new BadRequestException(
+                    `File size exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB)`,
+                  ),
+                );
+                return;
+              }
+              observer.error(new BadRequestException(message || 'Upload failed'));
+              return;
+            }
+            next.handle().subscribe(observer);
+          });
+        });
+      }),
+    );
+  }
+
+  private async resolveFileFilter(req: {
+    query?: Record<string, unknown>;
+    user?: AuthContext;
+  }): Promise<
+    (r: any, file: Express.Multer.File, cb: (err: Error | null, acceptFile: boolean) => void) => void
+  > {
+    const raw = req.query?.questionId;
+    const questionId = typeof raw === 'string' ? raw.trim() : '';
+    if (!questionId) {
+      return assessmentUploadFileFilter;
+    }
+    if (!QUESTION_ID_UUID.test(questionId)) {
+      throw new BadRequestException('Invalid questionId query parameter');
+    }
+    const auth = req.user;
+    if (!auth?.tenantId || !auth?.organisationId) {
+      return assessmentUploadFileFilter;
+    }
+    const q = await this.questionRepository.findOne({
+      where: {
+        questionId,
+        tenantId: auth.tenantId,
+        organisationId: auth.organisationId,
+      },
+      select: ['questionId', 'type', 'params'],
     });
+    if (!q) {
+      throw new BadRequestException('Question not found for this upload');
+    }
+    if (q.type !== QuestionType.FILE) {
+      throw new BadRequestException('This question does not accept file uploads');
+    }
+    const allowed = q.params?.allowedFileExtensions;
+    return createAssessmentUploadFileFilter(
+      allowed && allowed.length > 0 ? allowed : null,
+    );
   }
 }
