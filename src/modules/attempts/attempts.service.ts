@@ -3273,7 +3273,7 @@ export class AttemptsService {
   }
 
   /**
-   * LMS user journey only: returns tests.gradingType and isImported when gradingType is assessment
+   * LMS user only: returns tests.gradingType and isImported when gradingType is assessment
    * (same review/result rules as getAssessmentResultStatus). For quiz / feedback / reflection, skips
    * attempt lookup and returns isImported false. No JWT — caller passes tenant/org in body; restrict
    * at network / gateway level.
