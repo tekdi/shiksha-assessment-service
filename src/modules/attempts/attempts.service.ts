@@ -3272,6 +3272,60 @@ export class AttemptsService {
     return { isImported, aswaresheet };
   }
 
+  /**
+   * LMS user journey only: returns tests.gradingType and isImported when gradingType is assessment
+   * (same review/result rules as getAssessmentResultStatus). For quiz / feedback / reflection, skips
+   * attempt lookup and returns isImported false. No JWT — caller passes tenant/org in body; restrict
+   * at network / gateway level.
+   */
+  async getUserJourneyResultStatus(
+    userId: string,
+    testId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{
+    isImported: boolean;
+    aswaresheet: boolean;
+    gradingType: GradingType | string | null;
+  }> {
+    const test = await this.testRepository
+      .createQueryBuilder("test")
+      .select(["test.answerSheet", "test.gradingType"])
+      .where("test.testId = :testId", { testId })
+      .getOne();
+
+    const aswaresheet = test?.answerSheet ?? false;
+    const gradingType = test?.gradingType ?? null;
+
+    if (!test || gradingType == null || gradingType !== GradingType.ASSESSMENT) {
+      return { isImported: false, aswaresheet, gradingType };
+    }
+
+    const attempt = await this.attemptRepository
+      .createQueryBuilder("attempt")
+      .select(["attempt.reviewStatus", "attempt.result"])
+      .where("attempt.testId = :testId", { testId })
+      .andWhere("attempt.userId = :userId", { userId })
+      .andWhere("attempt.tenantId = :tenantId", { tenantId })
+      .andWhere("attempt.organisationId = :organisationId", {
+        organisationId,
+      })
+      .orderBy("attempt.attempt", "DESC")
+      .limit(1)
+      .getOne();
+
+    if (!attempt) {
+      return { isImported: false, aswaresheet, gradingType };
+    }
+
+    const isImported =
+      attempt.reviewStatus === ReviewStatus.REVIEWED &&
+      (attempt.result === ResultType.PASS ||
+        attempt.result === ResultType.FAIL);
+
+    return { isImported, aswaresheet, gradingType };
+  }
+
   private async triggerPluginEvent(
     eventName: string,
     authContext: AuthContext,
