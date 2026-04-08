@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { AttemptsController } from './attempts.controller';
-import { InternalUserJourneyResultController } from './internal-user-journey-result.controller';
+import { InternalUserResultController } from './internal-user-result.controller';
 import { AttemptsService } from './attempts.service';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
@@ -33,7 +33,7 @@ import { TestsModule } from '../tests/tests.module';
     PluginModule,
     TestsModule,
   ],
-  controllers: [AttemptsController, InternalUserJourneyResultController],
+  controllers: [AttemptsController, InternalUserResultController],
   providers: [AttemptsService],
   exports: [AttemptsService],
 })
