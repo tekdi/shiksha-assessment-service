@@ -3278,7 +3278,7 @@ export class AttemptsService {
    * attempt lookup and returns isImported false. No JWT — caller passes tenant/org in body; restrict
    * at network / gateway level.
    */
-  async getUserJourneyResultStatus(
+  async getUserResultStatus(
     userId: string,
     testId: string,
     tenantId: string,

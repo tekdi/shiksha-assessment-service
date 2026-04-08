@@ -26,7 +26,7 @@ export class InternalUserResultController {
     type: ApiSuccessResponseDto,
   })
   async userJourneyResultStatus(@Body() dto: UserResultStatusDto) {
-    return this.attemptsService.getUserJourneyResultStatus(
+    return this.attemptsService.getUserResultStatus(
       dto.userId,
       dto.testId,
       dto.tenantId,
