@@ -43,12 +43,24 @@ export class ApiResponseInterceptor<T> implements NestInterceptor<T, any> {
       .replace('/assessment/v1/', '')
       .split('/')
       .filter(part => part.length > 0);
-    
+
     if (pathParts.length === 0) return 'api.unknown';
-    
+
     const resource = pathParts[0];
+    const methodUpper = method.toUpperCase();
+
+    // POST sub-resources: use last segment as action (not generic "create")
+    if (methodUpper === 'POST' && pathParts.length >= 2) {
+      const last = pathParts[pathParts.length - 1];
+      if (last === 'delete') {
+        return `api.${resource}.delete`;
+      }
+      if (last === 'upload') {
+        return `api.${resource}.upload`;
+      }
+    }
+
     const action = this.getActionFromMethod(method);
-    
     return `api.${resource}.${action}`;
   }
 
