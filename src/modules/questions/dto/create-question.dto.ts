@@ -99,8 +99,8 @@ export class QuestionParamsDto {
 
   @ApiPropertyOptional({
     description:
-      'For type `file` only: allowed file extensions without dot (e.g. pdf, jpg, png). Omit to allow all server-supported types.',
-    example: ['pdf', 'jpg', 'jpeg'],
+      'For type `file` only: allowed file extensions without dot (e.g. pdf, jpg, png, mp4). Omit to allow all server-supported types.',
+    example: ['pdf', 'mp4'],
     type: [String],
   })
   @IsOptional()

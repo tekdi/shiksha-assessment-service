@@ -37,7 +37,7 @@ export const FILE_UPLOAD_CONFIG = {
   /** S3 key prefix under bucket (e.g. assessment/feedback-files) */
   uploadPath: process.env.ASSESSMENT_UPLOAD_PATH || 'assessment/feedback-files',
 
-  /** Allowed MIME types (documents + images for feedback/reflection) */
+  /** Allowed MIME types (documents + images + MP4 video for feedback/reflection) */
   allowedMimeTypes: [
     'application/pdf',
     'application/msword',
@@ -46,6 +46,7 @@ export const FILE_UPLOAD_CONFIG = {
     'image/png',
     'image/gif',
     'image/webp',
+    'video/mp4',
   ],
 
   /** Allowed file extensions for validation */
@@ -58,6 +59,7 @@ export const FILE_UPLOAD_CONFIG = {
     '.png',
     '.gif',
     '.webp',
+    '.mp4',
   ],
 } as const;
 
@@ -71,7 +73,19 @@ export const EXTENSION_TO_MIME: Readonly<Record<string, string>> = {
   png: 'image/png',
   gif: 'image/gif',
   webp: 'image/webp',
+  mp4: 'video/mp4',
 };
+
+/** Some clients send generic binary MIME for MP4; still safe if extension is .mp4 */
+export const MP4_ALTERNATIVE_MIME = 'application/octet-stream' as const;
+
+export function isAllowedMimeForExtension(extNoDot: string, mimetype: string): boolean {
+  const ext = normalizeFileExtension(extNoDot);
+  if (ext === 'mp4') {
+    return mimetype === EXTENSION_TO_MIME.mp4 || mimetype === MP4_ALTERNATIVE_MIME;
+  }
+  return (FILE_UPLOAD_CONFIG.allowedMimeTypes as readonly string[]).includes(mimetype);
+}
 
 export function normalizeFileExtension(raw: string): string {
   return String(raw).trim().replace(/^\.+/, '').toLowerCase();
@@ -117,11 +131,14 @@ export function createAssessmentUploadFileFilter(
     }
     const expectedMime = EXTENSION_TO_MIME[ext];
     if (useSubset && expectedMime) {
-      if (file.mimetype !== expectedMime) {
+      const ok =
+        file.mimetype === expectedMime ||
+        (ext === 'mp4' && file.mimetype === MP4_ALTERNATIVE_MIME);
+      if (!ok) {
         cb(new Error(`Invalid MIME type for .${ext}. Expected ${expectedMime}.`), false);
         return;
       }
-    } else if (!fullMimeSet.has(file.mimetype)) {
+    } else if (!fullMimeSet.has(file.mimetype) && !isAllowedMimeForExtension(ext, file.mimetype)) {
       cb(
         new Error(`Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')}`),
         false,

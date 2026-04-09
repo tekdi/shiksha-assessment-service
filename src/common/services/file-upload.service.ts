@@ -12,6 +12,8 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   FILE_UPLOAD_CONFIG,
   getAssessmentFileMaxSizeBytes,
+  isAllowedMimeForExtension,
+  MP4_ALTERNATIVE_MIME,
 } from '@/common/config/file-upload.config';
 
 export interface FileUploadResult {
@@ -79,9 +81,10 @@ export class FileUploadService {
         `Invalid file type. Allowed: ${FILE_UPLOAD_CONFIG.allowedExtensions.join(', ')}`,
       );
     }
-    if (!(FILE_UPLOAD_CONFIG.allowedMimeTypes as readonly string[]).includes(file.mimetype)) {
+    const extNoDot = ext.startsWith('.') ? ext.slice(1) : ext;
+    if (!isAllowedMimeForExtension(extNoDot, file.mimetype)) {
       throw new BadRequestException(
-        `Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')}`,
+        `Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')} (MP4 may be sent as application/octet-stream)`,
       );
     }
 
@@ -99,6 +102,8 @@ export class FileUploadService {
       : `${this.uploadPath}/${safeName}`;
 
     const body = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer);
+    const contentType =
+      ext === '.mp4' && file.mimetype === MP4_ALTERNATIVE_MIME ? 'video/mp4' : file.mimetype;
 
     try {
       await this.s3Client.send(
@@ -107,7 +112,7 @@ export class FileUploadService {
           Key: key,
           Body: body,
           ContentLength: body.length,
-          ContentType: file.mimetype,
+          ContentType: contentType,
           ContentDisposition: `attachment; filename="${file.originalname}"`,
           Metadata: {
             originalFileName: file.originalname,
