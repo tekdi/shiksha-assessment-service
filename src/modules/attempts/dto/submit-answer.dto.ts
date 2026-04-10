@@ -32,6 +32,14 @@ export class AnswerDto {
   @IsOptional()
   @IsNumber()
   rating?: number; // For rating questions without options (legacy support)
+
+  @ApiPropertyOptional({
+  description: 'AWS S3 file URL for file-type questions (feedback/reflection). Use Assessment service POST /file/upload to upload and get this URL, then submit here.',
+    example: 'https://bucket.s3.region.amazonaws.com/path/to/file.pdf',
+  })
+  @IsOptional()
+  @IsString()
+  file?: string; // For file upload questions (feedback/reflection forms)
 }
 
 export class SubmitAnswerDto {

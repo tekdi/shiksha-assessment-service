@@ -24,6 +24,7 @@ export enum QuestionType {
   DROPDOWN = 'dropdown', //dropdown selection question
   RATING = 'rating', //star rating question
   CHECKBOX = 'checkbox', //checkbox question
+  FILE = 'file', // file upload; answer is URL from assessment file upload
 }
 
 export enum QuestionLevel {
@@ -75,6 +76,11 @@ export interface QuestionParams {
       description: string;
     }>;
   };
+  /**
+   * For `file` questions only: restrict uploads to these extensions (no dot), e.g. ["pdf","jpg"].
+   * Omit or leave unset to allow every extension the server supports (see assessment file upload config).
+   */
+  allowedFileExtensions?: string[];
 }
 
 

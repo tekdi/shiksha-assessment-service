@@ -24,13 +24,14 @@ import {
   TestType,
   TestStatus,
   AttemptsGradeMethod,
+  GradingType,
+  isFormStyleTestGrading,
 } from "../tests/entities/test.entity";
 import { TestQuestion } from "../tests/entities/test-question.entity";
 import { TestRule } from "../tests/entities/test-rule.entity";
 import { Question, QuestionType } from "../questions/entities/question.entity";
 import { QuestionOption } from "../questions/entities/question-option.entity";
 import { OptionQuestion } from "../questions/entities/option-question.entity";
-import { GradingType } from "../tests/entities/test.entity";
 import { AuthContext } from "@/common/interfaces/auth.interface";
 import { SubmitMultipleAnswersDto } from "./dto/submit-answer.dto";
 import { ReviewAttemptDto } from "./dto/review-answer.dto";
@@ -691,6 +692,12 @@ export class AttemptsService {
           ];
         }
         break;
+
+      case QuestionType.FILE:
+        if (answerData.file) {
+          return [{ file: answerData.file }];
+        }
+        break;
     }
 
     return null;
@@ -1163,6 +1170,21 @@ export class AttemptsService {
           throw new NotFoundException(`Question not found`);
         }
 
+        const rawAns = answerDto.answer;
+        if (
+          rawAns &&
+          typeof rawAns === "object" &&
+          "file" in rawAns &&
+          rawAns.file != null &&
+          String(rawAns.file).trim() !== ""
+        ) {
+          if (question.type !== QuestionType.FILE) {
+            throw new BadRequestException(
+              'Answer field "file" is only allowed for questions of type "file".'
+            );
+          }
+        }
+
         const options = optionsMap.get(answerDto.questionId) || [];
         const existingAnswer = existingAnswersMap.get(answerDto.questionId);
 
@@ -1601,8 +1623,7 @@ export class AttemptsService {
 
     // Validate compulsory questions before allowing submission
     // For FEEDBACK tests, use special validation that handles child questions
-    const compulsoryValidation =
-      test?.gradingType === GradingType.FEEDBACK 
+    const compulsoryValidation = isFormStyleTestGrading(test?.gradingType)
         ? await this.validateCompulsoryQuestionsForFeedback(attempt, authContext)
         : await this.validateCompulsoryQuestions(attempt, authContext);
 
@@ -1614,11 +1635,8 @@ export class AttemptsService {
 
     // Get test information (already retrieved above)
 
-    // Check if the test itself is a FEEDBACK type test
-    if (
-      test.gradingType === GradingType.FEEDBACK ||
-      test.gradingType === GradingType.REFLECTION_PROMPT
-    ) {
+    // Form-style tests: no pass/fail score on submit
+    if (isFormStyleTestGrading(test.gradingType)) {
       // For feedback tests, set score to null and result to null (no pass/fail)
       attempt.score = null;
       attempt.result = null;
@@ -2182,6 +2200,10 @@ export class AttemptsService {
         break;
 
       case QuestionType.RATING:
+        score = 0;
+        break;
+
+      case QuestionType.FILE:
         score = 0;
         break;
 
@@ -2828,6 +2850,11 @@ export class AttemptsService {
         // For subjective questions, isCorrect is based on score (if scored, consider it correct)
         questionIsCorrect = userAnswer.score > 0;
       } else if (
+        question.type === QuestionType.FILE &&
+        parsedAnswer.file
+      ) {
+        transformedUserAnswer = { file: parsedAnswer.file };
+      } else if (
         question.type === QuestionType.FILL_BLANK &&
         (parsedAnswer.blanks || parsedAnswer.selectedOptionIds)
       ) {
@@ -3243,6 +3270,60 @@ export class AttemptsService {
         attempt.result === ResultType.FAIL);
 
     return { isImported, aswaresheet };
+  }
+
+  /**
+   * LMS user only: returns tests.gradingType and isImported when gradingType is assessment
+   * (same review/result rules as getAssessmentResultStatus). For quiz / feedback / reflection, skips
+   * attempt lookup and returns isImported false. No JWT — caller passes tenant/org in body; restrict
+   * at network / gateway level.
+   */
+  async getUserResultStatus(
+    userId: string,
+    testId: string,
+    tenantId: string,
+    organisationId: string,
+  ): Promise<{
+    isImported: boolean;
+    aswaresheet: boolean;
+    gradingType: GradingType | string | null;
+  }> {
+    const test = await this.testRepository
+      .createQueryBuilder("test")
+      .select(["test.answerSheet", "test.gradingType"])
+      .where("test.testId = :testId", { testId })
+      .getOne();
+
+    const aswaresheet = test?.answerSheet ?? false;
+    const gradingType = test?.gradingType ?? null;
+
+    if (!test || gradingType == null || gradingType !== GradingType.ASSESSMENT) {
+      return { isImported: false, aswaresheet, gradingType };
+    }
+
+    const attempt = await this.attemptRepository
+      .createQueryBuilder("attempt")
+      .select(["attempt.reviewStatus", "attempt.result"])
+      .where("attempt.testId = :testId", { testId })
+      .andWhere("attempt.userId = :userId", { userId })
+      .andWhere("attempt.tenantId = :tenantId", { tenantId })
+      .andWhere("attempt.organisationId = :organisationId", {
+        organisationId,
+      })
+      .orderBy("attempt.attempt", "DESC")
+      .limit(1)
+      .getOne();
+
+    if (!attempt) {
+      return { isImported: false, aswaresheet, gradingType };
+    }
+
+    const isImported =
+      attempt.reviewStatus === ReviewStatus.REVIEWED &&
+      (attempt.result === ResultType.PASS ||
+        attempt.result === ResultType.FAIL);
+
+    return { isImported, aswaresheet, gradingType };
   }
 
   private async triggerPluginEvent(
