@@ -22,6 +22,7 @@ import { FileUploadService } from '@/common/services/file-upload.service';
 import { AuthContextInterceptor } from '@/common/interceptors/auth-context.interceptor';
 import { AssessmentFileUploadInterceptor } from './assessment-file-upload.interceptor';
 import { DeleteFileDto } from './dto/delete-file.dto';
+import { DownloadFileDto } from './dto/download-file.dto';
 
 @ApiTags('File Upload')
 @ApiBearerAuth()
@@ -82,5 +83,19 @@ export class UploadController {
   async deleteFile(@Body() dto: DeleteFileDto) {
     await this.fileUploadService.deleteFileByUrl(dto.file);
     return { message: 'File deleted successfully' };
+  }
+
+  @Post('download-url')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get signed download URL for a private assessment file',
+    description:
+      'Generates a short-lived signed URL for downloading a file previously uploaded via POST /file/upload. Only URLs for this service bucket and assessment upload prefix are accepted.',
+  })
+  @ApiResponse({ status: 200, description: 'Signed URL generated successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid URL' })
+  @ApiResponse({ status: 403, description: 'URL not allowed (wrong bucket or prefix)' })
+  async getDownloadUrl(@Body() dto: DownloadFileDto) {
+    return this.fileUploadService.getDownloadUrl(dto.file);
   }
 }
