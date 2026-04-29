@@ -130,11 +130,10 @@ export class FileUploadService {
           },
         }),
       );
-    } catch (error: any) {
-      this.logger.error(`S3 upload failed: ${error?.message || error}`, error?.stack);
-      throw new InternalServerErrorException(
-        `Failed to upload file. ${error?.message || error}`,
-      );
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`S3 upload failed: ${msg}`, error instanceof Error ? error.stack : undefined);
+      throw new InternalServerErrorException('Failed to upload file. Please try again later.');
     }
 
     const fileUrl = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
@@ -166,8 +165,11 @@ export class FileUploadService {
       );
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`S3 delete failed for key prefix: ${key.slice(0, 64)}…`, (error as Error)?.stack);
-      throw new InternalServerErrorException(`Failed to delete file. ${msg}`);
+      this.logger.error(
+        `S3 delete failed for key prefix: ${key.slice(0, 64)}… ${msg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new InternalServerErrorException('Failed to delete file. Please try again later.');
     }
 
     return { key };
@@ -186,15 +188,14 @@ export class FileUploadService {
 
     const key = this.parseAndValidateAssessmentObjectKey(fileUrl.trim());
     const expiresIn = this.getDownloadUrlExpirySeconds();
-    const fileName = this.getSafeDownloadFileName(key);
 
     try {
+      // Omit ResponseContentDisposition so GetObject uses object metadata from PutObject.
       const downloadUrl = await getSignedUrl(
         this.s3Client,
         new GetObjectCommand({
           Bucket: this.bucket,
           Key: key,
-          ResponseContentDisposition: `attachment; filename="${fileName}"`,
         }),
         { expiresIn },
       );
@@ -203,10 +204,10 @@ export class FileUploadService {
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `S3 signed-download URL generation failed for key prefix: ${key.slice(0, 64)}…`,
-        (error as Error)?.stack,
+        `S3 signed-download URL generation failed for key prefix: ${key.slice(0, 64)}… ${msg}`,
+        error instanceof Error ? error.stack : undefined,
       );
-      throw new InternalServerErrorException(`Failed to create download URL. ${msg}`);
+      throw new InternalServerErrorException('Failed to create download URL. Please try again later.');
     }
   }
 
@@ -272,17 +273,5 @@ export class FileUploadService {
       return 300;
     }
     return Math.max(60, Math.min(3600, Math.floor(parsed)));
-  }
-
-  private getSafeDownloadFileName(key: string): string {
-    const segments = key.split('/');
-    let raw = 'download';
-    for (let i = segments.length - 1; i >= 0; i -= 1) {
-      if (segments[i]) {
-        raw = segments[i];
-        break;
-      }
-    }
-    return raw.replaceAll(/["\\]/g, '');
   }
 }
