@@ -1341,7 +1341,7 @@
 							"raw": "{\n    \"questionId\": \"02dbe973-3fc3-497b-958b-302d5bf62dfb\",\n    \"optionId\": \"f5835d23-168f-495e-9d83-4f61cc7a03d4\"\n  }"
 						},
 						"url": {
-							"raw": "http://localhost:6000/assessment/v1/questions/associate-option",
+							"raw": "{{baseUrl}}/assessment/v1/questions/associate-option",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -1380,7 +1380,7 @@
 							}
 						],
 						"url": {
-							"raw": "http://localhost:6000/assessment/v1/questions/:id/child-questions?includeOptions=true&includeAssociatedOptions=true",
+							"raw": "{{baseUrl}}/assessment/v1/questions/:id/child-questions?includeOptions=true&includeAssociatedOptions=true",
 							"protocol": "http",
 							"host": [
 								"localhost"
@@ -2192,7 +2192,7 @@
 				},
 
 				{
-					"name": "localhost:4000/assessment/v1/attempts/23df961a-f554-4d97-a7c1-e75e42062466/answersheet",
+					"name": "{{baseUrl}}/assessment/v1/attempts/{{attemptId}}/answersheet",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -2266,7 +2266,7 @@
 							}
 						],
 						"url": {
-							"raw": "localhost:4000/assessment/v1/attempts/23df961a-f554-4d97-a7c1-e75e42062466/answersheet",
+							"raw": "{{baseUrl}}/assessment/v1/attempts/{{attemptId}}/answersheet",
 							"host": [
 								"localhost"
 							],
@@ -2275,7 +2275,7 @@
 								"assessment",
 								"v1",
 								"attempts",
-								"23df961a-f554-4d97-a7c1-e75e42062466",
+								"{{attemptId}}",
 								"answersheet"
 							]
 						}
@@ -2308,11 +2308,10 @@
 							}
 						},
 						"url": {
-							"raw": "localhost:6000/assessment/v1/attempts/check-result-imported",
+							"raw": "{{baseUrl}}/assessment/v1/attempts/check-result-imported",
 							"host": [
-								"localhost"
+								"{{baseUrl}}"
 							],
-							"port": "6000",
 							"path": [
 								"assessment",
 								"v1",
@@ -2833,7 +2832,7 @@
 	"variable": [
 		{
 			"key": "baseUrl",
-			"value": "http://localhost:6000",
+			"value": "http://localhost:3000",
 			"type": "string"
 		},
 		{
@@ -2893,7 +2892,7 @@
 		},
 		{
 			"key": "localhost_dev",
-			"value": "http://localhost:6000",
+			"value": "{{baseUrl}}",
 			"type": "string"
 		},
 		{

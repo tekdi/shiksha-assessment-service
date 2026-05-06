@@ -18,7 +18,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/storage/presigned-url",
+  "url": "http://localhost:3000/assessment/v1/storage/presigned-url",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -66,7 +66,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/config",
+  "url": "http://localhost:3000/assessment/v1/config",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -105,7 +105,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/config/sync",
+  "url": "http://localhost:3000/assessment/v1/config/sync",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -186,7 +186,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/tests",
+  "url": "http://localhost:3000/assessment/v1/tests",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -244,7 +244,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/tests",
+  "url": "http://localhost:3000/assessment/v1/tests",
   "queryParams": {
     "limit": 10,
     "offset": 0,
@@ -300,7 +300,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/tests/listsearch",
+  "url": "http://localhost:3000/assessment/v1/tests/listsearch",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -348,7 +348,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -394,7 +394,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "PATCH",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -437,7 +437,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "DELETE",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "queryParams": { "hard": "false" },
   "headers": {
@@ -471,7 +471,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/hierarchy",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/hierarchy",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -526,7 +526,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/test-hierarchy",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/test-hierarchy",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -581,7 +581,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/questions",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/questions",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -620,7 +620,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/questions/bulk",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/questions/bulk",
   "pathParams": { "id": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -665,7 +665,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "DELETE",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/question/q-001",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/question/q-001",
   "pathParams": {
     "testId": "d3e4f567-e89b-12d3-a456-426614174000",
     "questionId": "q-001"
@@ -701,7 +701,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/users/35113bfc-adce-47fc-b85d-871cbcb00bcc/status",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/users/35113bfc-adce-47fc-b85d-871cbcb00bcc/status",
   "pathParams": {
     "testId": "d3e4f567-e89b-12d3-a456-426614174000",
     "userId": "35113bfc-adce-47fc-b85d-871cbcb00bcc"
@@ -743,7 +743,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "PUT",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/structure",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/structure",
   "pathParams": { "testId": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -787,7 +787,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/question-answer-report",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/question-answer-report",
   "pathParams": { "testId": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -832,7 +832,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/clone",
+  "url": "http://localhost:3000/assessment/v1/tests/d3e4f567-e89b-12d3-a456-426614174000/clone",
   "pathParams": { "testId": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -870,7 +870,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/sections",
+  "url": "http://localhost:3000/assessment/v1/sections",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -916,7 +916,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/sections",
+  "url": "http://localhost:3000/assessment/v1/sections",
   "queryParams": { "limit": 10, "offset": 0 },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -954,7 +954,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/sections/test/d3e4f567-e89b-12d3-a456-426614174000",
+  "url": "http://localhost:3000/assessment/v1/sections/test/d3e4f567-e89b-12d3-a456-426614174000",
   "pathParams": { "testId": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -993,7 +993,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/sections/sec-001",
+  "url": "http://localhost:3000/assessment/v1/sections/sec-001",
   "pathParams": { "id": "sec-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1033,7 +1033,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "PATCH",
-  "url": "http://localhost:4003/assessment/v1/sections/sec-001",
+  "url": "http://localhost:3000/assessment/v1/sections/sec-001",
   "pathParams": { "id": "sec-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1070,7 +1070,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "DELETE",
-  "url": "http://localhost:4003/assessment/v1/sections/sec-001",
+  "url": "http://localhost:3000/assessment/v1/sections/sec-001",
   "pathParams": { "id": "sec-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1105,7 +1105,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/rules",
+  "url": "http://localhost:3000/assessment/v1/rules",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -1153,7 +1153,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/rules",
+  "url": "http://localhost:3000/assessment/v1/rules",
   "queryParams": { "limit": 10, "offset": 0 },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1191,7 +1191,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/rules/rule-001",
+  "url": "http://localhost:3000/assessment/v1/rules/rule-001",
   "pathParams": { "id": "rule-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1230,7 +1230,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "PATCH",
-  "url": "http://localhost:4003/assessment/v1/rules/rule-001",
+  "url": "http://localhost:3000/assessment/v1/rules/rule-001",
   "pathParams": { "id": "rule-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1264,7 +1264,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "DELETE",
-  "url": "http://localhost:4003/assessment/v1/rules/rule-001",
+  "url": "http://localhost:3000/assessment/v1/rules/rule-001",
   "pathParams": { "id": "rule-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1297,7 +1297,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/rules/test/d3e4f567-e89b-12d3-a456-426614174000",
+  "url": "http://localhost:3000/assessment/v1/rules/test/d3e4f567-e89b-12d3-a456-426614174000",
   "pathParams": { "testId": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1335,7 +1335,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/rules/section/sec-001",
+  "url": "http://localhost:3000/assessment/v1/rules/section/sec-001",
   "pathParams": { "sectionId": "sec-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1373,7 +1373,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/rules/rule-001/preview",
+  "url": "http://localhost:3000/assessment/v1/rules/rule-001/preview",
   "pathParams": { "ruleId": "rule-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1413,7 +1413,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/rules/rule-001/questions",
+  "url": "http://localhost:3000/assessment/v1/rules/rule-001/questions",
   "pathParams": { "ruleId": "rule-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1454,7 +1454,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/questions",
+  "url": "http://localhost:3000/assessment/v1/questions",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -1507,7 +1507,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/questions",
+  "url": "http://localhost:3000/assessment/v1/questions",
   "queryParams": {
     "limit": 10,
     "offset": 0,
@@ -1553,7 +1553,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/questions/q-001",
+  "url": "http://localhost:3000/assessment/v1/questions/q-001",
   "pathParams": { "id": "q-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1597,7 +1597,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "PATCH",
-  "url": "http://localhost:4003/assessment/v1/questions/q-001",
+  "url": "http://localhost:3000/assessment/v1/questions/q-001",
   "pathParams": { "id": "q-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1635,7 +1635,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "DELETE",
-  "url": "http://localhost:4003/assessment/v1/questions/q-001",
+  "url": "http://localhost:3000/assessment/v1/questions/q-001",
   "pathParams": { "id": "q-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1668,7 +1668,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/questions/rule-preview",
+  "url": "http://localhost:3000/assessment/v1/questions/rule-preview",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -1709,7 +1709,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/questions/associate-option",
+  "url": "http://localhost:3000/assessment/v1/questions/associate-option",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -1745,7 +1745,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/questions/disassociate-option",
+  "url": "http://localhost:3000/assessment/v1/questions/disassociate-option",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -1781,7 +1781,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/questions/q-001/child-questions",
+  "url": "http://localhost:3000/assessment/v1/questions/q-001/child-questions",
   "pathParams": { "id": "q-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1822,7 +1822,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/attempts/start/d3e4f567-e89b-12d3-a456-426614174000",
+  "url": "http://localhost:3000/assessment/v1/attempts/start/d3e4f567-e89b-12d3-a456-426614174000",
   "pathParams": { "testId": "d3e4f567-e89b-12d3-a456-426614174000" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -1864,7 +1864,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/attempts/atm-001/resume/35113bfc-adce-47fc-b85d-871cbcb00bcc",
+  "url": "http://localhost:3000/assessment/v1/attempts/atm-001/resume/35113bfc-adce-47fc-b85d-871cbcb00bcc",
   "pathParams": {
     "attemptId": "atm-001",
     "userId": "35113bfc-adce-47fc-b85d-871cbcb00bcc"
@@ -1908,7 +1908,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/attempts/atm-001/questions/35113bfc-adce-47fc-b85d-871cbcb00bcc",
+  "url": "http://localhost:3000/assessment/v1/attempts/atm-001/questions/35113bfc-adce-47fc-b85d-871cbcb00bcc",
   "pathParams": {
     "attemptId": "atm-001",
     "userId": "35113bfc-adce-47fc-b85d-871cbcb00bcc"
@@ -1959,7 +1959,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/attempts/atm-001/answers",
+  "url": "http://localhost:3000/assessment/v1/attempts/atm-001/answers",
   "pathParams": { "attemptId": "atm-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -2007,7 +2007,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/attempts/atm-001/submit",
+  "url": "http://localhost:3000/assessment/v1/attempts/atm-001/submit",
   "pathParams": { "attemptId": "atm-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -2049,7 +2049,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/attempts/atm-001/review",
+  "url": "http://localhost:3000/assessment/v1/attempts/atm-001/review",
   "pathParams": { "attemptId": "atm-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -2091,7 +2091,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/attempts/reviews/pending",
+  "url": "http://localhost:3000/assessment/v1/attempts/reviews/pending",
   "queryParams": { "limit": 10, "offset": 0 },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -2135,7 +2135,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/attempts/import/resultstatus",
+  "url": "http://localhost:3000/assessment/v1/attempts/import/resultstatus",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",
@@ -2176,7 +2176,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "GET",
-  "url": "http://localhost:4003/assessment/v1/attempts/atm-001/answersheet",
+  "url": "http://localhost:3000/assessment/v1/attempts/atm-001/answersheet",
   "pathParams": { "attemptId": "atm-001" },
   "headers": {
     "tenantId": "<TENANT_ID>",
@@ -2226,7 +2226,7 @@ The Assessment service exposes a RESTful API for managing tests and assessments.
 ```json
 {
   "method": "POST",
-  "url": "http://localhost:4003/assessment/v1/attempts/review",
+  "url": "http://localhost:3000/assessment/v1/attempts/review",
   "headers": {
     "tenantId": "<TENANT_ID>",
     "organisationId": "<ORGANISATION_ID>",

@@ -314,7 +314,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=password
-DB_DATABASE=assessment_service
+DB_DATABASE=assessment_db
 
 # Redis Configuration
 CACHE_ENABLED=true
@@ -394,4 +394,6 @@ services:
 ```
 
 ## Steps for Server Side Setup
-@TODO
+
+For production server setup, it is recommended to use Docker for consistent orchestration. Refer to the [Docker Configuration](#docker-configuration) section above for details on setting up with Docker Compose. Alternatively, ensure Node.js, PostgreSQL, and Redis are installed on the server and follow the [DevOps Installation](#devops-installation) steps.
+
