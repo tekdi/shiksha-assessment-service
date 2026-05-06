@@ -2169,108 +2169,28 @@
 							}
 						},
 						"url": {
-							"raw": "http://shiksha-assessment-qa.aspireleaders.org/assessment/v1/attempts/review/608aa4fa-9e77-49cd-91bf-1f70609711fa",
-							"protocol": "http",
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/review",
 							"host": [
-								"shiksha-assessment-qa",
-								"aspireleaders",
-								"org"
+								"{{baseUrl}}"
 							],
 							"path": [
 								"assessment",
 								"v1",
 								"attempts",
-								"review",
-								"608aa4fa-9e77-49cd-91bf-1f70609711fa"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Review Attempt Copy",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NTkzOTcyOTMsImlhdCI6MTc1OTMxMDg5MywianRpIjoiYjYwYTM1MTQtMWFhZS00ODY0LWI4MDQtM2Y0YjNmYTBjNjg3IiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1xYS5hc3BpcmVsZWFkZXJzLm9yZy9hdXRoL3JlYWxtcy9Bc3BpcmVMZWFkZXJEZXYiLCJzdWIiOiIzNTExM2JmYy1hZGNlLTQ3ZmMtYjg1ZC04NzFjYmNiMDBiY2MiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJBc3BpcmVMZWFkZXJEZXYiLCJzZXNzaW9uX3N0YXRlIjoiM2ZhMjgxNTMtMjhkMS00MzAzLWE3YjQtZjAwNTdhNGQ3OTNiIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtcHJhdGhhbSJdfSwic2NvcGUiOiJzc28tbWV0YWRhdGEgZW1haWwgcHJvZmlsZSBwcmF0aGFtLXJvbGUiLCJzaWQiOiIzZmEyODE1My0yOGQxLTQzMDMtYTdiNC1mMDA1N2E0ZDc5M2IiLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJWaW5heWFrIFAiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ2aW5heWFrLnBhdGlsQHRla2RpdGVjaG5vbG9naWVzLmNvbSIsImdpdmVuX25hbWUiOiJWaW5heWFrIiwiZmFtaWx5X25hbWUiOiJQIiwiZW1haWwiOiJ2aW5heWFrLnBhdGlsQHRla2RpdGVjaG5vbG9naWVzLmNvbSJ9.CLeCAxZxomR323yDZDqe0-TegXYpgvkcbTpS0hIi6o9uWUvObUOhS2PmTvSbDfQ3N7k-VmuPrSbRCTy8pO-DcvF7vJjpp-dg8ljM24kmxHWY-O1Gwsk-LnVrc1BLKZXnDuy-QpVORACBY3jNX7aDvVUzLciIfwe6PoAjSIh9RHZMkGHfYaRTKhlJgQU1iFEPntW3wcDanFO3emItiBunzRKWxxbNInEhtHQCYrjAFCxiaKa6IT6dTL7B1Zn-UbL0SdPpNaKf8r-KPnWa7RvE31E2MzhrWo-nTXoyOWzzw6CzmJJzsc0Bw36ZbyTWPt3Ud2WQQWmcCafb4sNjIBUyFg",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{token}}",
-								"type": "text"
-							},
-							{
-								"key": "tenantId",
-								"value": "{{tenantId}}",
-								"type": "text"
-							},
-							{
-								"key": "organisationId",
-								"value": "{{organisationId}}",
-								"type": "text"
-							},
-							{
-								"key": "userId",
-								"value": "{{userId}}",
-								"type": "text"
-							},
-							{
-								"key": "academicyearid",
-								"value": "2024-2025",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "formdata",
-							"formdata": [
-								{
-									"key": "adminUserId",
-									"value": "100ba777-ca99-4cea-8ec7-c1ddd763d97b",
-									"type": "text"
-								},
-								{
-									"key": "contextId",
-									"value": "cohort-123",
-									"type": "text"
-								},
-								{
-									"key": "cohortId",
-									"value": "4d159509-fdc9-450a-b7cf-9ac41bacaf4a",
-									"type": "text"
-								},
-								{
-									"key": "file",
-									"type": "file",
-									"src": "/home/ttpl-rt-117/Downloads/assessment_import_template (1).xlsx"
-								}
-							]
-						},
-						"url": {
-							"raw": "http://middleware-qa.aspireleaders.org/aspirespecific/import-users/assessment/upload",
-							"protocol": "http",
-							"host": [
-								"middleware-qa",
-								"aspireleaders",
-								"org"
+								":attemptId",
+								"review"
 							],
-							"path": [
-								"aspirespecific",
-								"import-users",
-								"assessment",
-								"upload"
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
 							]
 						}
 					},
 					"response": []
 				},
+
 				{
 					"name": "localhost:4000/assessment/v1/attempts/23df961a-f554-4d97-a7c1-e75e42062466/answersheet",
 					"request": {
@@ -2977,8 +2897,8 @@
 			"type": "string"
 		},
 		{
-			"key": "aspiredev",
-			"value": "https://middleware-dev.aspireleaders.org",
+			"key": "example",
+			"value": "https://middleware-dev.example.org",
 			"type": "string"
 		}
 	]
