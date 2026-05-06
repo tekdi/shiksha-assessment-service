@@ -44,11 +44,7 @@ git clone https://github.com/tekdi/shiksha-assessment-service.git
    ```
 
 5. **Database Initialization**:
-   Ensure PostgreSQL is running and the database specified in `.env` exists, then run migrations:
-
-   ```bash
-   npm run migration:run
-   ```
+   Ensure PostgreSQL is running and the database specified in `.env` exists. Since automatic migrations are not used in this project, please follow the **Manual Database Setup** instructions in [8_devops.md](./8_devops.md) to initialize your database schema.
 
 6. **Start the Application**:
 
