@@ -4,9 +4,12 @@
 
 All API endpoints require the following headers for multi-tenancy:
 
-- `tenantId`: Your tenant identifier
-- `organisationId`: Your organisation identifier
-- `userId`: User identifier (optional, defaults to 'system')
+- `tenantId`: Your tenant identifier (Required)
+- `organisationId`: Your organisation identifier (Required)
+- `userId`: User identifier (Required for audit trails, defaults to 'system')
+
+> [!NOTE]
+> Authorization is handled by an external middleware or API gateway. These headers represent the authenticated context forwarded to the service.
 
 ## Examples
 

@@ -23,7 +23,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       port: this.configService.get('DB_PORT', 5432),
       username: this.configService.get('DB_USERNAME', 'postgres'),
       password: this.configService.get('DB_PASSWORD', 'postgres'),
-      database: this.configService.get('DB_DATABASE', 'assessment_db'),
+      database: this.configService.get('DB_DATABASE', 'assessment_service'),
       entities: [
         Test,
         TestSection,
@@ -34,7 +34,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
         Question,
         QuestionOption,
       ],
-      synchronize: false,
+      synchronize: this.configService.get('DB_SYNCHRONIZE') === 'true',
       autoLoadEntities: true,
       // logging: isDevelopment, 
       ssl: this.configService.get('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,

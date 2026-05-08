@@ -1,0 +1,2904 @@
+{
+	"info": {
+		"_postman_id": "4e1e6031-c343-4494-9f2a-872f357a5ad1",
+		"name": "Assessment Service - Local",
+		"description": "API collection for the Tests module of the Assessment Service.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "25088737",
+		"_collection_link": "https://restless-station-447428.postman.co/workspace/New-Team-Workspace~d482b4e0-4ee8-4441-8405-9ed0684e9ca4/collection/25088737-4e1e6031-c343-4494-9f2a-872f357a5ad1?action=share&source=collection_link&creator=25088737"
+	},
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"health"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Tests",
+			"item": [
+				{
+					"name": "Create Test",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"plain\",\n  \"title\": \"Week 1 - Mini Quiz\",\n  \"description\": \"Once you attempt the quiz and click 'Submit', you will see a confirmation message. This means your response was securely recorded. Please do not worry if the quiz appears as incomplete upon reloading the page.\",\n  \"showTime\": true,\n  \"timeDuration\": 60,\n  \"showTimeFinished\": false,\n  \"timeFinishedDuration\": 5,\n  \"totalMarks\": 100,\n  \"passingMarks\": 0,\n  \"attempts\":2,\n//   \"image\": \"https://example.com/image.jpg\",\n//   \"startDate\": \"2025-07-27T00:00:00.000Z\",\n//   \"endDate\": \"2025-07-28T00:00:00.000Z\",\n  \"answerSheet\": true,\n  \"showCorrectAnswer\": true,\n  \"printAnswersheet\": false,\n  \"questionsShuffle\": true,\n  \"answersShuffle\": true,\n  \"gradingType\": \"quiz\",\n  \"isObjective\": true,\n  \"showThankyouPage\": true,\n  \"showAllQuestions\": false,\n  \"paginationLimit\": 10,\n  \"showQuestionsOverview\": true,\n  \"status\":\"unpublished\"\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Tests",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests?search=sample&type=plain&status=draft&minMarks=40&maxMarks=100&offset=1&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests"
+							],
+							"query": [
+								{
+									"key": "search",
+									"value": "sample"
+								},
+								{
+									"key": "type",
+									"value": "plain"
+								},
+								{
+									"key": "status",
+									"value": "draft"
+								},
+								{
+									"key": "minMarks",
+									"value": "40"
+								},
+								{
+									"key": "maxMarks",
+									"value": "100"
+								},
+								{
+									"key": "offset",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Test By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Test",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n//   \"description\": \"This is a sample test to demonstrate the request body format. - 600\",\n//   \"showTime\": true,\n//   \"timeDuration\": 600,\n//   \"showTimeFinished\": false,\n//   \"timeFinishedDuration\": 5,\n//   \"totalMarks\": 100,\n//   \"passingMarks\": 40,\n//   \"image\": \"https://example.com/image.jpg\",\n  \"startDate\": \"2025-07-01T10:00:00.000Z\",\n//   \"endDate\": \"2025-07-10T10:00:00.000Z\",\n//   \"answerSheet\": true,\n//   \"showCorrectAnswer\": true,\n//   \"printAnswersheet\": false,\n//   \"questionsShuffle\": true,\n//   \"answersShuffle\": true,\n//   \"gradingType\": \"quiz\",\n  \"isObjective\": false,\n//   \"showThankyouPage\": true,\n//   \"showAllQuestions\": false,\n//   \"paginationLimit\": 10,\n//   \"showQuestionsOverview\": true\n  \"status\": \"published\"\n\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Test",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id?hard=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id"
+							],
+							"query": [
+								{
+									"key": "hard",
+									"value": "true"
+								}
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add a question to a test section",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{question1}}\",\n  \"sectionId\": \"{{section1}}\",\n  \"isCompulsory\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id",
+								"questions"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add multiple questions to a test section",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sectionId\": \"{{section1}}\",\n  \"questions\": [\n    {\n      \"questionId\": \"e8a23d83-c282-47dc-89f9-ffbab6b68745\",\n      \"ordering\": 1,\n      \"isCompulsory\": true\n    },\n    {\n      \"questionId\": \"284b3948-f095-4fea-a1e2-547fb1e79b2a\",\n      \"ordering\": 2,\n      \"isCompulsory\": true\n    }\n  ]\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id/questions/bulk",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id",
+								"questions",
+								"bulk"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get test hierarchy with sections and questions",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{question1}}\",\n  \"sectionId\": \"{{section1}}\",\n  \"isCompulsory\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id/test-hierarchy",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id",
+								"test-hierarchy"
+							],
+							"query": [
+								{
+									"key": "includeChildQuestions",
+									"value": "true",
+									"disabled": true
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "7c39dd25-b4e9-4c53-9f72-73d49f670ae9"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get test hierarchy with sections and questions Copy",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{question1}}\",\n  \"sectionId\": \"{{section1}}\",\n  \"isCompulsory\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id/hierarchy",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id",
+								"hierarchy"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Test Structure",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"sections\": [\n        {\n            \"sectionId\": \"58460ac0-01d0-42f7-9785-0d316a2e13d0\",\n            \"order\": 2,\n            \"questions\": [\n                {\n                    \"questionId\": \"99fc0380-8f77-452d-b216-19735f15bbf9\",\n                    \"order\": 2\n                },\n                {\n                    \"questionId\": \"cee00b5e-1c6b-4fb9-b8b4-a28cb66f625d\",\n                    \"order\": 3\n                }\n            ]\n        },\n        {\n            \"sectionId\": \"9d091585-9b23-43cc-861d-1ccbd157905e\",\n            \"order\": 3,\n             \"questions\": [\n                {\n                    \"questionId\": \"c3ef8c20-c930-4e8f-8aaa-59ba7a9e9351\",\n                    \"order\": 1\n                }\n             ]\n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:testId/structure",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":testId",
+								"structure"
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Copy Test",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "organisationId",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:id/clone",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":id",
+								"clone"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "35113bfc-adce-47fc-b85d-871cbcb00bcc",
+									"disabled": true
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1e97ff5b-a2d0-4e44-802f-521f3f097f00"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Sections",
+			"item": [
+				{
+					"name": "Create Section",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Section B\",\n  \"description\": \"Covers algebra and arithmetic\",\n  \"testId\": \"{{testId}}\",\n  \"ordering\": 2,\n  \"status\": \"published\",\n  \"minQuestions\": 5,\n  \"maxQuestions\": 100\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/sections",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"sections"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Sections",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/sections",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"sections"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Sections by TestId",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/sections/test/:testId",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"sections",
+								"test",
+								":testId"
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Section By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/sections/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"sections",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Section",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated Section Title\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/sections/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"sections",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Section",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/sections/:id?hard=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"sections",
+								":id"
+							],
+							"query": [
+								{
+									"key": "hard",
+									"value": "true"
+								}
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Questions",
+			"item": [
+				{
+					"name": "Create Question",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"What is the capital of France?\",\n  \"alias\": \"capital-france\",\n  \"description\": \"Choose the correct capital of France from the options.\",\n  \"type\": \"mcq\",\n  \"level\": \"easy\",\n  \"marks\": 5,\n  \"status\": \"published\",\n  \"idealTime\": 30,\n  \"gradingType\": \"quiz\",\n  \"allowPartialScoring\": false,\n \"testId\":\"394e8654-19c0-4f04-9996-983f7d4d84b6\",\n \"sectionId\":\"b0c56811-e6e6-4c74-8e56-a486ad16e9d1\",\n  \"options\": [\n    {\n      \"text\": \"Paris\",\n      \"isCorrect\": true,\n      \"marks\": 5,\n      \"position\": 1\n    },\n    {\n      \"text\": \"Berlin\",\n      \"isCorrect\": false,\n      \"marks\": 0,\n      \"position\": 2\n    },\n    {\n      \"text\": \"Madrid\",\n      \"isCorrect\": false,\n      \"marks\": 0,\n      \"position\": 3\n    },\n    {\n      \"text\": \"Rome\",\n      \"isCorrect\": false,\n      \"marks\": 0,\n      \"position\": 4\n    }\n  ]\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Questions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions?offset=0&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							],
+							"query": [
+								{
+									"key": "search",
+									"value": "photosynthesis",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "ACTIVE",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "MCQ",
+									"disabled": true
+								},
+								{
+									"key": "level",
+									"value": "EASY",
+									"disabled": true
+								},
+								{
+									"key": "categoryId",
+									"value": "1f2e3d4c-5678-4a90-b123-abcdef987654",
+									"disabled": true
+								},
+								{
+									"key": "categories",
+									"value": "math,science",
+									"disabled": true
+								},
+								{
+									"key": "difficultyLevels",
+									"value": "EASY,MEDIUM",
+									"disabled": true
+								},
+								{
+									"key": "questionTypes",
+									"value": "MCQ,FILL_BLANK",
+									"disabled": true
+								},
+								{
+									"key": "tags",
+									"value": "biology,plants",
+									"disabled": true
+								},
+								{
+									"key": "marks",
+									"value": "1,2,5",
+									"disabled": true
+								},
+								{
+									"key": "minMarks",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "maxMarks",
+									"value": "5",
+									"disabled": true
+								},
+								{
+									"key": "excludeQuestionIds",
+									"value": "11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222",
+									"disabled": true
+								},
+								{
+									"key": "includeQuestionIds",
+									"value": "33333333-3333-3333-3333-333333333333",
+									"disabled": true
+								},
+								{
+									"key": "timeRangeFrom",
+									"value": "2025-06-01",
+									"disabled": true
+								},
+								{
+									"key": "timeRangeTo",
+									"value": "2025-06-30",
+									"disabled": true
+								},
+								{
+									"key": "rulePreview",
+									"value": "true",
+									"disabled": true
+								},
+								{
+									"key": "offset",
+									"value": "0"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Question By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Question",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated question title\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Question",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Questions associate-option",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantid",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3"
+							},
+							{
+								"key": "organisationid",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee"
+							},
+							{
+								"key": "userid",
+								"value": "35113bfc-adce-47fc-b85d-871cbcb00bcc"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"questionId\": \"02dbe973-3fc3-497b-958b-302d5bf62dfb\",\n    \"optionId\": \"f5835d23-168f-495e-9d83-4f61cc7a03d4\"\n  }"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions/associate-option",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"assessment",
+								"v1",
+								"questions",
+								"associate-option"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get child-questions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantid",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3"
+							},
+							{
+								"key": "organisationid",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee"
+							},
+							{
+								"key": "userid",
+								"value": "35113bfc-adce-47fc-b85d-871cbcb00bcc"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions/:id/child-questions?includeOptions=true&includeAssociatedOptions=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"assessment",
+								"v1",
+								"questions",
+								":id",
+								"child-questions"
+							],
+							"query": [
+								{
+									"key": "includeOptions",
+									"value": "true"
+								},
+								{
+									"key": "includeAssociatedOptions",
+									"value": "true"
+								}
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "aa8b6cc0-ecd9-47aa-84fb-4b71d9250327"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Question Types",
+			"item": [
+				{
+					"name": "1. MCQ (Single Choice)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"What is the capital of France?\",\n  \"media\": {\n    \"image\": \"https://cdn.example.com/plag/France.jpg\"\n  },\n  \"type\": \"mcq\",\n  \"level\": \"easy\",\n  \"options\": [\n    {\n      \"text\": \"London\",\n      \"isCorrect\": false\n    },\n    {\n      \"text\": \"Paris\",\n      \"isCorrect\": true\n    },\n    {\n      \"text\": \"Berlin\",\n      \"isCorrect\": false\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Multiple Answer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Which of the following are programming languages?\",\n  \"type\": \"multiple_answer\",\n  \"level\": \"medium\",\n  \"marks\": 3,\n  \"allowPartialScoring\": true,\n  \"options\": [\n    {\n      \"text\": \"Python\",\n      \"isCorrect\": true,\n      \"marks\": 1\n    },\n    {\n      \"text\": \"HTML\",\n      \"isCorrect\": false\n    },\n    {\n      \"text\": \"JavaScript\",\n      \"isCorrect\": true,\n      \"marks\": 1\n    },\n    {\n      \"text\": \"CSS\",\n      \"isCorrect\": false\n    },\n    {\n      \"text\": \"Java\",\n      \"isCorrect\": true,\n      \"marks\": 1\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. True/False",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"The Earth is flat.\",\n  \"type\": \"true_false\",\n  \"level\": \"easy\",\n  \"marks\": 1,\n  \"options\": [\n    {\n      \"text\": \"True\",\n      \"isCorrect\": false\n    },\n    {\n      \"text\": \"False\",\n      \"isCorrect\": true\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Fill in the Blank",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{AccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"According to the quote by Warren G. Bennis, leadership is rooted in creating _____.\",\n  \"type\": \"fill_blank\",\n  \"level\": \"medium\",\n  \"marks\": 1,\n  \"options\": [\n    {\n      \"text\": \"solutions\",\n      \"isCorrect\": true,\n      \"blankIndex\": 0,\n      \"caseSensitive\": false\n    },\n    {\n      \"text\": \"meaning\",\n      \"isCorrect\": false\n    //   \"blankIndex\": 1,\n    //   \"caseSensitive\": false\n    },\n    {\n      \"text\": \"memories\",\n      \"isCorrect\": false\n    //   \"blankIndex\": 2,\n    //   \"caseSensitive\": false\n    },\n    {\n      \"text\": \"teams\",\n      \"isCorrect\": false\n    //   \"blankIndex\": 2,\n    //   \"caseSensitive\": false\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Matching",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Match the countries with their capitals:\",\n  \"type\": \"match\",\n  \"level\": \"medium\",\n  \"marks\": 3,\n  \"options\": [\n    {\n      \"text\": \"France\",\n      \"matchWith\": \"Paris\",\n      \"isCorrect\": true\n    },\n    {\n      \"text\": \"Germany\",\n      \"matchWith\": \"Berlin\",\n      \"isCorrect\": true\n    },\n    {\n      \"text\": \"Italy\",\n      \"matchWith\": \"Rome\",\n      \"isCorrect\": true\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. Subjective (Short Answer)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Explain the concept of REST API in 2-3 sentences.\",\n  \"type\": \"subjective\",\n  \"level\": \"medium\",\n  \"marks\": 5,\n  \"gradingType\": \"exercise\",\n  \"params\": {\n    \"maxLength\": 500,\n    \"minLength\": 50,\n    \"wordLimit\": 100\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Objective (Auto-evaluated Short Answer)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"What is the capital of Japan? (Answer in one word)\",\n  \"type\": \"objective\",\n  \"level\": \"easy\",\n  \"marks\": 2,\n  \"gradingType\": \"quiz\",\n  \"params\": {\n    \"maxLength\": 50,\n    \"minLength\": 3,\n    \"caseSensitive\": false\n  },\n  \"options\": [\n    {\n      \"text\": \"Tokyo\",\n      \"isCorrect\": true\n    },\n    {\n      \"text\": \"tokyo\",\n      \"isCorrect\": true\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"questions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Essay (Long Answer)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Write a comprehensive essay on the impact of artificial intelligence on modern software development.\",\n  \"type\": \"essay\",\n  \"level\": \"hard\",\n  \"marks\": 25,\n  \"gradingType\": \"exercise\",\n  \"params\": {\n    \"maxLength\": 2000,\n    \"minLength\": 500,\n    \"wordLimit\": 800,\n    \"allowAttachments\": true,\n    \"rubric\": {\n      \"criteria\": [\n        {\n          \"name\": \"Introduction\",\n          \"maxScore\": 3,\n          \"description\": \"Clear introduction and thesis statement\"\n        },\n        {\n          \"name\": \"Content Depth\",\n          \"maxScore\": 8,\n          \"description\": \"In-depth analysis of AI impact\"\n        },\n        {\n          \"name\": \"Examples\",\n          \"maxScore\": 5,\n          \"description\": \"Relevant real-world examples\"\n        },\n        {\n          \"name\": \"Critical Thinking\",\n          \"maxScore\": 4,\n          \"description\": \"Critical analysis and balanced perspective\"\n        },\n        {\n          \"name\": \"Conclusion\",\n          \"maxScore\": 3,\n          \"description\": \"Strong conclusion with future implications\"\n        },\n        {\n          \"name\": \"Writing Quality\",\n          \"maxScore\": 2,\n          \"description\": \"Clear, coherent writing style\"\n        }\n      ]\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/questions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Attempts",
+			"item": [
+				{
+					"name": "Get Test Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:testId/users/:userId/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":testId",
+								"users",
+								":userId",
+								"status"
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								},
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Start Test Attempt",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/start/:testId?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								"start",
+								":testId"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get/Resume existing attempt",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/resume",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"resume"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Answer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "[\n  {\n    \"questionId\": \"c3ef8c20-c930-4e8f-8aaa-59ba7a9e9351\",\n    \"answer\": {\n      \"text\": \"Artificial intelligence has significantly transformed modern software development by introducing automation, intelligent decision-making, and optimization. Its applications span across testing, deployment, and user personalization, reshaping the software lifecycle.Artificial intelligence has significantly transformed modern software development by introducing automation, intelligent decision-making, and optimization. Its applications span across testing, deployment, and user personalization, reshaping the software lifecycle.Artificial intelligence has significantly transformed modern software development by introducing automation, intelligent decision-making, and optimization. Its applications span across testing, deployment, and user personalization, reshaping the software lifecycle.\"\n    },\n    \"timeSpent\": 60\n  },\n  {\n    \"questionId\": \"99fc0380-8f77-452d-b216-19735f15bbf9\",\n    \"answer\": {\n      \"selectedOptionIds\": [\n        \"a6eb90de-cf34-43ee-b174-434537a9130e\",\"56426283-26ae-4747-b77d-452baed98de0\"\n      ]\n    },\n    \"timeSpent\": 30\n  },\n  {\n    \"questionId\": \"cee00b5e-1c6b-4fb9-b8b4-a28cb66f625d\",\n    \"answer\": {\n      \"selectedOptionIds\": [\n        \"23697c17-211d-46e9-88ba-62c468d91406\"  // Paris\n      ]\n    },\n    \"timeSpent\": 15\n  }\n]\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/answers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"answers"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Test Attempt",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{LearnerAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/submit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"submit"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Attempt answersheet",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/answersheet",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"answersheet"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Test Result",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/tests/:testId/users/:userId/result",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"tests",
+								":testId",
+								"users",
+								":userId",
+								"result"
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								},
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Review Attempt",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"answers\": [\n        {\n            \"questionId\": \"aefbdee7-ed63-4632-9f1a-7afe6d8fe189\",\n            \"score\": 2\n        },\n        {\n            \"questionId\": \"2fa29950-587c-4d13-979c-d56c1ae30cfd\",\n            \"score\": 2\n        }\n    ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/review",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"review"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+
+				{
+					"name": "{{baseUrl}}/assessment/v1/attempts/{{attemptId}}/answersheet",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "academicyearid",
+								"value": "9a9e0daa-50dd-4d0e-8d10-36e7bc808f88"
+							},
+							{
+								"key": "accept",
+								"value": "application/json, text/plain, */*"
+							},
+							{
+								"key": "accept-language",
+								"value": "en-GB,en-US;q=0.9,en;q=0.8"
+							},
+							{
+								"key": "authorization",
+								"value": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NjM2MjA2ODksImlhdCI6MTc2MzUzNDI4OSwianRpIjoiNmVhNjY5ODUtODNiOS00NmI1LTkzNTgtNWYxNjY2OTdiMTIxIiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1xYS5hc3BpcmVsZWFkZXJzLm9yZy9hdXRoL3JlYWxtcy9Bc3BpcmVMZWFkZXJEZXYiLCJzdWIiOiJmYTAyM2U0NC03YmNmLTQzZmMtOTA5OS03Y2E0MTkzYTk4NWYiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJBc3BpcmVMZWFkZXJEZXYiLCJzZXNzaW9uX3N0YXRlIjoiNjE5ZTRmNDEtOWY2Ny00ZTE3LWJjZWQtMDZlZWZlYTFjZjQ3IiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiIsImRlZmF1bHQtcm9sZXMtcHJhdGhhbSJdfSwic2NvcGUiOiJzc28tbWV0YWRhdGEgZW1haWwgcHJvZmlsZSBwcmF0aGFtLXJvbGUiLCJzaWQiOiI2MTllNGY0MS05ZjY3LTRlMTctYmNlZC0wNmVlZmVhMWNmNDciLCJlbWFpbF92ZXJpZmllZCI6ZmFsc2UsIm5hbWUiOiJNYWhlc2ggTWFoYWphbiIsInByZWZlcnJlZF91c2VybmFtZSI6Im1haGVzaC5tYWhhamFuKzExK0B0ZWtkaXRlY2hub2xvZ2llcy5jb20iLCJnaXZlbl9uYW1lIjoiTWFoZXNoIiwiZmFtaWx5X25hbWUiOiJNYWhhamFuIiwiZW1haWwiOiJtYWhlc2gubWFoYWphbisxMStAdGVrZGl0ZWNobm9sb2dpZXMuY29tIn0.cHiCM9WuHjeg4HrAJj2Ssv32UWFrMP85Rw1mJ0HXCG6gZEB4J_BCp6iaiRG_EYuO_UTQUFtwFWdranpc3zU3hx3qiq4O7jrpEHYtEKczMalRvpeDvrr-x1LtWY60mQV56ONZJxOoJb1VAAlXWgFuo9LRH-xqZewApy6Zf95i1B7ipfE-SlPaotQaPHl01--7yfMVr64-9K_iS7BcAQ_xYVTuBWCJuT60uViLTTSH291dq81EIReX5kMf1SUqan6LbQKhSi7K8Q-aymvMV6jDVvzpkOjIp2gca-jsyCD5BzSeBF-AFzGt_hAD8EEzM_VJYltPeZdLhJMh_BjrrdHL0w"
+							},
+							{
+								"key": "cache-control",
+								"value": "no-cache"
+							},
+							{
+								"key": "organisationid",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee"
+							},
+							{
+								"key": "origin",
+								"value": "http://localhost:3001"
+							},
+							{
+								"key": "pragma",
+								"value": "no-cache"
+							},
+							{
+								"key": "priority",
+								"value": "u=1, i"
+							},
+							{
+								"key": "referer",
+								"value": "http://localhost:3001/"
+							},
+							{
+								"key": "sec-ch-ua-mobile",
+								"value": "?1"
+							},
+							{
+								"key": "sec-ch-ua-platform",
+								"value": "Android"
+							},
+							{
+								"key": "sec-fetch-dest",
+								"value": "empty"
+							},
+							{
+								"key": "sec-fetch-mode",
+								"value": "cors"
+							},
+							{
+								"key": "sec-fetch-site",
+								"value": "cross-site"
+							},
+							{
+								"key": "tenantid",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3"
+							},
+							{
+								"key": "user-agent",
+								"value": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.35 Mobile Safari/537.36"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/{{attemptId}}/answersheet",
+							"host": [
+								"localhost"
+							],
+							"port": "4000",
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								"{{attemptId}}",
+								"answersheet"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "/check-result-imported",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "tenantid",
+								"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3",
+								"type": "text"
+							},
+							{
+								"key": "organisationid",
+								"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \n  \"userId\": \"9e3e757e-5155-4bb8-82ca-1f802380caa7\",\n  \"testId\": \"105f243e-e092-4565-bd57-a1130820132f\"\n\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/check-result-imported",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								"check-result-imported"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Rules",
+			"item": [
+				{
+					"name": "Create Rule",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Easy Math Questions Rule\",\n  \"description\": \"Selects easy-level math questions with MCQ type from the pool.\",\n  \"ruleType\": \"category_based\",\n  \"numberOfQuestions\": 10,\n  \"poolSize\": 50,\n  \"minMarks\": 1,\n  \"maxMarks\": 5,\n  \"selectionStrategy\": \"random\",\n  \"criteria\": {\n    \"categories\": [\"math\", \"arithmetic\"],\n    \"difficultyLevels\": [\"EASY\"],\n    \"questionTypes\": [\"MCQ\"],\n    \"tags\": [\"algebra\", \"addition\"],\n    \"marks\": [1, 2]\n   \n  },\n  \"status\": \"published\",\n  \"priority\": 1,\n  \"selectionMode\": \"DYNAMIC\"\n}\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"rules"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Rules",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/rules",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"rules"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Rule By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/rules/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"rules",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Rule",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Rule Name\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/rules/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"rules",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Rule",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/rules/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"rules",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "runnaer",
+			"item": [
+				{
+					"name": "Review Attempt Copy",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"answers\": [\n    {\n      \"questionId\": \"20e4262d-6d7a-4ecf-b3cd-cb5aa7b6db5f\",\n      \"score\": {{score1}}\n    },\n     {\n      \"questionId\": \"7d6fa0bc-3a9b-425f-a90e-baded1ac6755\",\n      \"score\": {{score2}}\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/review/:testId?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								"review",
+								":testId"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Test Attempt Copy",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{LearnerAccessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/submit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"submit"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Answer Copy",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "[\n  {\n    \"questionId\": \"c3ef8c20-c930-4e8f-8aaa-59ba7a9e9351\",\n    \"answer\": {\n      \"text\": \"Artificial intelligence has significantly transformed modern software development by introducing automation, intelligent decision-making, and optimization. Its applications span across testing, deployment, and user personalization, reshaping the software lifecycle.Artificial intelligence has significantly transformed modern software development by introducing automation, intelligent decision-making, and optimization. Its applications span across testing, deployment, and user personalization, reshaping the software lifecycle.Artificial intelligence has significantly transformed modern software development by introducing automation, intelligent decision-making, and optimization. Its applications span across testing, deployment, and user personalization, reshaping the software lifecycle.\"\n    },\n    \"timeSpent\": 60\n  },\n  {\n    \"questionId\": \"99fc0380-8f77-452d-b216-19735f15bbf9\",\n    \"answer\": {\n      \"selectedOptionIds\": [\n        \"a6eb90de-cf34-43ee-b174-434537a9130e\",\"56426283-26ae-4747-b77d-452baed98de0\"\n      ]\n    },\n    \"timeSpent\": 30\n  },\n  {\n    \"questionId\": \"cee00b5e-1c6b-4fb9-b8b4-a28cb66f625d\",\n    \"answer\": {\n      \"selectedOptionIds\": [\n        \"23697c17-211d-46e9-88ba-62c468d91406\"  // Paris\n      ]\n    },\n    \"timeSpent\": 15\n  }\n]\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/:attemptId/answers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								":attemptId",
+								"answers"
+							],
+							"variable": [
+								{
+									"key": "attemptId",
+									"value": "{{attemptId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Start Test Attempt Copy",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							},
+							{
+								"key": "tenantId",
+								"value": "{{tenantId}}",
+								"type": "text"
+							},
+							{
+								"key": "organisationId",
+								"value": "{{organisationId}}",
+								"type": "text"
+							},
+							{
+								"key": "userId",
+								"value": "{{userId}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/assessment/v1/attempts/start/:testId?userId={{userId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"assessment",
+								"v1",
+								"attempts",
+								"start",
+								":testId"
+							],
+							"query": [
+								{
+									"key": "userId",
+									"value": "{{userId}}"
+								}
+							],
+							"variable": [
+								{
+									"key": "testId",
+									"value": "{{testId}}"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "organisationId",
+			"value": "d36d9079-0f42-4ba3-be03-26c9e79509ee",
+			"type": "string"
+		},
+		{
+			"key": "tenantId",
+			"value": "ef99949b-7f3a-4a5f-806a-e67e683e38f3",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "35113bfc-adce-47fc-b85d-871cbcb00bcc",
+			"type": "string"
+		},
+		{
+			"key": "testId",
+			"value": "bd0e0e15-d098-4036-8e77-2cd6065dc373",
+			"type": "string"
+		},
+		{
+			"key": "section1",
+			"value": "02950ed5-a6c1-4f08-915f-20009b8329aa",
+			"type": "string"
+		},
+		{
+			"key": "section2",
+			"value": "7db5c766-c7f5-478f-a174-d149d8289530",
+			"type": "string"
+		},
+		{
+			"key": "question1",
+			"value": "2a41c4d4-888b-4d58-b8de-eeeca1edb517",
+			"type": "string"
+		},
+		{
+			"key": "testId2",
+			"value": "4ade11f4-1883-4649-8bce-ad6d9c4d60c3",
+			"type": "string"
+		},
+		{
+			"key": "ruleId",
+			"value": "6dfce5f8-8cdd-46d3-86c0-4289bcb6bb03",
+			"type": "string"
+		},
+		{
+			"key": "attemptId",
+			"value": "246a455b-a375-4e03-b5e2-49828a936d26",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJKQWV0Z1E5d1c1X1ktaHBwV0lsb3pxb0ExZ3ctNnhvMi1MVzExNjlSblljIn0.eyJleHAiOjE3NTM3NzU0MzcsImlhdCI6MTc1MzY4OTAzNywianRpIjoiNDkzZGI4YmItNTk1ZS00OGFiLWE3ODktZjU2NjcyMzdlODI5IiwiaXNzIjoiaHR0cHM6Ly9rZXljbG9hay1kZXYuYXNwaXJlbGVhZGVycy5vcmcvYXV0aC9yZWFsbXMvQXNwaXJlTGVhZGVyRGV2Iiwic3ViIjoiMzUxMTNiZmMtYWRjZS00N2ZjLWI4NWQtODcxY2JjYjAwYmNjIiwidHlwIjoiQmVhcmVyIiwiYXpwIjoiQXNwaXJlTGVhZGVyRGV2Iiwic2Vzc2lvbl9zdGF0ZSI6IjJhZjhmM2UwLTY3ODktNGE2MC05MGJhLWU5Y2JhOTk5MDQ0MyIsImFjciI6IjEiLCJhbGxvd2VkLW9yaWdpbnMiOlsiLyoiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iLCJkZWZhdWx0LXJvbGVzLXByYXRoYW0iXX0sInNjb3BlIjoic3NvLW1ldGFkYXRhIGVtYWlsIHByb2ZpbGUgcHJhdGhhbS1yb2xlIiwic2lkIjoiMmFmOGYzZTAtNjc4OS00YTYwLTkwYmEtZTljYmE5OTkwNDQzIiwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJuYW1lIjoiVmluYXlhayBQIiwicHJlZmVycmVkX3VzZXJuYW1lIjoidmluYXlhay5wYXRpbEB0ZWtkaXRlY2hub2xvZ2llcy5jb20iLCJnaXZlbl9uYW1lIjoiVmluYXlhayIsImZhbWlseV9uYW1lIjoiUCIsImVtYWlsIjoidmluYXlhay5wYXRpbEB0ZWtkaXRlY2hub2xvZ2llcy5jb20ifQ.nU5bb7pXiiFS1oFsbw9wR7449f_dass3bTVFbzBW1rZJQt6H_kSTps09rlH6DS7vIlMc-q0Bd4PgJgiZOOYAglMSvt49e1EOmLgRGKXxhdINkMRFsc4X_Lia7YG6dOzoRX1hz8-nddBn6-lcrn5v5EN0NFDtq7h-ASqFy1TtYSVv0wV9mGvkdONsSpfIz4k3fE4R7tr6EZ2zIjaiVvR60-IOiuxv1kCeG0EfEQyMKJOfgIbUCOBPsoXAzTmBE0lwp8wmwqn8VFK1V46FjVbVECmc8-NFmcEOFYOa4t1GfFm9cN7tO5jRdpaFu4ooZe-sGu-AtcRUhjreEWVi8HCGkQ",
+			"type": "string"
+		},
+		{
+			"key": "localhost_dev",
+			"value": "{{baseUrl}}",
+			"type": "string"
+		},
+		{
+			"key": "example",
+			"value": "https://middleware-dev.example.org",
+			"type": "string"
+		}
+	]
+}
