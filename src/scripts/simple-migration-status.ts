@@ -13,7 +13,7 @@ const dataSource = new DataSource({
   port: parseInt(process.env.DATABASE_PORT || '5432'),
   username: process.env.DATABASE_USERNAME || 'postgres',
   password: process.env.DATABASE_PASSWORD || 'postgres',
-  database: process.env.DATABASE_NAME || 'assessment_db',
+  database: process.env.DATABASE_NAME || 'assessment_service',
   entities: [],
   synchronize: false,
   logging: false,

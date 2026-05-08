@@ -21,7 +21,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "postinstall": "cd node_modules/@vinayak-patil/cloud-storage && npm run build",
     "migration:run": "ts-node -r tsconfig-paths/register src/scripts/migration-runner-with-polyfill.ts",
-    "migration:status": "ts-node -r tsconfig-paths/register src/scripts/simple-migration-status.ts"
+    "migration:status": "ts-node -r tsconfig-paths/register src/scripts/simple-migration-status.ts",
+    "db:setup": "./scripts/setup-db.sh"
   },
   "repository": {
     "type": "git",

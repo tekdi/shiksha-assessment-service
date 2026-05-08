@@ -1,3 +1,7 @@
+---
+sidebar_position: 6
+---
+
 # 📘 Assessment Microservice - Database Design
 
 ## 🏗️ **Database Schema Overview**

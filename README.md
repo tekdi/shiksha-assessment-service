@@ -28,6 +28,25 @@ A robust, scalable NestJS microservice for managing the entire lifecycle of test
 - ✅ **Hybrid Approach** - Best of both worlds for scalability
 - ✅ **Event-Driven** - Loose coupling through standardized events
 
+## 🔒 Authentication & Authorization
+
+### **Architecture**
+This microservice **does not include built-in user authentication** (e.g., login or password handling). Instead, it follows a gateway-centric architecture:
+
+1.  **External Middleware**: An upstream API Gateway or Middleware is responsible for authenticating the user and providing the session.
+2.  **Context Injection**: Upon successful authentication, the middleware injects the user context into the request headers.
+3.  **Header Extraction**: The Assessment Service uses an `AuthContextInterceptor` to extract these headers (tenantId, organisationId, userId).
+
+### **Required Headers**
+Every request (except health checks) must include the following headers for multi-tenancy:
+
+- `tenantId`: (UUID) The unique identifier for the tenant.
+- `organisationId`: (UUID) The unique identifier for the organization.
+- `userId`: (UUID) The unique identifier for the user (or `system`).
+
+> [!IMPORTANT]
+> When testing APIs locally, you **must manually provide these headers**.
+
 ## 🏗️ Architecture
 
 ### **Technology Stack**
@@ -72,8 +91,9 @@ cp env.example .env
 # Configure environment variables
 # Edit .env file with your database and Redis settings
 
-# Run database migrations
-npm run migration:run
+# Database Initialization
+# Ensure PostgreSQL is running, edit your `.env` file, and run:
+npm run db:setup
 
 # Start the application
 npm run start:dev
