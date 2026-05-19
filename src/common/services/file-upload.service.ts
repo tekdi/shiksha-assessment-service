@@ -6,7 +6,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { extname } from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -22,6 +23,13 @@ export interface FileUploadResult {
   fileSize: number;
 }
 
+export interface FileDownloadUrlResult {
+  /** Time-limited signed URL for downloading private object */
+  downloadUrl: string;
+  /** Expiry in seconds used for signed URL generation */
+  expiresIn: number;
+}
+
 @Injectable()
 export class FileUploadService {
   private readonly logger = new Logger(FileUploadService.name);
@@ -35,6 +43,7 @@ export class FileUploadService {
       this.configService.get<string>('CLOUD_STORAGE_REGION')?.trim() ||
       this.configService.get<string>('AWS_REGION');
     const bucket =
+      this.configService.get<string>('CLOUD_STORAGE_PRIVATE_BUCKET_NAME')?.trim() ||
       this.configService.get<string>('CLOUD_STORAGE_BUCKET_NAME')?.trim() ||
       this.configService.get<string>('AWS_BUCKET_NAME');
     const accessKeyId =
@@ -71,7 +80,7 @@ export class FileUploadService {
   ): Promise<FileUploadResult> {
     if (!this.s3Client || !this.bucket) {
       throw new InternalServerErrorException(
-        'File upload is not configured. Set CLOUD_STORAGE_* or AWS_* environment variables.',
+        'File upload is not configured. Set CLOUD_STORAGE_PRIVATE_BUCKET_NAME (or CLOUD_STORAGE_BUCKET_NAME/AWS_BUCKET_NAME) with valid cloud storage credentials.',
       );
     }
 
@@ -121,11 +130,10 @@ export class FileUploadService {
           },
         }),
       );
-    } catch (error: any) {
-      this.logger.error(`S3 upload failed: ${error?.message || error}`, error?.stack);
-      throw new InternalServerErrorException(
-        `Failed to upload file. ${error?.message || error}`,
-      );
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`S3 upload failed: ${msg}`, error instanceof Error ? error.stack : undefined);
+      throw new InternalServerErrorException('Failed to upload file. Please try again later.');
     }
 
     const fileUrl = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
@@ -142,7 +150,7 @@ export class FileUploadService {
   async deleteFileByUrl(fileUrl: string): Promise<{ key: string }> {
     if (!this.s3Client || !this.bucket) {
       throw new InternalServerErrorException(
-        'File storage is not configured. Set CLOUD_STORAGE_* or AWS_* environment variables.',
+        'File storage is not configured. Set CLOUD_STORAGE_PRIVATE_BUCKET_NAME (or CLOUD_STORAGE_BUCKET_NAME/AWS_BUCKET_NAME) with valid cloud storage credentials.',
       );
     }
 
@@ -157,11 +165,50 @@ export class FileUploadService {
       );
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`S3 delete failed for key prefix: ${key.slice(0, 64)}…`, (error as Error)?.stack);
-      throw new InternalServerErrorException(`Failed to delete file. ${msg}`);
+      this.logger.error(
+        `S3 delete failed for key prefix: ${key.slice(0, 64)}… ${msg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new InternalServerErrorException('Failed to delete file. Please try again later.');
     }
 
     return { key };
+  }
+
+  /**
+   * Create a short-lived signed URL for downloading a private object.
+   * Accepts the same file URL that was returned by uploadFile.
+   */
+  async getDownloadUrl(fileUrl: string): Promise<FileDownloadUrlResult> {
+    if (!this.s3Client || !this.bucket) {
+      throw new InternalServerErrorException(
+        'File storage is not configured. Set CLOUD_STORAGE_PRIVATE_BUCKET_NAME (or CLOUD_STORAGE_BUCKET_NAME/AWS_BUCKET_NAME) with valid cloud storage credentials.',
+      );
+    }
+
+    const key = this.parseAndValidateAssessmentObjectKey(fileUrl.trim());
+    const expiresIn = this.getDownloadUrlExpirySeconds();
+
+    try {
+      // Omit ResponseContentDisposition so GetObject uses object metadata from PutObject.
+      const downloadUrl = await getSignedUrl(
+        this.s3Client,
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        }),
+        { expiresIn },
+      );
+
+      return { downloadUrl, expiresIn };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `S3 signed-download URL generation failed for key prefix: ${key.slice(0, 64)}… ${msg}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new InternalServerErrorException('Failed to create download URL. Please try again later.');
+    }
   }
 
   /**
@@ -207,11 +254,24 @@ export class FileUploadService {
       throw new BadRequestException('Invalid object key');
     }
 
-    const prefix = this.uploadPath.replace(/^\/+|\/+$/g, '');
+    const prefix = this.uploadPath.replaceAll(/^\/+|\/+$/g, '');
     if (!prefix || !key.startsWith(`${prefix}/`)) {
       throw new ForbiddenException('Only files under the assessment upload path can be deleted');
     }
 
     return key;
+  }
+
+  private getDownloadUrlExpirySeconds(): number {
+    const raw = this.configService.get<string>('ASSESSMENT_FILE_DOWNLOAD_URL_EXPIRES_IN_SECONDS');
+    const trimmed = String(raw ?? '').trim();
+    if (!trimmed) {
+      return 300;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return 300;
+    }
+    return Math.max(60, Math.min(3600, Math.floor(parsed)));
   }
 }
