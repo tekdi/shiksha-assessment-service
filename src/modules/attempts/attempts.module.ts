@@ -15,6 +15,7 @@ import { QuestionOption } from '../questions/entities/question-option.entity';
 import { OptionQuestion } from '../questions/entities/option-question.entity';
 import { PluginModule } from '../plugins/plugin.module';
 import { TestsModule } from '../tests/tests.module';
+import { AiFeedbackModule } from '../ai-feedback/ai-feedback.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { TestsModule } from '../tests/tests.module';
     ConfigModule,
     PluginModule,
     TestsModule,
+    AiFeedbackModule,
   ],
   controllers: [AttemptsController, InternalUserResultController],
   providers: [AttemptsService],

@@ -10,6 +10,7 @@ import { AttemptsModule } from './modules/attempts/attempts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { PluginModule } from './modules/plugins/plugin.module';
+import { AiFeedbackModule } from './modules/ai-feedback/ai-feedback.module';
 import { DatabaseConfig } from './config/database.config';
 import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
 import { CacheModule } from './modules/cache/cache.module';
@@ -64,6 +65,7 @@ import { ConfigurationModule } from './modules/configuration/configuration.modul
     QuestionsModule,
     AttemptsModule,
     PluginModule,
+    AiFeedbackModule,
   ],
 })
 export class AppModule {} 
