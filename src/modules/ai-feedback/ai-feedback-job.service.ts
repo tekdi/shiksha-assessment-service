@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -18,9 +18,10 @@ import {
 import {
   AI_FEEDBACK_QUEUE,
   AI_FEEDBACK_JOB_NAME,
+  AI_FEEDBACK_RETRY_JOB_NAME,
   MAX_JOB_ATTEMPTS,
   BACKOFF_BASE_DELAY_MS,
-  RATE_LIMIT_RETRY_DELAY_MS,
+  AUTO_RETRY_CRON,
 } from './ai-feedback.constants';
 
 const AI_REVIEW_STATUS_PENDING = 'PENDING';
@@ -28,7 +29,7 @@ const AI_REVIEW_STATUS_COMPLETED = 'COMPLETED';
 const AI_REVIEW_STATUS_FAILED = 'FAILED';
 
 @Injectable()
-export class AiFeedbackJobService {
+export class AiFeedbackJobService implements OnModuleInit {
   private readonly logger = new Logger(AiFeedbackJobService.name);
 
   constructor(
@@ -40,6 +41,16 @@ export class AiFeedbackJobService {
     @InjectQueue(AI_FEEDBACK_QUEUE)
     private readonly aiFeedbackQueue: Queue<AiFeedbackQueueJobData>,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // BullMQ repeatable jobs use Redis to coordinate — only one instance runs at a time
+    await this.aiFeedbackQueue.add(
+      AI_FEEDBACK_RETRY_JOB_NAME,
+      {} as AiFeedbackQueueJobData,
+      { repeat: { pattern: AUTO_RETRY_CRON }, removeOnComplete: true, removeOnFail: true },
+    );
+    this.logger.log(`[init] Registered repeatable retry job (cron: ${AUTO_RETRY_CRON})`);
+  }
 
   async createJobsForAttempt(input: CreateAiFeedbackJobsInput): Promise<void> {
     const { attemptId, tenantId, organisationId, rubricId, answers } = input;
@@ -64,14 +75,10 @@ export class AiFeedbackJobService {
     const savedJobs = await this.jobRepository.save(dbJobs);
 
     // Mark all answers as PENDING
-    await this.answerRepository
-      .createQueryBuilder()
-      .update(TestUserAnswer)
-      .set({ aiReviewStatus: AI_REVIEW_STATUS_PENDING })
-      .where('attemptAnsId IN (:...ids)', {
-        ids: answers.map((a) => a.attemptAnsId),
-      })
-      .execute();
+    await this.answerRepository.update(
+      answers.map((a) => a.attemptAnsId),
+      { aiReviewStatus: AI_REVIEW_STATUS_PENDING },
+    );
 
     // Enqueue one BullMQ job per answer — queue controls concurrency & rate limit
     const queueJobs = savedJobs.map((job) => ({
@@ -209,23 +216,18 @@ export class AiFeedbackJobService {
 
     // Step 2: update answer with AI feedback
     try {
-      const updateResult = await this.answerRepository
-        .createQueryBuilder()
-        .update(TestUserAnswer)
-        .set({
-          aiScore: feedbackResult?.score ?? undefined,
-          aiFeedback: (feedbackResult ?? undefined) as any,
-          aiRawFeedback: rawMessage,
-          aiGeneratedAt: new Date(),
-          aiReviewStatus: AI_REVIEW_STATUS_COMPLETED,
-          aiModel: this.devRevService.configuredAgentId,
-          aiPromptVersion: this.devRevService.promptVersion,
-        })
-        .where('attemptAnsId = :id', { id: job.attemptAnsId })
-        .execute();
+      await this.answerRepository.update(job.attemptAnsId, {
+        aiScore: feedbackResult?.score ?? undefined,
+        aiFeedback: (feedbackResult ?? undefined) as any,
+        aiRawFeedback: rawMessage,
+        aiGeneratedAt: new Date(),
+        aiReviewStatus: AI_REVIEW_STATUS_COMPLETED,
+        aiModel: this.devRevService.configuredAgentId,
+        aiPromptVersion: this.devRevService.promptVersion,
+      });
 
       this.logger.log(
-        `[handleMessageEvent] Answer updated for attemptAnsId=${job.attemptAnsId}, affected=${updateResult.affected}, score=${feedbackResult?.score}`,
+        `[handleMessageEvent] Answer updated for attemptAnsId=${job.attemptAnsId}, score=${feedbackResult?.score}`,
       );
     } catch (err) {
       this.logger.error(`[handleMessageEvent] Failed to update answer ${job.attemptAnsId}: ${err?.message}`);
@@ -251,12 +253,7 @@ export class AiFeedbackJobService {
       responsePayload: agentResponse as any,
     } as any);
 
-    await this.answerRepository
-      .createQueryBuilder()
-      .update()
-      .set({ aiReviewStatus: AI_REVIEW_STATUS_FAILED })
-      .where('"attemptAnsId" = :id', { id: job.attemptAnsId })
-      .execute();
+    await this.answerRepository.update(job.attemptAnsId, { aiReviewStatus: AI_REVIEW_STATUS_FAILED });
 
     this.logger.error(`[handleErrorEvent] Job ${jobId} marked FAILED: ${failureReason}`);
   }
@@ -285,8 +282,8 @@ export class AiFeedbackJobService {
       // Agent returned markdown — extract structured fields below
     }
 
-    // Extract score: matches "6/8", "14 / 15", "**6/8**", "Score: 6/8"
-    const scoreMatch = /\*{0,2}(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\*{0,2}/.exec(raw);
+    // Matches "6/8", "14 / 15", "**6/8**" but not dates like 10/12/2024
+    const scoreMatch = /(?<!\d\/\d+)\*{0,2}(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\*{0,2}(?!\/\d)/.exec(raw);
     const score = scoreMatch ? Number.parseFloat(scoreMatch[1]) : 0;
     const maxScore = scoreMatch ? Number.parseFloat(scoreMatch[2]) : 0;
 
@@ -335,7 +332,7 @@ export class AiFeedbackJobService {
       if (!inSection) continue;
 
       // Extract numbered or bulleted items: "1. text", "- text", "* text", "**Title:** text"
-      const itemMatch = /^[\s]*(?:\d+\.|[-*•])\s+(?:\*{1,2}[^*]+\*{1,2}[:\s—–-]*)?\s*(.+)/.exec(line);
+      const itemMatch = /^\s*(?:\d+\.|[-*•])\s+(?:\*{1,2}[^*]+\*{1,2}[:\s—–-]*)?\s*(.+)/.exec(line);
       if (itemMatch) {
         const text = itemMatch[1].replace(/\*{1,2}/g, '').trim();
         if (text.length > 3) items.push(text);

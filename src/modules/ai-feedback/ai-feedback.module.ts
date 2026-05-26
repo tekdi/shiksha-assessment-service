@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
-import { ScheduleModule } from '@nestjs/schedule';
 import { TestUserAnswerAIFeedbackJob } from './entities/test-user-answer-ai-feedback-job.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
@@ -13,13 +12,11 @@ import { AiFeedbackJobService } from './ai-feedback-job.service';
 import { AiFeedbackService } from './ai-feedback.service';
 import { AiFeedbackController } from './ai-feedback.controller';
 import { AiFeedbackProcessor } from './ai-feedback.processor';
-import { AiFeedbackRetryScheduler } from './ai-feedback-retry.scheduler';
 import { AI_FEEDBACK_QUEUE } from './ai-feedback.constants';
 
 @Module({
   imports: [
     ConfigModule,
-    ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([
       TestUserAnswerAIFeedbackJob,
       TestUserAnswer,
@@ -60,7 +57,6 @@ import { AI_FEEDBACK_QUEUE } from './ai-feedback.constants';
     AiFeedbackJobService,
     AiFeedbackService,
     AiFeedbackProcessor,
-    AiFeedbackRetryScheduler,
   ],
   exports: [AiFeedbackService],
 })

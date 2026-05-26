@@ -12,6 +12,19 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { Response } from 'express';
+import * as crypto from 'crypto';
+
+function verifySignature(rawBody: string, header: string, secret: string): boolean {
+  if (!header || !secret) return !secret; // skip if no secret configured
+  const variants = [
+    crypto.createHmac('sha256', secret).update(rawBody).digest('base64'),
+    crypto.createHmac('sha256', secret).update(rawBody).digest('hex'),
+    crypto.createHmac('sha256', Buffer.from(secret, 'base64')).update(rawBody).digest('base64'),
+    crypto.createHmac('sha256', Buffer.from(secret, 'base64')).update(rawBody).digest('hex'),
+  ];
+  return variants.includes(header);
+}
+import { ConfigService } from '@nestjs/config';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -36,6 +49,7 @@ export class AiFeedbackController {
   constructor(
     private readonly aiFeedbackService: AiFeedbackService,
     private readonly jobService: AiFeedbackJobService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ── DevRev Webhook ────────────────────────────────────────────────────────────
@@ -48,10 +62,29 @@ export class AiFeedbackController {
       'Receives progress, message, and error events from the DevRev async AI agent.',
   })
   @ApiResponse({ status: 200, description: 'Event acknowledged' })
-  async handleDevRevWebhook(@Body() body: any, @Res() res: Response): Promise<void> {
-    // Log every incoming request — headers + full body for debugging
+  async handleDevRevWebhook(@Body() body: any, @Req() req: any, @Res() res: Response): Promise<void> {
     this.logger.log(`[webhook] Incoming POST /ai-feedback/devrev/webhook`);
+    this.logger.log(`[webhook] Headers: ${JSON.stringify(req.headers, null, 2)}`);
     this.logger.log(`[webhook] Raw body: ${JSON.stringify(body, null, 2)}`);
+
+    // Signature verification — skip for verify handshake (DevRev sends challenge before secret is set)
+    const incomingSignature = req.headers['x-devrev-signature'] as string;
+    const webhookSecret = this.configService.get<string>('DEVREV_WEBHOOK_SECRET');
+
+    if (body?.type !== 'verify') {
+      const skipVerify = this.configService.get<string>('DEVREV_SKIP_SIGNATURE_VERIFY') === 'true';
+      if (skipVerify) {
+        this.logger.warn(`[webhook] Signature verification skipped (DEVREV_SKIP_SIGNATURE_VERIFY=true)`);
+      } else {
+        const rawBodyStr: string = (req.rawBody as Buffer)?.toString('utf8') ?? JSON.stringify(body);
+        if (!verifySignature(rawBodyStr, incomingSignature, webhookSecret ?? '')) {
+          this.logger.warn(`[webhook] Signature mismatch — rejecting request`);
+          res.status(401).json({ error: 'Invalid signature' });
+          return;
+        }
+        this.logger.log(`[webhook] Signature verified`);
+      }
+    }
 
     // DevRev verify handshake — must respond with raw { challenge } at top level
     // bypassing the global ApiResponseInterceptor which would wrap it

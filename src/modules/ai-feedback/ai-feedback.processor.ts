@@ -2,7 +2,7 @@ import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThan } from 'typeorm';
 import { isAxiosError } from 'axios';
 import {
   TestUserAnswerAIFeedbackJob,
@@ -11,13 +11,18 @@ import {
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { Question } from '../questions/entities/question.entity';
 import { DevRevService } from './devrev.service';
+import { AiFeedbackJobService } from './ai-feedback-job.service';
 import { AiFeedbackQueueJobData, QuestionContext } from './interfaces/ai-feedback.interface';
 import {
   AI_FEEDBACK_QUEUE,
+  AI_FEEDBACK_RETRY_JOB_NAME,
   QUEUE_CONCURRENCY,
   QUEUE_RATE_LIMIT_MAX,
   QUEUE_RATE_LIMIT_DURATION_MS,
   RATE_LIMIT_RETRY_DELAY_MS,
+  BACKOFF_BASE_DELAY_MS,
+  AUTO_RETRY_MAX_COUNT,
+  AUTO_RETRY_MIN_AGE_MINUTES,
 } from './ai-feedback.constants';
 
 @Processor(AI_FEEDBACK_QUEUE, {
@@ -25,6 +30,14 @@ import {
   limiter: {
     max: QUEUE_RATE_LIMIT_MAX,
     duration: QUEUE_RATE_LIMIT_DURATION_MS,
+  },
+  settings: {
+    backoffStrategy: (attemptsMade: number, _type: string, err: any) => {
+      // If the processor attached a .delay (e.g. DevRev 429), honour it
+      if (err?.delay) return err.delay;
+      // Otherwise standard exponential: 5s, 10s, 20s, 40s
+      return BACKOFF_BASE_DELAY_MS * Math.pow(2, attemptsMade);
+    },
   },
 })
 export class AiFeedbackProcessor extends WorkerHost {
@@ -38,11 +51,17 @@ export class AiFeedbackProcessor extends WorkerHost {
     @InjectRepository(Question)
     private readonly questionRepository: Repository<Question>,
     private readonly devRevService: DevRevService,
+    private readonly jobService: AiFeedbackJobService,
   ) {
     super();
   }
 
   async process(queueJob: Job<AiFeedbackQueueJobData>): Promise<void> {
+    // Repeatable retry sweep — distributed-safe via BullMQ/Redis
+    if (queueJob.name === AI_FEEDBACK_RETRY_JOB_NAME) {
+      return this.processRetryFailedJobs();
+    }
+
     const { jobId } = queueJob.data;
     this.logger.log(`[processor] Processing queue job for DB job ${jobId}, attempt #${queueJob.attemptsMade + 1}`);
 
@@ -126,17 +145,48 @@ export class AiFeedbackProcessor extends WorkerHost {
         failureReason: err?.message ?? 'All retries exhausted',
       } as any);
 
-      await this.answerRepository
-        .createQueryBuilder()
-        .update()
-        .set({ aiReviewStatus: 'FAILED' })
-        .where('"attemptAnsId" = :id', { id: queueJob.data.attemptAnsId })
-        .execute();
+      await this.answerRepository.update(queueJob.data.attemptAnsId, { aiReviewStatus: 'FAILED' });
     } else {
       this.logger.warn(
         `[processor] Job ${jobId} failed attempt #${queueJob.attemptsMade} — will retry: ${err?.message}`,
       );
     }
+  }
+
+  private async processRetryFailedJobs(): Promise<void> {
+    const cutoff = new Date(Date.now() - AUTO_RETRY_MIN_AGE_MINUTES * 60 * 1000);
+
+    const failedJobs = await this.jobRepository.find({
+      where: { status: AIFeedbackJobStatus.FAILED, updatedAt: LessThan(cutoff) },
+      select: ['id', 'autoRetryCount', 'failureReason'],
+      order: { updatedAt: 'ASC' },
+    });
+
+    const eligible = failedJobs.filter((j) => (j.autoRetryCount ?? 0) < AUTO_RETRY_MAX_COUNT);
+    const exhausted = failedJobs.length - eligible.length;
+
+    this.logger.log(
+      `[retry-sweep] Found ${failedJobs.length} failed jobs: ${eligible.length} eligible, ${exhausted} permanently failed`,
+    );
+
+    let retried = 0;
+    let skipped = 0;
+
+    for (const job of eligible) {
+      try {
+        await this.jobRepository.update(job.id, {
+          autoRetryCount: (job.autoRetryCount ?? 0) + 1,
+          failureReason: null,
+        } as any);
+        await this.jobService.retryFailedJob(job.id);
+        retried++;
+      } catch (err) {
+        this.logger.error(`[retry-sweep] Failed to re-enqueue job ${job.id}: ${err?.message}`);
+        skipped++;
+      }
+    }
+
+    this.logger.log(`[retry-sweep] Done: ${retried} re-enqueued, ${skipped} errors, ${exhausted} permanently failed`);
   }
 
   private async buildQuestionContext(
@@ -147,12 +197,20 @@ export class AiFeedbackProcessor extends WorkerHost {
       this.questionRepository.findOne({ where: { questionId: job.questionId } }),
     ]);
 
+    if (!answer) {
+      throw new UnrecoverableError(`Answer not found for attemptAnsId=${job.attemptAnsId}`);
+    }
+
+    if (!question) {
+      throw new UnrecoverableError(`Question not found for questionId=${job.questionId}`);
+    }
+
     return {
       questionId: job.questionId,
-      questionText: question?.text ?? '',
-      answer: answer?.answer ?? '',
-      rubric: question?.params?.rubric?.criteria ?? undefined,
-      maxScore: question?.marks ?? undefined,
+      questionText: question.text ?? '',
+      answer: answer.answer ?? '',
+      rubric: question.params?.rubric?.criteria ?? undefined,
+      maxScore: question.marks ?? undefined,
     };
   }
 }

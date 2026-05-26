@@ -1,6 +1,7 @@
 export const AI_FEEDBACK_QUEUE = 'ai-feedback';
 
 export const AI_FEEDBACK_JOB_NAME = 'process-ai-feedback';
+export const AI_FEEDBACK_RETRY_JOB_NAME = 'retry-failed-ai-feedback-jobs';
 
 // Max concurrent DevRev API calls at any time
 export const QUEUE_CONCURRENCY = 10;
