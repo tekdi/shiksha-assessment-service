@@ -112,7 +112,7 @@ export class QuestionParamsDto {
   allowedFileExtensions?: string[];
 
   @ApiPropertyOptional({
-    description: 'For type `file` only: maximum allowed file size in MB (minimum 1 MB). Defaults to 50 MB if omitted.',
+    description: 'For type `file` only: maximum allowed file size in MB (minimum 1 MB, capped at server hard ceiling). Defaults to server-configured limit (ASSESSMENT_FILE_MAX_SIZE_MB) if omitted.',
     example: 50,
   })
   @IsOptional()

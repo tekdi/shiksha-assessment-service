@@ -82,8 +82,8 @@ export interface QuestionParams {
    */
   allowedFileExtensions?: string[];
   /**
-   * For `file` questions only: maximum upload size in MB (minimum 1 MB, no upper limit).
-   * Omit to use the default (50 MB).
+   * For `file` questions only: maximum upload size in MB (minimum 1 MB, capped at HARD_CAP_ASSESSMENT_FILE_SIZE_MB to prevent OOM).
+   * Omit to use the server-configured limit (ASSESSMENT_FILE_MAX_SIZE_MB env var).
    */
   maxFileSizeMb?: number;
 }

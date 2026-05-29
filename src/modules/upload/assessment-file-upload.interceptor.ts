@@ -16,6 +16,7 @@ import {
   createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
   getAssessmentFileMaxSizeBytes,
+  clampFileSizeMb,
 } from '@/common/config/file-upload.config';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -165,7 +166,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
     );
     const questionMaxSizeMb = q.params?.maxFileSizeMb;
     const effectiveMaxBytes = questionMaxSizeMb && questionMaxSizeMb >= 1
-      ? Math.floor(questionMaxSizeMb * 1024 * 1024)
+      ? Math.floor(clampFileSizeMb(questionMaxSizeMb) * 1024 * 1024)
       : defaultMaxBytes;
     return { fileFilter, effectiveMaxBytes };
   }
