@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 /** Default max upload size when env is missing or invalid (MB). */
-export const DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB = 10;
+export const DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB = 50;
 
 /**
  * Hard ceiling (MB) for uploads using multer `memoryStorage()` — entire file is buffered in RAM per request.
@@ -14,7 +14,7 @@ export function getDefaultMaxSizeInBytes(): number {
   return DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB * 1024 * 1024;
 }
 
-function clampFileSizeMb(mb: number): number {
+export function clampFileSizeMb(mb: number): number {
   const capped = Math.min(mb, HARD_CAP_ASSESSMENT_FILE_SIZE_MB);
   return Math.max(capped, 1);
 }

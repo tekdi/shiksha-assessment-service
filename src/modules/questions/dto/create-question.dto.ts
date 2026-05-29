@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min, ArrayMaxSize, Matches, ArrayMinSize } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsInt, IsUUID, IsArray, ValidateNested, IsObject, IsUrl, IsNotEmpty, Min, ArrayMaxSize, Matches, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
 import { QuestionType, QuestionLevel, QuestionStatus } from '../entities/question.entity';
 import { GradingType } from '../../tests/entities/test.entity';
@@ -110,6 +110,15 @@ export class QuestionParamsDto {
   @IsString({ each: true })
   @Matches(/^[a-z0-9]{1,15}$/i, { each: true, message: 'Each extension must be alphanumeric (no dot), max 15 chars' })
   allowedFileExtensions?: string[];
+
+  @ApiPropertyOptional({
+    description: 'For type `file` only: maximum allowed file size in MB (minimum 1 MB). Defaults to 50 MB if omitted.',
+    example: 50,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxFileSizeMb?: number;
 }
 
 export class CreateQuestionOptionDto {

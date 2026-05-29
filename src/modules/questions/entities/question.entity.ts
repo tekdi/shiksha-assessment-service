@@ -81,6 +81,11 @@ export interface QuestionParams {
    * Omit or leave unset to allow every extension the server supports (see assessment file upload config).
    */
   allowedFileExtensions?: string[];
+  /**
+   * For `file` questions only: maximum upload size in MB (minimum 1 MB, no upper limit).
+   * Omit to use the default (50 MB).
+   */
+  maxFileSizeMb?: number;
 }
 
 
