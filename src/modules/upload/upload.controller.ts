@@ -41,7 +41,7 @@ export class UploadController {
   @ApiOperation({
     summary: 'Upload file for assessment (feedback/reflection)',
     description:
-      'Upload a file to S3. Returns the URL to use in submit-answer as answer.file for file-type questions. Same pattern as LMS file upload. Max size from env ASSESSMENT_FILE_MAX_SIZE_MB (default 10 MB). Optional query questionId enforces per-question allowed extensions from params.allowedFileExtensions.',
+      'Upload a file to S3. Returns the URL to use in submit-answer as answer.file for file-type questions. Default max size is 50 MB (env ASSESSMENT_FILE_MAX_SIZE_MB). When questionId is provided, per-question params.maxFileSizeMb and params.allowedFileExtensions are enforced instead.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
