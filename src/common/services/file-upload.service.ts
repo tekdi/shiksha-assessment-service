@@ -12,7 +12,6 @@ import { extname } from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import {
   FILE_UPLOAD_CONFIG,
-  getAssessmentFileMaxSizeBytes,
   isAllowedMimeForExtension,
   MP4_ALTERNATIVE_MIME,
 } from '@/common/config/file-upload.config';
@@ -94,13 +93,6 @@ export class FileUploadService {
     if (!isAllowedMimeForExtension(extNoDot, file.mimetype)) {
       throw new BadRequestException(
         `Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')} (MP4 may be sent as application/octet-stream)`,
-      );
-    }
-
-    const maxBytes = getAssessmentFileMaxSizeBytes(this.configService);
-    if (file.size > maxBytes) {
-      throw new BadRequestException(
-        `File size exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB)`,
       );
     }
 

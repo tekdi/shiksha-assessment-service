@@ -9,13 +9,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { from, Observable, of, throwError } from 'rxjs';
-import { mergeMap, switchMap } from 'rxjs/operators';
+import { from, Observable, throwError } from 'rxjs';
+import { mergeMap } from 'rxjs/operators';
 import multer, { memoryStorage } from 'multer';
 import {
   createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
   getAssessmentFileMaxSizeBytes,
+  clampFileSizeMb,
 } from '@/common/config/file-upload.config';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -56,32 +57,30 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const maxBytes = getAssessmentFileMaxSizeBytes(this.configService);
+    const defaultMaxBytes = getAssessmentFileMaxSizeBytes(this.configService);
     const http = context.switchToHttp();
     const req = http.getRequest();
     const res = http.getResponse();
 
-    return of(undefined).pipe(
-      mergeMap(() => {
+    return from(this.resolveUploadConfig(req, defaultMaxBytes)).pipe(
+      mergeMap(({ fileFilter, effectiveMaxBytes }) => {
         const contentLength = req.headers['content-length'];
         if (contentLength !== undefined) {
           const total = Number(contentLength);
-          if (Number.isFinite(total) && total > maxBytes + MULTIPART_OVERHEAD_BYTES) {
+          if (Number.isFinite(total) && total > effectiveMaxBytes + MULTIPART_OVERHEAD_BYTES) {
             return throwError(
               () =>
                 new PayloadTooLargeException(
-                  `Upload exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB file limit)`,
+                  `Upload exceeds maximum allowed (${Math.round(effectiveMaxBytes / 1024 / 1024)}MB file limit)`,
                 ),
             );
           }
         }
-        return from(this.resolveFileFilter(req));
-      }),
-      switchMap((fileFilter) => {
+
         const upload = multer({
           storage: memoryStorage(),
           limits: {
-            fileSize: maxBytes,
+            fileSize: effectiveMaxBytes,
             files: 1,
             fields: 24,
             fieldSize: 1024 * 1024,
@@ -98,7 +97,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
               if (message === 'File too large' || code === 'LIMIT_FILE_SIZE') {
                 observer.error(
                   new BadRequestException(
-                    `File size exceeds maximum allowed (${Math.round(maxBytes / 1024 / 1024)}MB)`,
+                    `File size exceeds maximum allowed (${Math.round(effectiveMaxBytes / 1024 / 1024)}MB)`,
                   ),
                 );
                 return;
@@ -128,23 +127,24 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
     );
   }
 
-  private async resolveFileFilter(req: {
-    query?: Record<string, unknown>;
-    user?: AuthContext;
-  }): Promise<
-    (r: any, file: Express.Multer.File, cb: (err: Error | null, acceptFile: boolean) => void) => void
-  > {
+  private async resolveUploadConfig(
+    req: { query?: Record<string, unknown>; user?: AuthContext },
+    defaultMaxBytes: number,
+  ): Promise<{
+    fileFilter: (r: any, file: Express.Multer.File, cb: (err: Error | null, acceptFile: boolean) => void) => void;
+    effectiveMaxBytes: number;
+  }> {
     const raw = req.query?.questionId;
     const questionId = typeof raw === 'string' ? raw.trim() : '';
     if (!questionId) {
-      return assessmentUploadFileFilter;
+      return { fileFilter: assessmentUploadFileFilter, effectiveMaxBytes: defaultMaxBytes };
     }
     if (!QUESTION_ID_UUID.test(questionId)) {
       throw new BadRequestException('Invalid questionId query parameter');
     }
     const auth = req.user;
     if (!auth?.tenantId || !auth?.organisationId) {
-      return assessmentUploadFileFilter;
+      return { fileFilter: assessmentUploadFileFilter, effectiveMaxBytes: defaultMaxBytes };
     }
     const q = await this.questionRepository.findOne({
       where: {
@@ -161,8 +161,13 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
       throw new BadRequestException('This question does not accept file uploads');
     }
     const allowed = q.params?.allowedFileExtensions;
-    return createAssessmentUploadFileFilter(
+    const fileFilter = createAssessmentUploadFileFilter(
       allowed && allowed.length > 0 ? allowed : null,
     );
+    const questionMaxSizeMb = q.params?.maxFileSizeMb;
+    const effectiveMaxBytes = questionMaxSizeMb && questionMaxSizeMb >= 1
+      ? Math.floor(clampFileSizeMb(questionMaxSizeMb) * 1024 * 1024)
+      : defaultMaxBytes;
+    return { fileFilter, effectiveMaxBytes };
   }
 }
