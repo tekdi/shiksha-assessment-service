@@ -13,6 +13,7 @@ import multer, { memoryStorage } from 'multer';
 import {
   createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
+  clampFileSizeMb,
   DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB,
 } from '@/common/config/file-upload.config';
 import { Question, QuestionType } from '../questions/entities/question.entity';
@@ -142,7 +143,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
 
     const maxSizeMb = q.params?.maxFileSizeMb;
     const effectiveMaxBytes = maxSizeMb && maxSizeMb >= 1
-      ? Math.floor(maxSizeMb * 1024 * 1024)
+      ? Math.floor(clampFileSizeMb(maxSizeMb) * 1024 * 1024)
       : DEFAULT_MAX_BYTES;
 
     return { fileFilter, effectiveMaxBytes };
