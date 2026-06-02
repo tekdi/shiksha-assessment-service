@@ -865,30 +865,36 @@ export class QuestionsService {
    */
   private validateFileQuestionAllowedExtensions(
     type: QuestionType,
-    params?: { allowedFileExtensions?: string[] } | null,
+    params?: { allowedFileExtensions?: string[]; maxFileSizeMb?: number } | null,
   ): void {
     const list = params?.allowedFileExtensions;
-    if (list === undefined || list === null) {
-      return;
-    }
-    if (!Array.isArray(list)) {
-      return;
-    }
-    if (type !== QuestionType.FILE) {
-      if (list.length > 0) {
-        throw new BadRequestException('params.allowedFileExtensions is only valid for question type "file".');
+    if (list !== undefined && list !== null && Array.isArray(list)) {
+      if (type !== QuestionType.FILE) {
+        if (list.length > 0) {
+          throw new BadRequestException('params.allowedFileExtensions is only valid for question type "file".');
+        }
+      } else {
+        if (list.length === 0) {
+          throw new BadRequestException(
+            'params.allowedFileExtensions cannot be empty. Omit the field to allow all supported file types.',
+          );
+        }
+        try {
+          assertExtensionsSubsetOfServerAllowlist(list);
+        } catch (e) {
+          throw new BadRequestException(e instanceof Error ? e.message : String(e));
+        }
       }
-      return;
     }
-    if (list.length === 0) {
-      throw new BadRequestException(
-        'params.allowedFileExtensions cannot be empty. Omit the field to allow all supported file types.',
-      );
-    }
-    try {
-      assertExtensionsSubsetOfServerAllowlist(list);
-    } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e));
+
+    const sizeMb = params?.maxFileSizeMb;
+    if (sizeMb !== undefined && sizeMb !== null) {
+      if (type !== QuestionType.FILE) {
+        throw new BadRequestException('params.maxFileSizeMb is only valid for question type "file".');
+      }
+      if (!Number.isInteger(sizeMb) || sizeMb < 1) {
+        throw new BadRequestException('params.maxFileSizeMb must be a positive integer (minimum 1 MB).');
+      }
     }
   }
 
