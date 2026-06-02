@@ -81,6 +81,7 @@ export interface QuestionContext {
   questionId: string;
   questionText: string;
   answer: any;
+  rubricId?: string;
   rubric?: Array<{ name: string; maxScore: number; description?: string }>;
   maxScore?: number;
 }

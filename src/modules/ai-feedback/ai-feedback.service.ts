@@ -14,11 +14,13 @@ import {
   AiFeedbackStatusResponseDto,
   AiFeedbackResponseDto,
 } from './dto/ai-feedback.dto';
+import { ConfigService } from '@nestjs/config';
 import { AuthContext } from '../../common/interfaces/auth.interface';
 
 @Injectable()
 export class AiFeedbackService {
   private readonly logger = new Logger(AiFeedbackService.name);
+  private readonly devRevEnabled: boolean;
 
   constructor(
     @InjectRepository(TestUserAnswerAIFeedbackJob)
@@ -30,12 +32,23 @@ export class AiFeedbackService {
     @InjectRepository(Test)
     private readonly testRepository: Repository<Test>,
     private readonly jobService: AiFeedbackJobService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.devRevEnabled = this.configService.get<string>('DEVREV_ENABLED', 'true') !== 'false';
+    if (!this.devRevEnabled) {
+      this.logger.warn('DevRev AI feedback is DISABLED (DEVREV_ENABLED=false)');
+    }
+  }
 
   async initiateAiFeedbackForAttempt(
     attemptId: string,
     authContext: AuthContext,
   ): Promise<void> {
+    if (!this.devRevEnabled) {
+      this.logger.log(`AI feedback skipped for attempt ${attemptId} — DEVREV_ENABLED=false`);
+      return;
+    }
+
     const [answers, attempt] = await Promise.all([
       this.answerRepository.find({
         where: {

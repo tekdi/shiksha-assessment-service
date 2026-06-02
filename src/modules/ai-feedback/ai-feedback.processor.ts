@@ -205,10 +205,23 @@ export class AiFeedbackProcessor extends WorkerHost {
       throw new UnrecoverableError(`Question not found for questionId=${job.questionId}`);
     }
 
+    // answer column may be a parsed object or a raw JSON string — normalize to extract .text
+    let rawAnswer: any = answer.answer;
+    if (typeof rawAnswer === 'string') {
+      try { rawAnswer = JSON.parse(rawAnswer); } catch { /* keep as string */ }
+    }
+    const answerText: string =
+      typeof rawAnswer === 'object' && rawAnswer?.text
+        ? String(rawAnswer.text)
+        : typeof rawAnswer === 'string'
+          ? rawAnswer
+          : JSON.stringify(rawAnswer);
+
     return {
       questionId: job.questionId,
       questionText: question.text ?? '',
-      answer: answer.answer ?? '',
+      answer: answerText,
+      rubricId: job.rubricId ?? undefined,
       rubric: question.params?.rubric?.criteria ?? undefined,
       maxScore: question.marks ?? undefined,
     };
