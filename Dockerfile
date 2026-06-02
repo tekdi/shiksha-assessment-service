@@ -10,9 +10,9 @@
     
     # Install based on environment
     RUN if [ "$NODE_ENV" = "development" ]; then \
-          npm install; \
+          npm install --legacy-peer-deps; \
         else \
-          npm install --omit=dev; \
+          npm install --omit=dev --legacy-peer-deps; \
         fi
     
     COPY . .
