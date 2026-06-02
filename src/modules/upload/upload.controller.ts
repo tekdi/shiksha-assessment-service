@@ -4,6 +4,7 @@ import {
   UseInterceptors,
   UploadedFile,
   Req,
+  Query,
   BadRequestException,
   Body,
   HttpCode,
@@ -59,6 +60,7 @@ export class UploadController {
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
+    @Query('questionId') _questionId?: string,
   ) {
     if (!file?.buffer) {
       throw new BadRequestException('No file provided or file too large');
