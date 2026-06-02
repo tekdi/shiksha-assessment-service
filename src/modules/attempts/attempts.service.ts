@@ -38,6 +38,7 @@ import { ReviewAttemptDto } from "./dto/review-answer.dto";
 import { ReviewTestAttemptDto } from "./dto/review-test-attempt.dto";
 import { PluginManagerService } from "@/common/services/plugin-manager.service";
 import { QuestionPoolService } from "../tests/question-pool.service";
+import { AiFeedbackService } from "../ai-feedback/ai-feedback.service";
 import { ResumeAttemptDto } from "./dto/resume-attempt.dto";
 import { TestSection } from "../tests/entities/test-section.entity";
 import { SectionStatus } from "../tests/dto/create-section.dto";
@@ -69,7 +70,8 @@ export class AttemptsService {
     private readonly dataSource: DataSource,
     private readonly pluginManager: PluginManagerService,
     private readonly questionPoolService: QuestionPoolService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly aiFeedbackService: AiFeedbackService,
   ) {}
 
   async startAttempt(
@@ -1710,6 +1712,16 @@ export class AttemptsService {
       );
       // Don't throw - allow submission to succeed even if plugin event fails
     });
+
+    // Fire-and-forget: initiate AI feedback generation asynchronously
+    this.aiFeedbackService
+      .initiateAiFeedbackForAttempt(savedAttempt.attemptId, authContext)
+      .catch((error) => {
+        this.logger.error(
+          `Failed to initiate AI feedback for attempt ${savedAttempt.attemptId}`,
+          { error: error.message },
+        );
+      });
 
     return {
       attemptId: savedAttempt.attemptId,

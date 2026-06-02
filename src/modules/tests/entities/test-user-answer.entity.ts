@@ -77,6 +77,35 @@ export class TestUserAnswer {
   @UpdateDateColumn({ type: 'timestamp with time zone' })
   updatedAt: Date;
 
+  // AI Feedback columns
+  @ApiProperty({ required: false })
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  aiScore: number;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'jsonb', nullable: true })
+  aiFeedback: Record<string, any>;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiReviewStatus: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  aiGeneratedAt: Date;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiModel: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiPromptVersion: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiRawFeedback: string;
+
   // Relations
   @ManyToOne(() => TestAttempt, attempt => attempt.attemptId)
   @JoinColumn({ name: 'attemptId' })
