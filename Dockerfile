@@ -44,7 +44,7 @@
     COPY --from=base /app/dist ./dist
     COPY --from=base /app/package*.json ./
     
-    RUN npm install --omit=dev && chown -R appuser:appgroup /app
+    RUN npm install --omit=dev --legacy-peer-deps && chown -R appuser:appgroup /app
     
     USER appuser
     
