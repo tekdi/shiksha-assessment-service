@@ -9,6 +9,10 @@ import { ConfigService } from '@nestjs/config';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { extname } from 'node:path';
+import { createReadStream, unlink } from 'node:fs';
+import { promisify } from 'node:util';
+
+const unlinkAsync = promisify(unlink);
 import { v4 as uuidv4 } from 'uuid';
 import {
   FILE_UPLOAD_CONFIG,
@@ -102,7 +106,10 @@ export class FileUploadService {
       ? `${this.uploadPath}/${userId}/${safeName}`
       : `${this.uploadPath}/${safeName}`;
 
-    const body = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer);
+    // Support both memoryStorage (file.buffer) and diskStorage (file.path)
+    const body = file.buffer && Buffer.isBuffer(file.buffer)
+      ? file.buffer
+      : createReadStream(file.path!);
     const contentType =
       ext === '.mp4' && file.mimetype === MP4_ALTERNATIVE_MIME ? 'video/mp4' : file.mimetype;
 
@@ -112,7 +119,7 @@ export class FileUploadService {
           Bucket: this.bucket,
           Key: key,
           Body: body,
-          ContentLength: body.length,
+          ContentLength: file.size,
           ContentType: contentType,
           ContentDisposition: `attachment; filename="${file.originalname}"`,
           Metadata: {
@@ -126,6 +133,11 @@ export class FileUploadService {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(`S3 upload failed: ${msg}`, error instanceof Error ? error.stack : undefined);
       throw new InternalServerErrorException('Failed to upload file. Please try again later.');
+    } finally {
+      // Clean up temp file written by diskStorage (best effort)
+      if (file.path) {
+        await unlinkAsync(file.path).catch(() => {});
+      }
     }
 
     const fileUrl = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;

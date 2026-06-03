@@ -62,7 +62,7 @@ export class UploadController {
     @Req() req: any,
     @Query('questionId') _questionId?: string,
   ) {
-    if (!file?.buffer) {
+    if (!file || (!file.buffer && !file.path)) {
       throw new BadRequestException('No file provided or file too large');
     }
     const result = await this.fileUploadService.uploadFile(

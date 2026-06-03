@@ -9,7 +9,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { from, Observable, throwError } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
-import multer, { memoryStorage } from 'multer';
+import multer, { diskStorage } from 'multer';
+import * as os from 'os';
+import * as path from 'path';
+import { unlink } from 'node:fs';
 import {
   createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
@@ -63,7 +66,13 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
         }
 
         const upload = multer({
-          storage: memoryStorage(),
+          storage: diskStorage({
+            destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+            filename: (_req, file, cb) => {
+              const ext = path.extname(file.originalname).toLowerCase();
+              cb(null, `assessment-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+            },
+          }),
           limits: {
             fileSize: effectiveMaxBytes,
             files: 1,
@@ -77,6 +86,10 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
         return new Observable<unknown>((observer) => {
           upload(req, res, (err: unknown) => {
             if (err) {
+              // Clean up any partially written temp file
+              const tempPath = (req as any).file?.path;
+              if (tempPath) unlink(tempPath, () => {});
+
               const message = multerErrorMessage(err);
               const code = (err as { code?: string })?.code;
               if (message === 'File too large' || code === 'LIMIT_FILE_SIZE') {
