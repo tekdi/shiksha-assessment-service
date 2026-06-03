@@ -13,6 +13,7 @@ import multer, { diskStorage } from 'multer';
 import * as os from 'os';
 import * as path from 'path';
 import { unlink } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import {
   createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
@@ -70,7 +71,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
             destination: (_req, _file, cb) => cb(null, os.tmpdir()),
             filename: (_req, file, cb) => {
               const ext = path.extname(file.originalname).toLowerCase();
-              cb(null, `assessment-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+              cb(null, `assessment-${randomBytes(16).toString('hex')}${ext}`);
             },
           }),
           limits: {
