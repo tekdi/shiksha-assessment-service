@@ -130,11 +130,10 @@ export class AiFeedbackService {
       );
     }
 
-    // Deduplicate per questionId: prefer COMPLETED, else take latest by updatedAt
+    // Deduplicate per questionId: keep latest by updatedAt (jobs already ordered DESC)
     const latestByQuestion = new Map<string, { questionId: string; status: AIFeedbackJobStatus }>();
     for (const job of jobs) {
-      const existing = latestByQuestion.get(job.questionId);
-      if (!existing || job.status === AIFeedbackJobStatus.COMPLETED) {
+      if (!latestByQuestion.has(job.questionId)) {
         latestByQuestion.set(job.questionId, { questionId: job.questionId, status: job.status });
       }
     }

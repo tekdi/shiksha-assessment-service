@@ -267,7 +267,33 @@ export class AiFeedbackJobService implements OnModuleInit {
     // Try strict JSON first
     try {
       const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-      const parsed = JSON.parse(cleaned);
+      // The raw string itself may be a JSON-escaped string — unwrap it
+      const unwrapped = cleaned.startsWith('"') ? JSON.parse(cleaned) : cleaned;
+      const parsed = JSON.parse(unwrapped);
+
+      // New structured format: { feedback: { summary, strengths, growth_areas, ... }, metadata }
+      if (parsed?.feedback?.summary) {
+        const { summary, strengths, growth_areas, criteria_breakdown, next_steps, resubmission_encouraged } = parsed.feedback;
+        const [scoreNum, maxScoreNum] = (summary.score ?? '0/0').split('/').map(Number);
+        const result: AiFeedbackResult = {
+          score: scoreNum ?? 0,
+          maxScore: maxScoreNum ?? 0,
+          scorePercentage: summary.score_percentage,
+          band: summary.band,
+          headline: summary.headline,
+          strengths: Array.isArray(strengths) ? strengths : [],
+          areasForImprovement: Array.isArray(growth_areas) ? growth_areas : [],
+          criteriaBreakdown: Array.isArray(criteria_breakdown) ? criteria_breakdown : [],
+          nextSteps: next_steps,
+          resubmissionEncouraged: resubmission_encouraged,
+          overallFeedback: summary.headline ?? '',
+          metadata: parsed.metadata,
+        };
+        this.logger.log(`Job ${jobId}: structured JSON feedback parsed, score=${result.score}/${result.maxScore}, band=${result.band}`);
+        return result;
+      }
+
+      // Legacy flat format: { score, maxScore, strengths, areasForImprovement, overallFeedback }
       if (
         typeof parsed.score === 'number' &&
         typeof parsed.maxScore === 'number' &&
@@ -275,7 +301,7 @@ export class AiFeedbackJobService implements OnModuleInit {
         Array.isArray(parsed.areasForImprovement) &&
         typeof parsed.overallFeedback === 'string'
       ) {
-        this.logger.log(`Job ${jobId}: JSON feedback parsed, score=${parsed.score}/${parsed.maxScore}`);
+        this.logger.log(`Job ${jobId}: legacy JSON feedback parsed, score=${parsed.score}/${parsed.maxScore}`);
         return parsed as AiFeedbackResult;
       }
     } catch {
@@ -304,8 +330,8 @@ export class AiFeedbackJobService implements OnModuleInit {
     return {
       score,
       maxScore,
-      strengths,
-      areasForImprovement,
+      strengths: strengths.map((detail) => ({ title: '', detail })),
+      areasForImprovement: areasForImprovement.map((detail) => ({ title: '', detail })),
       overallFeedback: raw,
     };
   }
