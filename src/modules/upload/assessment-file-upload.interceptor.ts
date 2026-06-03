@@ -19,6 +19,7 @@ import {
   assessmentUploadFileFilter,
   clampFileSizeMb,
   DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB,
+  HARD_CAP_ASSESSMENT_FILE_SIZE_MB,
 } from '@/common/config/file-upload.config';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -75,7 +76,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
             },
           }),
           limits: {
-            fileSize: effectiveMaxBytes,
+            fileSize: Math.min(effectiveMaxBytes, HARD_CAP_ASSESSMENT_FILE_SIZE_MB * 1024 * 1024),
             files: 1,
             fields: 24,
             fieldSize: 1024 * 1024,
