@@ -1,9 +1,34 @@
+export interface AiFeedbackCriterion {
+  name: string;
+  score: string;
+  status: string;
+  one_liner: string;
+}
+
+export interface AiFeedbackStrength {
+  title: string;
+  detail: string;
+}
+
+export interface AiFeedbackGrowthArea {
+  title: string;
+  detail: string;
+  action?: string;
+}
+
 export interface AiFeedbackResult {
   score: number;
   maxScore: number;
-  strengths: string[];
-  areasForImprovement: string[];
+  scorePercentage?: number;
+  band?: string;
+  headline?: string;
+  strengths: AiFeedbackStrength[];
+  areasForImprovement: AiFeedbackGrowthArea[];
+  criteriaBreakdown?: AiFeedbackCriterion[];
+  nextSteps?: string;
+  resubmissionEncouraged?: boolean;
   overallFeedback: string;
+  metadata?: Record<string, any>;
 }
 
 export interface DevRevExecuteAsyncPayload {
