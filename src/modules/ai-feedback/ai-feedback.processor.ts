@@ -84,7 +84,7 @@ export class AiFeedbackProcessor extends WorkerHost {
     } as any);
 
     try {
-      const questionContext = await this.buildQuestionContext(dbJob);
+      const questionContext = await this.buildQuestionContext(dbJob, queueJob.data.learnerName);
 
       const { requestPayload, agentRequestId } =
         await this.devRevService.executeAssessmentFeedbackAgent(dbJob, questionContext);
@@ -191,6 +191,7 @@ export class AiFeedbackProcessor extends WorkerHost {
 
   private async buildQuestionContext(
     job: TestUserAnswerAIFeedbackJob,
+    learnerName?: string,
   ): Promise<QuestionContext> {
     const [answer, question] = await Promise.all([
       this.answerRepository.findOne({ where: { attemptAnsId: job.attemptAnsId } }),
@@ -210,18 +211,21 @@ export class AiFeedbackProcessor extends WorkerHost {
     if (typeof rawAnswer === 'string') {
       try { rawAnswer = JSON.parse(rawAnswer); } catch { /* keep as string */ }
     }
-    const answerText: string =
-      typeof rawAnswer === 'object' && rawAnswer?.text
-        ? String(rawAnswer.text)
-        : typeof rawAnswer === 'string'
-          ? rawAnswer
-          : JSON.stringify(rawAnswer);
+    let answerText: string;
+    if (typeof rawAnswer === 'object' && rawAnswer?.text) {
+      answerText = String(rawAnswer.text);
+    } else if (typeof rawAnswer === 'string') {
+      answerText = rawAnswer;
+    } else {
+      answerText = JSON.stringify(rawAnswer);
+    }
 
     return {
       questionId: job.questionId,
       questionText: question.text ?? '',
       answer: answerText,
       rubricId: job.rubricId ?? undefined,
+      learnerName: learnerName ?? undefined,
       rubric: question.params?.rubric?.criteria ?? undefined,
       maxScore: question.marks ?? undefined,
     };
