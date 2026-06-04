@@ -21,7 +21,7 @@ import {
 } from '@/common/config/file-upload.config';
 
 export interface FileUploadResult {
-  /** AWS S3 URL to use in answer payload as { "file": "<this url>" } */
+  /** AWS S3 URL to use in answer payload as { "file": "<this url>" }  */
   file: string;
   fileSize: number;
 }
