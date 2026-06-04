@@ -10,14 +10,16 @@ import { Repository } from 'typeorm';
 import { from, Observable, throwError } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 import multer, { diskStorage } from 'multer';
-import * as os from 'os';
-import * as path from 'path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { unlink } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import {
   createAssessmentUploadFileFilter,
   assessmentUploadFileFilter,
   clampFileSizeMb,
   DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB,
+  HARD_CAP_ASSESSMENT_FILE_SIZE_MB,
 } from '@/common/config/file-upload.config';
 import { Question, QuestionType } from '../questions/entities/question.entity';
 import { AuthContext } from '@/common/interfaces/auth.interface';
@@ -52,14 +54,16 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
 
     return from(this.resolveUploadConfig(req)).pipe(
       mergeMap(({ fileFilter, effectiveMaxBytes }) => {
+        const maxFileSizeBytes = Math.min(effectiveMaxBytes, HARD_CAP_ASSESSMENT_FILE_SIZE_MB * 1024 * 1024);
+
         const contentLength = req.headers['content-length'];
         if (contentLength !== undefined) {
           const total = Number(contentLength);
-          if (Number.isFinite(total) && total > effectiveMaxBytes + MULTIPART_OVERHEAD_BYTES) {
+          if (Number.isFinite(total) && total > maxFileSizeBytes + MULTIPART_OVERHEAD_BYTES) {
             return throwError(
               () =>
                 new BadRequestException(
-                  `File size exceeds maximum allowed (${Math.round(effectiveMaxBytes / 1024 / 1024)}MB)`,
+                  `File size exceeds maximum allowed (${Math.round(maxFileSizeBytes / 1024 / 1024)}MB)`,
                 ),
             );
           }
@@ -70,11 +74,11 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
             destination: (_req, _file, cb) => cb(null, os.tmpdir()),
             filename: (_req, file, cb) => {
               const ext = path.extname(file.originalname).toLowerCase();
-              cb(null, `assessment-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+              cb(null, `assessment-${randomBytes(16).toString('hex')}${ext}`);
             },
           }),
           limits: {
-            fileSize: effectiveMaxBytes,
+            fileSize: maxFileSizeBytes,
             files: 1,
             fields: 24,
             fieldSize: 1024 * 1024,
@@ -95,7 +99,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
               if (message === 'File too large' || code === 'LIMIT_FILE_SIZE') {
                 observer.error(
                   new BadRequestException(
-                    `File size exceeds maximum allowed (${Math.round(effectiveMaxBytes / 1024 / 1024)}MB)`,
+                    `File size exceeds maximum allowed (${Math.round(maxFileSizeBytes / 1024 / 1024)}MB)`,
                   ),
                 );
                 return;
