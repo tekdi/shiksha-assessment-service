@@ -4,8 +4,8 @@ import { ConfigService } from '@nestjs/config';
 export const DEFAULT_ASSESSMENT_FILE_MAX_SIZE_MB = 50;
 
 /**
- * Hard ceiling (MB) applied by clampFileSizeMb() — caps per-question maxFileSizeMb values.
- * Set to 2 GB since uploads are now streamed to disk (diskStorage), not held in RAM.
+ * Hard ceiling (MB) for uploads using multer `memoryStorage()` — entire file is buffered in RAM per request.
+ * Values above this are clamped even if ASSESSMENT_FILE_MAX_SIZE_MB is higher (prevents accidental OOM).
  */
 export const HARD_CAP_ASSESSMENT_FILE_SIZE_MB = 2048; // 2 GB — matches middleware multer limit
 
