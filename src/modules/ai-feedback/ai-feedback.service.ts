@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import axios from 'axios';
 import {
   TestUserAnswerAIFeedbackJob,
   AIFeedbackJobStatus,
@@ -92,11 +93,14 @@ export class AiFeedbackService {
       return;
     }
 
+    const learnerName = await this.fetchLearnerName(authContext);
+
     const input: CreateAiFeedbackJobsInput = {
       attemptId,
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
       rubricId,
+      learnerName,
       answers: answers.map((a) => ({
         attemptAnsId: a.attemptAnsId,
         questionId: a.questionId,
@@ -106,8 +110,34 @@ export class AiFeedbackService {
     await this.jobService.createJobsForAttempt(input);
 
     this.logger.log(
-      `AI feedback initiated for attempt ${attemptId} with ${answers.length} answers, rubricId=${rubricId}`,
+      `AI feedback initiated for attempt ${attemptId} with ${answers.length} answers, rubricId=${rubricId}, learner=${learnerName}`,
     );
+  }
+
+  private async fetchLearnerName(authContext: AuthContext): Promise<string> {
+    const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', '');
+    if (!userServiceUrl || !authContext.token || !authContext.userId) {
+      return 'Learner';
+    }
+    try {
+      const response = await axios.get(
+        `${userServiceUrl}/read/${authContext.userId}`,
+        {
+          headers: {
+            Authorization: authContext.token,
+            tenantid: authContext.tenantId,
+            organisationId: authContext.organisationId,
+          },
+          timeout: 5_000,
+        },
+      );
+      const { firstName, lastName } = response.data?.result?.userData ?? {};
+      const name = [firstName, lastName].filter(Boolean).join(' ').trim();
+      return name || 'Learner';
+    } catch (err) {
+      this.logger.warn(`Could not fetch learner name for userId=${authContext.userId}: ${err?.message}`);
+      return 'Learner';
+    }
   }
 
   async getAiFeedbackStatus(

@@ -36,7 +36,8 @@ export class DevRevService {
   }
 
   buildPrompt(ctx: QuestionContext): string {
-    return `Please evaluate the following submission from learner: Learner A.\nrubric_id: ${ctx.rubricId ?? 'N/A'}\nAnswer: ${ctx.answer}`;
+    const name = ctx.learnerName || 'Learner';
+    return `Please evaluate the following submission from learner: ${name}.\nrubric_id: ${ctx.rubricId ?? 'N/A'}\nAnswer: ${ctx.answer}`;
   }
 
   async executeAssessmentFeedbackAgent(

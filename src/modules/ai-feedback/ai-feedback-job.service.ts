@@ -91,6 +91,7 @@ export class AiFeedbackJobService implements OnModuleInit {
         tenantId: job.tenantId,
         organisationId: job.organisationId,
         rubricId: job.rubricId ?? undefined,
+        learnerName: input.learnerName ?? undefined,
       } as AiFeedbackQueueJobData,
       opts: {
         attempts: MAX_JOB_ATTEMPTS,
