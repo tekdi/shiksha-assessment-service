@@ -4,14 +4,15 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { from, Observable, throwError } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 import multer, { diskStorage } from 'multer';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import * as os from 'os';
+import * as path from 'path';
 import { unlink } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import {
@@ -54,17 +55,14 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
 
     return from(this.resolveUploadConfig(req)).pipe(
       mergeMap(({ fileFilter, effectiveMaxBytes }) => {
-        // Single capped value used consistently for both early-rejection and multer limit
-        const maxFileSizeBytes = Math.min(effectiveMaxBytes, HARD_CAP_ASSESSMENT_FILE_SIZE_MB * 1024 * 1024);
-
         const contentLength = req.headers['content-length'];
         if (contentLength !== undefined) {
           const total = Number(contentLength);
-          if (Number.isFinite(total) && total > maxFileSizeBytes + MULTIPART_OVERHEAD_BYTES) {
+          if (Number.isFinite(total) && total > effectiveMaxBytes + MULTIPART_OVERHEAD_BYTES) {
             return throwError(
               () =>
-                new BadRequestException(
-                  `File size exceeds maximum allowed (${Math.round(maxFileSizeBytes / 1024 / 1024)}MB)`,
+                new PayloadTooLargeException(
+                  `Upload exceeds maximum allowed (${Math.round(effectiveMaxBytes / 1024 / 1024)}MB file limit)`,
                 ),
             );
           }
@@ -79,7 +77,7 @@ export class AssessmentFileUploadInterceptor implements NestInterceptor {
             },
           }),
           limits: {
-            fileSize: maxFileSizeBytes,
+            fileSize: Math.min(effectiveMaxBytes, HARD_CAP_ASSESSMENT_FILE_SIZE_MB * 1024 * 1024),
             files: 1,
             fields: 24,
             fieldSize: 1024 * 1024,
