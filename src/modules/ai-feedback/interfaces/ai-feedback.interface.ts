@@ -46,7 +46,7 @@ export interface DevRevExecuteAsyncPayload {
     attemptAnsId: string;
     attemptId: string;
     questionId: string;
-    jobId: string;
+    session_id: string;
     rubric_id?: string;
   };
 }
@@ -66,7 +66,7 @@ export interface DevRevAgentResponse {
     attemptAnsId: string;
     attemptId: string;
     questionId: string;
-    jobId: string;
+    session_id: string;
   };
   progress?: {
     progress_state: string;
