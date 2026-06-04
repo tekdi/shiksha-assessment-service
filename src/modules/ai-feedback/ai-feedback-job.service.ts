@@ -141,7 +141,7 @@ export class AiFeedbackJobService implements OnModuleInit {
   }
 
   async handleProgressEvent(agentResponse: DevRevAgentResponse): Promise<void> {
-    const jobId = agentResponse.client_metadata?.jobId;
+    const jobId = agentResponse.client_metadata?.session_id;
     if (!jobId) return;
 
     const job = await this.jobRepository.findOne({ where: { id: jobId } });
@@ -164,7 +164,7 @@ export class AiFeedbackJobService implements OnModuleInit {
   }
 
   async handleMessageEvent(agentResponse: DevRevAgentResponse): Promise<void> {
-    const jobId = agentResponse.client_metadata?.jobId;
+    const jobId = agentResponse.client_metadata?.session_id;
 
     this.logger.log(`[handleMessageEvent] jobId=${jobId}, attemptAnsId=${agentResponse.client_metadata?.attemptAnsId}`);
 
@@ -236,7 +236,7 @@ export class AiFeedbackJobService implements OnModuleInit {
   }
 
   async handleErrorEvent(agentResponse: DevRevAgentResponse): Promise<void> {
-    const jobId = agentResponse.client_metadata?.jobId;
+    const jobId = agentResponse.client_metadata?.session_id;
     if (!jobId) return;
 
     const job = await this.jobRepository.findOne({ where: { id: jobId } });

@@ -104,7 +104,7 @@ export class AiFeedbackController {
 
     const { agent_response: eventType, session_object: session } = agentResponse;
     this.logger.log(
-      `[webhook] Agent event: type=${eventType}, session=${session}, jobId=${agentResponse.client_metadata?.jobId}`,
+      `[webhook] Agent event: type=${eventType}, session=${session}, jobId=${agentResponse.client_metadata?.session_id}`,
     );
 
     try {
@@ -126,7 +126,7 @@ export class AiFeedbackController {
       }
     } catch (err) {
       // Always return 200 to DevRev — retries won't help a processing error
-      this.logger.error(`[webhook] Error processing ${eventType} event for job ${agentResponse.client_metadata?.jobId}: ${err?.message}`, err?.stack);
+      this.logger.error(`[webhook] Error processing ${eventType} event for job ${agentResponse.client_metadata?.session_id}: ${err?.message}`, err?.stack);
     }
 
     res.status(200).json({ received: true });

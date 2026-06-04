@@ -50,7 +50,8 @@ export class DevRevService {
       );
     }
 
-    const sessionObject = `${job.attemptId}_${job.questionId}`;
+    // Unique per request — appending jobId ensures retries get a distinct session
+    const sessionObject = `${job.attemptId}_${job.questionId}_${job.id}`;
     const message = this.buildPrompt(questionContext);
 
     const payload: DevRevExecuteAsyncPayload = {
@@ -64,7 +65,7 @@ export class DevRevService {
         attemptAnsId: job.attemptAnsId,
         attemptId: job.attemptId,
         questionId: job.questionId,
-        jobId: job.id,
+        session_id: job.id,
         rubric_id: job.rubricId,
       },
     };
