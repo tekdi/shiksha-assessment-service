@@ -85,9 +85,14 @@ export class TestsController {
     description: 'Test retrieved successfully',
     type: ApiSuccessResponseDto,
   })
-  async findOne(@Param('id') id: string, @Req() req: any) {
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Query('includeHierarchy') includeHierarchy: string,
+  ) {
     const authContext: AuthContext = req.user;
-    return this.testsService.findOne(id, authContext);
+    const withHierarchy = includeHierarchy !== 'false';
+    return this.testsService.findOne(id, authContext, withHierarchy);
   }
 
   @Get(':id/hierarchy')

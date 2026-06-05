@@ -469,7 +469,7 @@ export class TestsService {
   }
 
 
-  async findOne(id: string, authContext: AuthContext): Promise<Test> {
+  async findOne(id: string, authContext: AuthContext, includeHierarchy = true): Promise<Test> {
     const test = await this.testRepository.findOne({
       where: {
         testId: id,
@@ -477,7 +477,7 @@ export class TestsService {
         organisationId: authContext.organisationId,
         status: Not(TestStatus.ARCHIVED)
       },
-      relations: ['sections', 'questions'],
+      relations: includeHierarchy ? ['sections', 'questions'] : [],
     });
 
     if (!test) {
