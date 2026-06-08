@@ -9,6 +9,7 @@ import {
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
 import { Test } from '../tests/entities/test.entity';
+import { Question, QuestionType } from '../questions/entities/question.entity';
 import { AiFeedbackJobService } from './ai-feedback-job.service';
 import { CreateAiFeedbackJobsInput } from './interfaces/ai-feedback.interface';
 import {
@@ -32,6 +33,8 @@ export class AiFeedbackService {
     private readonly attemptRepository: Repository<TestAttempt>,
     @InjectRepository(Test)
     private readonly testRepository: Repository<Test>,
+    @InjectRepository(Question)
+    private readonly questionRepository: Repository<Question>,
     private readonly jobService: AiFeedbackJobService,
     private readonly configService: ConfigService,
   ) {
@@ -51,14 +54,19 @@ export class AiFeedbackService {
     }
 
     const [answers, attempt] = await Promise.all([
-      this.answerRepository.find({
-        where: {
-          attemptId,
-          tenantId: authContext.tenantId,
-          organisationId: authContext.organisationId,
-        },
-        select: ['attemptAnsId', 'questionId'],
-      }),
+      this.answerRepository
+        .createQueryBuilder('ans')
+        .innerJoin(
+          Question,
+          'q',
+          'q.questionId = ans.questionId AND q.type IN (:...types)',
+          { types: [QuestionType.SUBJECTIVE, QuestionType.ESSAY] },
+        )
+        .where('ans.attemptId = :attemptId', { attemptId })
+        .andWhere('ans.tenantId = :tenantId', { tenantId: authContext.tenantId })
+        .andWhere('ans.organisationId = :organisationId', { organisationId: authContext.organisationId })
+        .select(['ans.attemptAnsId', 'ans.questionId'])
+        .getMany(),
       this.attemptRepository.findOne({
         where: { attemptId },
         select: ['testId'],
@@ -144,15 +152,20 @@ export class AiFeedbackService {
     attemptId: string,
     authContext: AuthContext,
   ): Promise<AiFeedbackStatusResponseDto> {
-    const jobs = await this.jobRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-      select: ['questionId', 'status', 'updatedAt'],
-      order: { updatedAt: 'DESC' },
-    });
+    const jobs = await this.jobRepository
+      .createQueryBuilder('job')
+      .innerJoin(
+        Question,
+        'q',
+        'q.questionId = job.questionId AND q.type IN (:...types)',
+        { types: [QuestionType.SUBJECTIVE, QuestionType.ESSAY] },
+      )
+      .where('job.attemptId = :attemptId', { attemptId })
+      .andWhere('job.tenantId = :tenantId', { tenantId: authContext.tenantId })
+      .andWhere('job.organisationId = :organisationId', { organisationId: authContext.organisationId })
+      .select(['job.questionId', 'job.status', 'job.updatedAt'])
+      .orderBy('job.updatedAt', 'DESC')
+      .getMany();
 
     if (!jobs.length) {
       throw new NotFoundException(
