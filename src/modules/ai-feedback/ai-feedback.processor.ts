@@ -98,7 +98,8 @@ export class AiFeedbackProcessor extends WorkerHost {
       const updateFields: Partial<TestUserAnswerAIFeedbackJob> = {
         requestPayload: requestPayload as any,
         sessionObject,
-        agentId: this.devRevService.configuredAgentId,
+        // Record the actual agent used (test-level override or env default)
+        agentId: dbJob.agentId ?? this.devRevService.configuredAgentId,
       };
       if (agentRequestId) updateFields.agentRequestId = agentRequestId;
       await this.jobRepository.update(jobId, updateFields as any);

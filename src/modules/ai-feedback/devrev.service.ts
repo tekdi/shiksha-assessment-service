@@ -55,8 +55,11 @@ export class DevRevService {
     const sessionObject = `${job.attemptId}_${job.questionId}_${job.id}`;
     const message = this.buildPrompt(questionContext);
 
+    // Use test-level agentId stored on the job; fall back to env-configured agent
+    const resolvedAgentId = job.agentId || this.agentId;
+
     const payload: DevRevExecuteAsyncPayload = {
-      agent: this.agentId,
+      agent: resolvedAgentId,
       event: {
         input_message: { message },
       },

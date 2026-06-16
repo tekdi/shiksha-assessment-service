@@ -244,6 +244,10 @@ export class Test {
   @Column({ type: 'text', nullable: true })
   aiRubricId: string;
 
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiAgentId: string;
+
   @CreateDateColumn({ type: 'timestamp with time zone' })
   createdAt: Date;
 

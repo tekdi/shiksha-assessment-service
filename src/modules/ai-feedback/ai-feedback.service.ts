@@ -93,10 +93,11 @@ export class AiFeedbackService {
     }
 
     let rubricId: string | undefined;
+    let agentId: string | undefined;
     if (attempt?.testId) {
       const test = await this.testRepository.findOne({
         where: { testId: attempt.testId },
-        select: ['aiEnabled', 'aiRubricId'],
+        select: ['aiEnabled', 'aiRubricId', 'aiAgentId'],
       });
 
       if (!test?.aiEnabled) {
@@ -110,6 +111,7 @@ export class AiFeedbackService {
       }
 
       rubricId = test.aiRubricId;
+      agentId = test.aiAgentId ?? undefined;
     } else {
       this.logger.warn(`Could not resolve testId for attempt ${attemptId} — skipping AI feedback`);
       return;
@@ -122,6 +124,7 @@ export class AiFeedbackService {
       tenantId: authContext.tenantId,
       organisationId: authContext.organisationId,
       rubricId,
+      agentId,
       learnerName,
       answers: answers.map((a) => ({
         attemptAnsId: a.attemptAnsId,
