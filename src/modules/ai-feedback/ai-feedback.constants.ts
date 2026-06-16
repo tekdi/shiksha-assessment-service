@@ -21,3 +21,12 @@ export const RATE_LIMIT_RETRY_DELAY_MS = 30_000;
 export const AUTO_RETRY_CRON = '0 */15 * * * *'; // every 15 minutes
 export const AUTO_RETRY_MAX_COUNT = 3;            // max scheduled retries before giving up
 export const AUTO_RETRY_MIN_AGE_MINUTES = 15;     // only retry jobs failed at least 15 min ago
+
+// AI feedback status cache — default 5 min, override with AI_FEEDBACK_STATUS_CACHE_TTL env var
+export const AI_FEEDBACK_STATUS_CACHE_TTL_SECONDS_DEFAULT = 300;
+
+export const aiFeedbackStatusCacheKey = (
+  tenantId: string,
+  organisationId: string,
+  attemptId: string,
+): string => `ai-feedback-status:${tenantId}:${organisationId}:${attemptId}`;

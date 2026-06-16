@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { CacheModule } from '../cache/cache.module';
 import { TestUserAnswerAIFeedbackJob } from './entities/test-user-answer-ai-feedback-job.entity';
 import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
@@ -17,6 +18,7 @@ import { AI_FEEDBACK_QUEUE } from './ai-feedback.constants';
 @Module({
   imports: [
     ConfigModule,
+    CacheModule,
     TypeOrmModule.forFeature([
       TestUserAnswerAIFeedbackJob,
       TestUserAnswer,

@@ -1,5 +1,7 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { Job, UnrecoverableError } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
@@ -23,6 +25,7 @@ import {
   BACKOFF_BASE_DELAY_MS,
   AUTO_RETRY_MAX_COUNT,
   AUTO_RETRY_MIN_AGE_MINUTES,
+  aiFeedbackStatusCacheKey,
 } from './ai-feedback.constants';
 
 @Processor(AI_FEEDBACK_QUEUE, {
@@ -52,6 +55,7 @@ export class AiFeedbackProcessor extends WorkerHost {
     private readonly questionRepository: Repository<Question>,
     private readonly devRevService: DevRevService,
     private readonly jobService: AiFeedbackJobService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
     super();
   }
@@ -158,7 +162,7 @@ export class AiFeedbackProcessor extends WorkerHost {
 
     const failedJobs = await this.jobRepository.find({
       where: { status: AIFeedbackJobStatus.FAILED, updatedAt: LessThan(cutoff) },
-      select: ['id', 'autoRetryCount', 'failureReason'],
+      select: ['id', 'autoRetryCount', 'failureReason', 'attemptId', 'tenantId', 'organisationId'],
       order: { updatedAt: 'ASC' },
     });
 
@@ -183,6 +187,27 @@ export class AiFeedbackProcessor extends WorkerHost {
       } catch (err) {
         this.logger.error(`[retry-sweep] Failed to re-enqueue job ${job.id}: ${err?.message}`);
         skipped++;
+      }
+    }
+
+    // Invalidate status cache for each affected attempt so stale FAILED status is not served
+    const affectedAttempts = new Map<string, { tenantId: string; organisationId: string; attemptId: string }>();
+    for (const job of eligible) {
+      if (!affectedAttempts.has(job.attemptId)) {
+        affectedAttempts.set(job.attemptId, {
+          tenantId: job.tenantId,
+          organisationId: job.organisationId,
+          attemptId: job.attemptId,
+        });
+      }
+    }
+    for (const entry of affectedAttempts.values()) {
+      try {
+        await this.cacheManager.del(
+          aiFeedbackStatusCacheKey(entry.tenantId, entry.organisationId, entry.attemptId),
+        );
+      } catch (cacheErr) {
+        this.logger.warn(`[retry-sweep] Cache invalidation failed for attemptId=${entry.attemptId} (non-fatal): ${cacheErr?.message}`);
       }
     }
 

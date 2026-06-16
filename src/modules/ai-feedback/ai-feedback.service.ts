@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import axios from 'axios';
@@ -18,11 +20,17 @@ import {
 } from './dto/ai-feedback.dto';
 import { ConfigService } from '@nestjs/config';
 import { AuthContext } from '../../common/interfaces/auth.interface';
+import {
+  AI_FEEDBACK_STATUS_CACHE_TTL_SECONDS_DEFAULT,
+  aiFeedbackStatusCacheKey,
+} from './ai-feedback.constants';
 
 @Injectable()
 export class AiFeedbackService {
   private readonly logger = new Logger(AiFeedbackService.name);
   private readonly devRevEnabled: boolean;
+  private readonly feedbackStatusCacheEnabled: boolean;
+  private readonly feedbackStatusCacheTtl: number;
 
   constructor(
     @InjectRepository(TestUserAnswerAIFeedbackJob)
@@ -37,11 +45,17 @@ export class AiFeedbackService {
     private readonly questionRepository: Repository<Question>,
     private readonly jobService: AiFeedbackJobService,
     private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
     this.devRevEnabled = this.configService.get<string>('DEVREV_ENABLED', 'true') !== 'false';
     if (!this.devRevEnabled) {
       this.logger.warn('DevRev AI feedback is DISABLED (DEVREV_ENABLED=false)');
     }
+    this.feedbackStatusCacheEnabled =
+      this.configService.get<string>('AI_FEEDBACK_STATUS_CACHE_ENABLED', 'true') !== 'false';
+    this.feedbackStatusCacheTtl = Number(
+      this.configService.get<string>('AI_FEEDBACK_STATUS_CACHE_TTL', String(AI_FEEDBACK_STATUS_CACHE_TTL_SECONDS_DEFAULT)),
+    );
   }
 
   async initiateAiFeedbackForAttempt(
@@ -152,6 +166,19 @@ export class AiFeedbackService {
     attemptId: string,
     authContext: AuthContext,
   ): Promise<AiFeedbackStatusResponseDto> {
+    const cacheKey = aiFeedbackStatusCacheKey(authContext.tenantId, authContext.organisationId, attemptId);
+    if (this.feedbackStatusCacheEnabled) {
+      try {
+        const cached = await this.cacheManager.get<AiFeedbackStatusResponseDto>(cacheKey);
+        if (cached) {
+          this.logger.log(`Cache HIT for AI feedback status: attemptId=${attemptId}`);
+          return cached;
+        }
+      } catch (cacheErr) {
+        this.logger.warn(`Cache read failed, falling back to DB (non-fatal): ${cacheErr?.message}`);
+      }
+    }
+
     const jobs = await this.jobRepository
       .createQueryBuilder('job')
       .innerJoin(
@@ -184,11 +211,21 @@ export class AiFeedbackService {
     const deduplicated = Array.from(latestByQuestion.values());
     const completed = deduplicated.filter((j) => j.status === AIFeedbackJobStatus.COMPLETED).length;
 
-    return {
+    const result: AiFeedbackStatusResponseDto = {
       completed,
       total: deduplicated.length,
       questions: deduplicated,
     };
+
+    if (this.feedbackStatusCacheEnabled) {
+      try {
+        await this.cacheManager.set(cacheKey, result, this.feedbackStatusCacheTtl * 1000);
+      } catch (cacheErr) {
+        this.logger.warn(`Cache write failed (non-fatal): ${cacheErr?.message}`);
+      }
+    }
+
+    return result;
   }
 
   async getAiFeedback(
@@ -243,6 +280,21 @@ export class AiFeedbackService {
       retried++;
     }
 
+    if (retried > 0) {
+      await this.invalidateStatusCache(attemptId, authContext);
+    }
+
     return { retried };
+  }
+
+  async invalidateStatusCache(attemptId: string, authContext: AuthContext): Promise<void> {
+    if (!this.feedbackStatusCacheEnabled) return;
+    const cacheKey = aiFeedbackStatusCacheKey(authContext.tenantId, authContext.organisationId, attemptId);
+    try {
+      await this.cacheManager.del(cacheKey);
+      this.logger.log(`Status cache invalidated on resubmission for attemptId=${attemptId}`);
+    } catch (cacheErr) {
+      this.logger.warn(`Cache invalidation failed on resubmission (non-fatal): ${cacheErr?.message}`);
+    }
   }
 }
