@@ -1,4 +1,6 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -22,6 +24,7 @@ import {
   MAX_JOB_ATTEMPTS,
   BACKOFF_BASE_DELAY_MS,
   AUTO_RETRY_CRON,
+  aiFeedbackStatusCacheKey,
 } from './ai-feedback.constants';
 
 const AI_REVIEW_STATUS_PENDING = 'PENDING';
@@ -40,6 +43,7 @@ export class AiFeedbackJobService implements OnModuleInit {
     private readonly devRevService: DevRevService,
     @InjectQueue(AI_FEEDBACK_QUEUE)
     private readonly aiFeedbackQueue: Queue<AiFeedbackQueueJobData>,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -234,6 +238,12 @@ export class AiFeedbackJobService implements OnModuleInit {
       this.logger.error(`[handleMessageEvent] Failed to update answer ${job.attemptAnsId}: ${err?.message}`);
       throw err;
     }
+
+    // Invalidate status cache so the next poll fetches fresh data from DB
+    await this.cacheManager.del(
+      aiFeedbackStatusCacheKey(job.tenantId, job.organisationId, job.attemptId),
+    );
+    this.logger.log(`[handleMessageEvent] Cache invalidated for attemptId=${job.attemptId}`);
   }
 
   async handleErrorEvent(agentResponse: DevRevAgentResponse): Promise<void> {
@@ -257,6 +267,11 @@ export class AiFeedbackJobService implements OnModuleInit {
     await this.answerRepository.update(job.attemptAnsId, { aiReviewStatus: AI_REVIEW_STATUS_FAILED });
 
     this.logger.error(`[handleErrorEvent] Job ${jobId} marked FAILED: ${failureReason}`);
+
+    // Invalidate status cache so the next poll sees the failure
+    await this.cacheManager.del(
+      aiFeedbackStatusCacheKey(job.tenantId, job.organisationId, job.attemptId),
+    );
   }
 
   private parseFeedbackResult(

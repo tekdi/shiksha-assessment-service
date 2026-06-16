@@ -1713,6 +1713,16 @@ export class AttemptsService {
       // Don't throw - allow submission to succeed even if plugin event fails
     });
 
+    // Invalidate any cached feedback status so the next poll reflects new jobs
+    this.aiFeedbackService
+      .invalidateStatusCache(savedAttempt.attemptId, authContext)
+      .catch((error) => {
+        this.logger.error(
+          `Failed to invalidate AI feedback status cache for attempt ${savedAttempt.attemptId}`,
+          { error: error.message },
+        );
+      });
+
     // Fire-and-forget: initiate AI feedback generation asynchronously
     this.aiFeedbackService
       .initiateAiFeedbackForAttempt(savedAttempt.attemptId, authContext)
