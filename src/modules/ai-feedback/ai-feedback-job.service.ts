@@ -57,7 +57,7 @@ export class AiFeedbackJobService implements OnModuleInit {
   }
 
   async createJobsForAttempt(input: CreateAiFeedbackJobsInput): Promise<void> {
-    const { attemptId, tenantId, organisationId, rubricId, answers } = input;
+    const { attemptId, tenantId, organisationId, rubricId, agentId, answers } = input;
 
     // Save DB tracking rows
     const dbJobs = answers.map((ans) =>
@@ -71,7 +71,8 @@ export class AiFeedbackJobService implements OnModuleInit {
         webhookReceived: false,
         retryCount: 0,
         rubricId: rubricId ?? undefined,
-        agentId: this.devRevService.configuredAgentId,
+        // Use test-level agentId if set, otherwise fall back to env-configured agent
+        agentId: agentId ?? this.devRevService.configuredAgentId,
         webhookId: this.devRevService.configuredWebhookId,
       }),
     );
@@ -95,6 +96,7 @@ export class AiFeedbackJobService implements OnModuleInit {
         tenantId: job.tenantId,
         organisationId: job.organisationId,
         rubricId: job.rubricId ?? undefined,
+        agentId: job.agentId ?? undefined,
         learnerName: input.learnerName ?? undefined,
       } as AiFeedbackQueueJobData,
       opts: {
@@ -135,6 +137,7 @@ export class AiFeedbackJobService implements OnModuleInit {
         tenantId: job.tenantId,
         organisationId: job.organisationId,
         rubricId: job.rubricId ?? undefined,
+        agentId: job.agentId ?? undefined,
       },
       {
         attempts: MAX_JOB_ATTEMPTS,

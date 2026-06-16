@@ -192,4 +192,9 @@ export class CreateTestDto {
   @IsOptional()
   @IsString()
   aiRubricId?: string;
+
+  @ApiPropertyOptional({ description: 'DevRev agent ID to use for AI evaluation; overrides the global DEVREV_AGENT_ID env var' })
+  @IsOptional()
+  @IsString()
+  aiAgentId?: string;
 }

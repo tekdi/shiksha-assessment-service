@@ -86,6 +86,7 @@ export interface CreateAiFeedbackJobsInput {
   tenantId: string;
   organisationId: string;
   rubricId?: string;
+  agentId?: string;
   learnerName?: string;
   answers: Array<{
     attemptAnsId: string;
@@ -101,6 +102,7 @@ export interface AiFeedbackQueueJobData {
   tenantId: string;
   organisationId: string;
   rubricId?: string;
+  agentId?: string;
   learnerName?: string;
 }
 
@@ -109,6 +111,7 @@ export interface QuestionContext {
   questionText: string;
   answer: any;
   rubricId?: string;
+  agentId?: string;
   learnerName?: string;
   rubric?: Array<{ name: string; maxScore: number; description?: string }>;
   maxScore?: number;
