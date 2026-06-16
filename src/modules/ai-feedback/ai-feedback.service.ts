@@ -168,10 +168,14 @@ export class AiFeedbackService {
   ): Promise<AiFeedbackStatusResponseDto> {
     const cacheKey = aiFeedbackStatusCacheKey(authContext.tenantId, authContext.organisationId, attemptId);
     if (this.feedbackStatusCacheEnabled) {
-      const cached = await this.cacheManager.get<AiFeedbackStatusResponseDto>(cacheKey);
-      if (cached) {
-        this.logger.log(`Cache HIT for AI feedback status: attemptId=${attemptId}`);
-        return cached;
+      try {
+        const cached = await this.cacheManager.get<AiFeedbackStatusResponseDto>(cacheKey);
+        if (cached) {
+          this.logger.log(`Cache HIT for AI feedback status: attemptId=${attemptId}`);
+          return cached;
+        }
+      } catch (cacheErr) {
+        this.logger.warn(`Cache read failed, falling back to DB (non-fatal): ${cacheErr?.message}`);
       }
     }
 
@@ -214,7 +218,11 @@ export class AiFeedbackService {
     };
 
     if (this.feedbackStatusCacheEnabled) {
-      await this.cacheManager.set(cacheKey, result, this.feedbackStatusCacheTtl * 1000);
+      try {
+        await this.cacheManager.set(cacheKey, result, this.feedbackStatusCacheTtl * 1000);
+      } catch (cacheErr) {
+        this.logger.warn(`Cache write failed (non-fatal): ${cacheErr?.message}`);
+      }
     }
 
     return result;
@@ -272,13 +280,21 @@ export class AiFeedbackService {
       retried++;
     }
 
+    if (retried > 0) {
+      await this.invalidateStatusCache(attemptId, authContext);
+    }
+
     return { retried };
   }
 
   async invalidateStatusCache(attemptId: string, authContext: AuthContext): Promise<void> {
     if (!this.feedbackStatusCacheEnabled) return;
     const cacheKey = aiFeedbackStatusCacheKey(authContext.tenantId, authContext.organisationId, attemptId);
-    await this.cacheManager.del(cacheKey);
-    this.logger.log(`Status cache invalidated on resubmission for attemptId=${attemptId}`);
+    try {
+      await this.cacheManager.del(cacheKey);
+      this.logger.log(`Status cache invalidated on resubmission for attemptId=${attemptId}`);
+    } catch (cacheErr) {
+      this.logger.warn(`Cache invalidation failed on resubmission (non-fatal): ${cacheErr?.message}`);
+    }
   }
 }

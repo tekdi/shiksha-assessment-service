@@ -240,10 +240,14 @@ export class AiFeedbackJobService implements OnModuleInit {
     }
 
     // Invalidate status cache so the next poll fetches fresh data from DB
-    await this.cacheManager.del(
-      aiFeedbackStatusCacheKey(job.tenantId, job.organisationId, job.attemptId),
-    );
-    this.logger.log(`[handleMessageEvent] Cache invalidated for attemptId=${job.attemptId}`);
+    try {
+      await this.cacheManager.del(
+        aiFeedbackStatusCacheKey(job.tenantId, job.organisationId, job.attemptId),
+      );
+      this.logger.log(`[handleMessageEvent] Cache invalidated for attemptId=${job.attemptId}`);
+    } catch (cacheErr) {
+      this.logger.warn(`[handleMessageEvent] Cache invalidation failed (non-fatal): ${cacheErr?.message}`);
+    }
   }
 
   async handleErrorEvent(agentResponse: DevRevAgentResponse): Promise<void> {
@@ -269,9 +273,13 @@ export class AiFeedbackJobService implements OnModuleInit {
     this.logger.error(`[handleErrorEvent] Job ${jobId} marked FAILED: ${failureReason}`);
 
     // Invalidate status cache so the next poll sees the failure
-    await this.cacheManager.del(
-      aiFeedbackStatusCacheKey(job.tenantId, job.organisationId, job.attemptId),
-    );
+    try {
+      await this.cacheManager.del(
+        aiFeedbackStatusCacheKey(job.tenantId, job.organisationId, job.attemptId),
+      );
+    } catch (cacheErr) {
+      this.logger.warn(`[handleErrorEvent] Cache invalidation failed (non-fatal): ${cacheErr?.message}`);
+    }
   }
 
   private parseFeedbackResult(
