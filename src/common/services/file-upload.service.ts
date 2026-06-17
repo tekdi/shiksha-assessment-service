@@ -9,6 +9,10 @@ import { ConfigService } from '@nestjs/config';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { extname } from 'node:path';
+import { createReadStream, unlink } from 'node:fs';
+import { promisify } from 'node:util';
+
+const unlinkAsync = promisify(unlink);
 import { v4 as uuidv4 } from 'uuid';
 import {
   FILE_UPLOAD_CONFIG,
@@ -17,7 +21,7 @@ import {
 } from '@/common/config/file-upload.config';
 
 export interface FileUploadResult {
-  /** AWS S3 URL to use in answer payload as { "file": "<this url>" } */
+  /** AWS S3 URL to use in answer payload as { "file": "<this url>" }  */
   file: string;
   fileSize: number;
 }
@@ -83,56 +87,72 @@ export class FileUploadService {
       );
     }
 
-    const ext = extname(file.originalname).toLowerCase();
-    if (!(FILE_UPLOAD_CONFIG.allowedExtensions as readonly string[]).includes(ext)) {
-      throw new BadRequestException(
-        `Invalid file type. Allowed: ${FILE_UPLOAD_CONFIG.allowedExtensions.join(', ')}`,
-      );
-    }
-    const extNoDot = ext.startsWith('.') ? ext.slice(1) : ext;
-    if (!isAllowedMimeForExtension(extNoDot, file.mimetype)) {
-      throw new BadRequestException(
-        `Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')} (MP4 may be sent as application/octet-stream)`,
-      );
-    }
-
-    const timestamp = Date.now();
-    const safeName = `${uuidv4()}_${timestamp}${ext}`;
-    const key = userId
-      ? `${this.uploadPath}/${userId}/${safeName}`
-      : `${this.uploadPath}/${safeName}`;
-
-    const body = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer);
-    const contentType =
-      ext === '.mp4' && file.mimetype === MP4_ALTERNATIVE_MIME ? 'video/mp4' : file.mimetype;
-
+    // Wrap everything in try/finally so the diskStorage temp file is always cleaned up,
+    // even if validation throws before reaching the S3 send.
     try {
-      await this.s3Client.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: body,
-          ContentLength: body.length,
-          ContentType: contentType,
-          ContentDisposition: `attachment; filename="${file.originalname}"`,
-          Metadata: {
-            originalFileName: file.originalname,
-            fileSize: String(file.size),
-            uploadedAt: new Date().toISOString(),
-          },
-        }),
-      );
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`S3 upload failed: ${msg}`, error instanceof Error ? error.stack : undefined);
-      throw new InternalServerErrorException('Failed to upload file. Please try again later.');
-    }
+      const ext = extname(file.originalname).toLowerCase();
+      if (!(FILE_UPLOAD_CONFIG.allowedExtensions as readonly string[]).includes(ext)) {
+        throw new BadRequestException(
+          `Invalid file type. Allowed: ${FILE_UPLOAD_CONFIG.allowedExtensions.join(', ')}`,
+        );
+      }
+      const extNoDot = ext.startsWith('.') ? ext.slice(1) : ext;
+      if (!isAllowedMimeForExtension(extNoDot, file.mimetype)) {
+        throw new BadRequestException(
+          `Invalid MIME type. Allowed: ${FILE_UPLOAD_CONFIG.allowedMimeTypes.join(', ')} (MP4 may be sent as application/octet-stream)`,
+        );
+      }
 
-    const fileUrl = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
-    return {
-      file: fileUrl,
-      fileSize: file.size,
-    };
+      const timestamp = Date.now();
+      const safeName = `${uuidv4()}_${timestamp}${ext}`;
+      const key = userId
+        ? `${this.uploadPath}/${userId}/${safeName}`
+        : `${this.uploadPath}/${safeName}`;
+
+      // Support both memoryStorage (file.buffer) and diskStorage (file.path)
+      let body: Buffer | ReturnType<typeof createReadStream>;
+      if (file.buffer && Buffer.isBuffer(file.buffer)) {
+        body = file.buffer;
+      } else if (file.path) {
+        body = createReadStream(file.path);
+      } else {
+        throw new InternalServerErrorException('Upload failed: file data unavailable');
+      }
+      const contentType =
+        ext === '.mp4' && file.mimetype === MP4_ALTERNATIVE_MIME ? 'video/mp4' : file.mimetype;
+
+      try {
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+            Body: body,
+            ContentLength: file.size,
+            ContentType: contentType,
+            ContentDisposition: `attachment; filename="${file.originalname}"`,
+            Metadata: {
+              originalFileName: file.originalname,
+              fileSize: String(file.size),
+              uploadedAt: new Date().toISOString(),
+            },
+          }),
+        );
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        this.logger.error(`S3 upload failed: ${msg}`, error instanceof Error ? error.stack : undefined);
+        throw new InternalServerErrorException('Failed to upload file. Please try again later.');
+      }
+
+      return {
+        file: `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`,
+        fileSize: file.size,
+      };
+    } finally {
+      // Clean up temp file written by diskStorage — runs for all exits including validation errors
+      if (file.path) {
+        await unlinkAsync(file.path).catch(() => {});
+      }
+    }
   }
 
   /**
