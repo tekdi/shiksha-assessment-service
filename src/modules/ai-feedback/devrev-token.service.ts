@@ -1,12 +1,21 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import axios from 'axios';
-import { CacheService } from '../cache/cache.service';
 
 const TOKEN_CACHE_KEY = 'devrev:api_token';
-// 29 days in seconds — rotate 1 day before the 30-day expiry
-const TOKEN_TTL_SECONDS = 29 * 24 * 60 * 60;
+const TOKEN_EXPIRY_CACHE_KEY = 'devrev:api_token_expiry';
+
+// Rotate when less than 24 hours remain before expiry
+const ROTATION_THRESHOLD_SECONDS = 24 * 60 * 60;
+
+// Token lifetime issued to DevRev (30 days).
+// Cache TTL is capped at 24 days to stay within Node's 32-bit setTimeout limit (~24.8 days max).
+// The hourly cron rotates the token before expiry regardless.
+const TOKEN_LIFETIME_DAYS = 30;
+const TOKEN_CACHE_TTL_MS = 24 * 24 * 60 * 60 * 1000; // 24 days in ms
 
 @Injectable()
 export class DevRevTokenService implements OnModuleInit {
@@ -18,12 +27,13 @@ export class DevRevTokenService implements OnModuleInit {
   private readonly requestedTokenType: string;
   private readonly devrevEnabled: boolean;
 
-  // In-memory fallback when Redis (CACHE_ENABLED=false)
+  // In-memory cache — survives restarts only via Redis
   private inMemoryToken: string | null = null;
+  private inMemoryExpiresAt: number | null = null; // unix seconds
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly cacheService: CacheService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
     this.baseUrl = this.configService.get<string>(
       'DEVREV_BASE_URL',
@@ -47,47 +57,80 @@ export class DevRevTokenService implements OnModuleInit {
     if (!this.devrevEnabled || !this.clientId) {
       return;
     }
-
-    const cached = await this.cacheService.get<string>(TOKEN_CACHE_KEY);
-    if (cached) {
-      this.inMemoryToken = cached;
-      this.logger.log('DevRev token loaded from cache');
-      return;
-    }
-
-    // No cached token — issue a fresh one on startup
-    await this.rotateToken();
+    await this.checkAndRotateIfNeeded();
   }
 
-  // Runs every 29 days at midnight
-  @Cron('0 0 */29 * *')
-  async rotateToken(): Promise<void> {
+  // Runs every hour — checks expiry and rotates only when needed.
+  // Self-heals from startup failures and avoids calendar-day cron pitfalls.
+  @Cron(CronExpression.EVERY_HOUR)
+  async checkAndRotateIfNeeded(): Promise<void> {
     if (!this.devrevEnabled || !this.clientId) {
       return;
     }
 
-    this.logger.log('Rotating DevRev API token…');
+    // Load from Redis if not in memory (e.g. after a restart)
+    if (!this.inMemoryToken) {
+      const cachedToken = await this.cacheManager.get<string>(TOKEN_CACHE_KEY);
+      const cachedExpiry = await this.cacheManager.get<number>(TOKEN_EXPIRY_CACHE_KEY);
+      if (cachedToken && cachedExpiry) {
+        this.inMemoryToken = cachedToken;
+        this.inMemoryExpiresAt = cachedExpiry;
+        this.logger.log('DevRev token loaded from Redis cache');
+      }
+    }
 
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const secondsUntilExpiry = this.inMemoryExpiresAt
+      ? this.inMemoryExpiresAt - nowSeconds
+      : 0;
+
+    if (this.inMemoryToken && secondsUntilExpiry > ROTATION_THRESHOLD_SECONDS) {
+      this.logger.debug(
+        `DevRev token valid for ${Math.floor(secondsUntilExpiry / 3600)}h — no rotation needed`,
+      );
+      return;
+    }
+
+    const reason = this.inMemoryToken
+      ? `token expires in ${Math.floor(secondsUntilExpiry / 3600)}h (threshold: 24h)`
+      : 'no token in memory or cache';
+    this.logger.log(`Rotating DevRev API token — reason: ${reason}`);
+    await this.rotateToken();
+  }
+
+  private async rotateToken(): Promise<void> {
     try {
-      const newToken = await this.issueToken();
-      this.inMemoryToken = newToken;
-      await this.cacheService.set(TOKEN_CACHE_KEY, newToken, TOKEN_TTL_SECONDS);
-      this.logger.log('DevRev API token rotated and cached successfully');
+      const { token, expiresAt } = await this.issueToken();
+
+      this.inMemoryToken = token;
+      this.inMemoryExpiresAt = expiresAt;
+
+      // TTL in milliseconds for cache-manager
+      await this.cacheManager.set(TOKEN_CACHE_KEY, token, TOKEN_CACHE_TTL_MS);
+      await this.cacheManager.set(TOKEN_EXPIRY_CACHE_KEY, expiresAt, TOKEN_CACHE_TTL_MS);
+
+      this.logger.log(
+        `DevRev API token rotated successfully. Expires at: ${new Date(expiresAt * 1000).toISOString()}`,
+      );
     } catch (error) {
       this.logger.error(
-        `DevRev token rotation failed: ${error?.message}. Continuing with existing token.`,
+        `DevRev token rotation failed: ${error?.message}. Will retry on next hourly check.`,
       );
     }
   }
 
-  private async issueToken(): Promise<string> {
+  private async issueToken(): Promise<{ token: string; expiresAt: number }> {
     const requestBody = {
       grant_type: this.grantType,
       requested_token_type: this.requestedTokenType,
       client_id: this.clientId,
-      expires_in: 30,
+      expires_in: TOKEN_LIFETIME_DAYS,
       token_hint: 'Renewed Service Account Token',
     };
+
+    this.logger.log(
+      `Issuing new DevRev token. URL: ${this.baseUrl}/auth-tokens.create, body: ${JSON.stringify(requestBody)}`,
+    );
 
     const response = await axios.post(
       `${this.baseUrl}/auth-tokens.create`,
@@ -116,10 +159,17 @@ export class DevRevTokenService implements OnModuleInit {
       );
     }
 
-    return token;
+    // Calculate expiry from response exp claim or fall back to TOKEN_LIFETIME_DAYS
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const expiresAt =
+      response.data?.expires_in
+        ? nowSeconds + response.data.expires_in
+        : nowSeconds + TOKEN_LIFETIME_DAYS * 24 * 60 * 60;
+
+    return { token, expiresAt };
   }
 
-  getToken(): string {    
+  getToken(): string {
     return this.inMemoryToken ?? this.bootstrapToken;
   }
 }
