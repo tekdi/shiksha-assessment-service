@@ -6,6 +6,7 @@ import {
   QuestionContext,
 } from './interfaces/ai-feedback.interface';
 import { TestUserAnswerAIFeedbackJob } from './entities/test-user-answer-ai-feedback-job.entity';
+import { DevRevTokenService } from './devrev-token.service';
 
 const PROMPT_VERSION = 'v1';
 
@@ -13,22 +14,23 @@ const PROMPT_VERSION = 'v1';
 export class DevRevService {
   private readonly logger = new Logger(DevRevService.name);
   private readonly baseUrl: string;
-  private readonly apiToken: string;
   private readonly agentId: string;
   private readonly webhookId: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly tokenService: DevRevTokenService,
+  ) {
     this.baseUrl = this.configService.get<string>(
       'DEVREV_BASE_URL',
       'https://api.devrev.ai/internal',
     );
-    this.apiToken = this.configService.get<string>('DEVREV_API_TOKEN', '');
     this.agentId = this.configService.get<string>('DEVREV_AGENT_ID', '');
     this.webhookId = this.configService.get<string>('DEVREV_WEBHOOK_ID', '');
 
-    if (!this.apiToken || !this.agentId || !this.webhookId) {
+    if (!this.agentId || !this.webhookId) {
       this.logger.warn(
-        'DEVREV_API_TOKEN, DEVREV_AGENT_ID or DEVREV_WEBHOOK_ID not set — AI feedback will not work',
+        'DEVREV_AGENT_ID or DEVREV_WEBHOOK_ID not set — AI feedback will not work',
       );
     } else {
       this.logger.log(`DevRev service ready. Agent: ${this.agentId}, Webhook: ${this.webhookId}`);
@@ -88,7 +90,7 @@ export class DevRevService {
         {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiToken}`,
+            Authorization: `Bearer ${this.tokenService.getToken()}`,
           },
           timeout: 30_000,
         },

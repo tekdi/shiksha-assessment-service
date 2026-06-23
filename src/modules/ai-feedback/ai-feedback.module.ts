@@ -9,6 +9,7 @@ import { TestAttempt } from '../tests/entities/test-attempt.entity';
 import { Test } from '../tests/entities/test.entity';
 import { Question } from '../questions/entities/question.entity';
 import { DevRevService } from './devrev.service';
+import { DevRevTokenService } from './devrev-token.service';
 import { AiFeedbackJobService } from './ai-feedback-job.service';
 import { AiFeedbackService } from './ai-feedback.service';
 import { AiFeedbackController } from './ai-feedback.controller';
@@ -55,6 +56,7 @@ import { AI_FEEDBACK_QUEUE } from './ai-feedback.constants';
   ],
   controllers: [AiFeedbackController],
   providers: [
+    DevRevTokenService,
     DevRevService,
     AiFeedbackJobService,
     AiFeedbackService,

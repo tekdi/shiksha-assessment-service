@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './modules/health/health.module';
 import { TestsModule } from './modules/tests/tests.module';
 import { QuestionsModule } from './modules/questions/questions.module';
@@ -41,6 +42,9 @@ import { ConfigurationModule } from './modules/configuration/configuration.modul
     EventEmitterModule.forRoot({
       global: true,
     }),
+
+    // Enables @Cron decorators (used for DevRev token rotation)
+    ScheduleModule.forRoot(),
     
     // Cloud Storage Module - conditionally imported
     ...(process.env.CLOUD_STORAGE_PROVIDER && process.env.CLOUD_STORAGE_PROVIDER.trim()
