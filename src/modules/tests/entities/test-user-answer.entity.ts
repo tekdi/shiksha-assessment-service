@@ -15,6 +15,11 @@ export enum ReviewStatus {
   REVIEWED = 'R',
 }
 
+export enum AiFeedbackRating {
+  UP = 'up',
+  DOWN = 'down',
+}
+
 @Entity('testUserAnswers')
 export class TestUserAnswer {
   @ApiProperty()
@@ -105,6 +110,10 @@ export class TestUserAnswer {
   @ApiProperty({ required: false })
   @Column({ type: 'text', nullable: true })
   aiRawFeedback: string;
+
+  @ApiProperty({ enum: AiFeedbackRating, required: false, nullable: true })
+  @Column({ type: 'text', nullable: true })
+  feedbackRating: AiFeedbackRating | null;
 
   // Relations
   @ManyToOne(() => TestAttempt, attempt => attempt.attemptId)

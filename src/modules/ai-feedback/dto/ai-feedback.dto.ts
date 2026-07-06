@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { AiFeedbackRating } from '../../tests/entities/test-user-answer.entity';
 
 export class AiFeedbackStatusQuestionDto {
   @ApiProperty()
@@ -43,11 +44,17 @@ export class AiFeedbackAnswerDto {
 
   @ApiProperty({ nullable: true })
   aiRawFeedback: string;
+
+  @ApiProperty({ enum: AiFeedbackRating, nullable: true })
+  feedbackRating: AiFeedbackRating | null;
 }
 
 export class AiFeedbackResponseDto {
   @ApiProperty()
   attemptId: string;
+
+  @ApiProperty()
+  feedbackViewed: boolean;
 
   @ApiProperty({ type: [AiFeedbackAnswerDto] })
   answers: AiFeedbackAnswerDto[];

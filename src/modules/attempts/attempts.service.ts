@@ -931,6 +931,27 @@ export class AttemptsService {
     };
   }
 
+  async updateFeedbackViewed(
+    attemptId: string,
+    feedbackViewed: boolean,
+    authContext: AuthContext
+  ): Promise<TestAttempt> {
+    const attempt = await this.attemptRepository.findOne({
+      where: {
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException("Attempt not found");
+    }
+
+    attempt.feedbackViewed = feedbackViewed;
+    return this.attemptRepository.save(attempt);
+  }
+
   async getAttemptQuestions(
     attemptId: string,
     userId: string,

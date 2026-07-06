@@ -18,6 +18,7 @@ import { SubmitMultipleAnswersDto } from "./dto/submit-answer.dto";
 import { ReviewAttemptDto } from "./dto/review-answer.dto";
 import { ReviewTestAttemptDto } from "./dto/review-test-attempt.dto";
 import { CheckResultImportedDto } from "./dto/check-result-imported.dto";
+import { UpdateFeedbackViewedDto } from "./dto/update-feedback-viewed.dto";
 import { ApiSuccessResponseDto } from "@/common/dto/api-response.dto";
 import { AuthContext } from "@/common/interfaces/auth.interface";
 import { AuthContextInterceptor } from "@/common/interceptors/auth-context.interceptor";
@@ -228,6 +229,38 @@ export class AttemptsController {
       authContext
     );
     return result;
+  }
+
+  @Post(":attemptId/feedback-viewed")
+  @ApiOperation({
+    summary: "Mark AI feedback / answersheet as viewed or not viewed",
+    description:
+      "Sets the feedbackViewed flag on a test attempt, used to track when a learner has viewed the AI feedback or answersheet.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Feedback viewed status updated",
+    type: ApiSuccessResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: "Attempt not found",
+  })
+  async updateFeedbackViewed(
+    @Param("attemptId") attemptId: string,
+    @Body() updateFeedbackViewedDto: UpdateFeedbackViewedDto,
+    @Req() req: any
+  ) {
+    const authContext: AuthContext = req.user;
+    const attempt = await this.attemptsService.updateFeedbackViewed(
+      attemptId,
+      updateFeedbackViewedDto.feedbackViewed,
+      authContext
+    );
+    return {
+      attemptId: attempt.attemptId,
+      feedbackViewed: attempt.feedbackViewed,
+    };
   }
 
   @Post("review")
