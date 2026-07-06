@@ -2323,12 +2323,14 @@ export class TestsService {
         { key: 'status', header: 'Status', marks: 0, type: 'string' },
         { key: 'startTime', header: 'Start Time', marks: 0, type: 'datetime' },
         { key: 'submitTime', header: 'Submit Time', marks: 0, type: 'datetime' },
-        ...questions.map(q => ({
-          key: q.questionId,
-          header: `${q.questionText}`,
-          marks: q.questionMarks,
-          type: q.questionType
-        }))
+        ...(test.aiEnabled ? [{ key: 'feedbackViewed', header: 'Feedback Viewed', marks: 0, type: 'boolean' }] : []),
+        ...questions.flatMap(q => [
+          { key: q.questionId, header: `${q.questionText}`, marks: q.questionMarks, type: q.questionType },
+          ...(test.aiEnabled ? [
+            { key: `${q.questionId}_feedbackRating`, header: `${q.questionText} - Feedback Rating`, marks: 0, type: 'string' },
+            { key: `${q.questionId}_aiFeedback`, header: `${q.questionText} - AI Feedback`, marks: 0, type: 'string' },
+          ] : []),
+        ])
       ];
 
       return {
@@ -2360,7 +2362,8 @@ export class TestsService {
         ta."startedAt" as "startTime",
         ta."submittedAt" as "submitTime",
         COALESCE(ta."timeSpent", 0) as "timeSpent",
-        ta."score" as "totalScore"
+        ta."score" as "totalScore",
+        ta."feedbackViewed" as "feedbackViewed"
       FROM "testAttempts" ta
       WHERE ta."testId" = $1
         AND ta."tenantId" = $2
@@ -2398,7 +2401,9 @@ export class TestsService {
         tua."questionId",
         tua."answer" as "answerText",
         tua."score",
-        q."marks" as "maxScore"
+        q."marks" as "maxScore",
+        tua."feedbackRating",
+        tua."aiFeedback"
       FROM "testUserAnswers" tua
       INNER JOIN "testAttempts" ta ON tua."attemptId" = ta."attemptId"
       INNER JOIN questions q ON tua."questionId" = q."questionId"
@@ -2427,12 +2432,20 @@ export class TestsService {
 
     // Process answers to extract proper option text or text
     const userAnswersMap = new Map();
+    const userAiFeedbackMap = new Map();
     userAnswers.forEach(answer => {
       if (!userAnswersMap.has(answer.userId)) {
         userAnswersMap.set(answer.userId, new Map());
       }
-      
+      if (!userAiFeedbackMap.has(answer.userId)) {
+        userAiFeedbackMap.set(answer.userId, new Map());
+      }
+
       const userAnswerMap = userAnswersMap.get(answer.userId);
+      userAiFeedbackMap.get(answer.userId).set(answer.questionId, {
+        feedbackRating: answer.feedbackRating || null,
+        aiFeedback: answer.aiFeedback || null,
+      });
       let processedAnswer = '';
       
       try {
@@ -2474,11 +2487,21 @@ export class TestsService {
     
     userAttempts.forEach(userAttempt => {
       const userAnswers = userAnswersMap.get(userAttempt.userId) || new Map();
+      const userAiFeedback = userAiFeedbackMap.get(userAttempt.userId) || new Map();
       const answers = {};
-      
+      const aiFeedbackByQuestion = {};
+
       questions.forEach(q => {
         const answer = userAnswers.get(q.questionId);
         answers[q.questionId] = answer || '';
+
+        if (test.aiEnabled) {
+          const aiData = userAiFeedback.get(q.questionId);
+          aiFeedbackByQuestion[q.questionId] = {
+            feedbackRating: aiData?.feedbackRating || null,
+            aiFeedback: aiData?.aiFeedback || null,
+          };
+        }
       });
 
       // Get user details from the fetched data
@@ -2495,7 +2518,11 @@ export class TestsService {
         attemptNumber: userAttempt.attemptNumber,
         status: userAttempt.status,
         startTime: userAttempt.startTime,
-        submitTime: userAttempt.submitTime
+        submitTime: userAttempt.submitTime,
+        ...(test.aiEnabled ? {
+          feedbackViewed: userAttempt.feedbackViewed || false,
+          aiFeedbackByQuestion,
+        } : {}),
       });
     });
 
@@ -2514,12 +2541,14 @@ export class TestsService {
       { key: 'status', header: 'Status', marks: 0, type: 'string' },
       { key: 'startTime', header: 'Start Time', marks: 0, type: 'datetime' },
       { key: 'submitTime', header: 'Submit Time', marks: 0, type: 'datetime' },
-      ...questions.map(q => ({
-        key: q.questionId,
-        header: `${q.questionText}`,
-        marks: q.questionMarks,
-        type: q.questionType
-      }))
+      ...(test.aiEnabled ? [{ key: 'feedbackViewed', header: 'Feedback Viewed', marks: 0, type: 'boolean' }] : []),
+      ...questions.flatMap(q => [
+        { key: q.questionId, header: `${q.questionText}`, marks: q.questionMarks, type: q.questionType },
+        ...(test.aiEnabled ? [
+          { key: `${q.questionId}_feedbackRating`, header: `${q.questionText} - Feedback Rating`, marks: 0, type: 'string' },
+          { key: `${q.questionId}_aiFeedback`, header: `${q.questionText} - AI Feedback`, marks: 0, type: 'string' },
+        ] : []),
+      ])
     ];
 
     // Transform report rows to flat format
@@ -2534,13 +2563,20 @@ export class TestsService {
         timeSpent: row.timeSpent,
         status: row.status,
         startTime: row.startTime,
-        submitTime: row.submitTime
+        submitTime: row.submitTime,
+        ...(test.aiEnabled ? { feedbackViewed: row.feedbackViewed } : {}),
       };
 
       // Add question answers
       questions.forEach(q => {
         const answer = row.answers[q.questionId] || '';
         flatRow[q.questionId] = answer;
+
+        if (test.aiEnabled) {
+          const aiData = row.aiFeedbackByQuestion?.[q.questionId];
+          flatRow[`${q.questionId}_feedbackRating`] = aiData?.feedbackRating || null;
+          flatRow[`${q.questionId}_aiFeedback`] = aiData?.aiFeedback || null;
+        }
       });
 
       return flatRow;
