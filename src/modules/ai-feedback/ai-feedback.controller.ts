@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Req,
   Res,
@@ -40,6 +41,10 @@ import {
   AiFeedbackStatusResponseDto,
   AiFeedbackResponseDto,
 } from './dto/ai-feedback.dto';
+import {
+  SetAiFeedbackRatingDto,
+  AiFeedbackRatingResponseDto,
+} from './dto/ai-feedback-rating.dto';
 
 @ApiTags('AI Feedback')
 @Controller()
@@ -171,6 +176,35 @@ export class AiFeedbackController {
     @Req() req: any,
   ): Promise<AiFeedbackResponseDto> {
     return this.aiFeedbackService.getAiFeedback(attemptId, req.user);
+  }
+
+  // ── AI Feedback Rating (thumbs up/down) ────────────────────────────────────────
+
+  @ApiBearerAuth()
+  @UseInterceptors(AuthContextInterceptor)
+  @Put('assessment/:attemptId/ai-feedback/:attemptAnsId/rating')
+  @ApiOperation({
+    summary: 'Save or update thumbs up/down rating for an AI-generated feedback',
+  })
+  @ApiParam({ name: 'attemptId', type: String })
+  @ApiParam({ name: 'attemptAnsId', type: String })
+  @ApiResponse({
+    status: 200,
+    description: 'Rating saved',
+    type: AiFeedbackRatingResponseDto,
+  })
+  async setAiFeedbackRating(
+    @Param('attemptId') attemptId: string,
+    @Param('attemptAnsId') attemptAnsId: string,
+    @Body() dto: SetAiFeedbackRatingDto,
+    @Req() req: any,
+  ): Promise<AiFeedbackRatingResponseDto> {
+    return this.aiFeedbackService.setAiFeedbackRating(
+      attemptId,
+      attemptAnsId,
+      dto.rating,
+      req.user,
+    );
   }
 
   // ── Retry Failed Jobs ─────────────────────────────────────────────────────────

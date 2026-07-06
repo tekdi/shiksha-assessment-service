@@ -101,6 +101,10 @@ export class TestAttempt {
   @Column({ type: 'uuid', nullable: true })
   updatedBy: string;
 
+  @ApiProperty({ default: false })
+  @Column({ type: 'boolean', default: false })
+  feedbackViewed: boolean;
+
   @ApiProperty()
   @UpdateDateColumn({ type: 'timestamp with time zone' })
   updatedAt: Date;

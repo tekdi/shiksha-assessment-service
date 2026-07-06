@@ -8,7 +8,7 @@ import {
   TestUserAnswerAIFeedbackJob,
   AIFeedbackJobStatus,
 } from './entities/test-user-answer-ai-feedback-job.entity';
-import { TestUserAnswer } from '../tests/entities/test-user-answer.entity';
+import { TestUserAnswer, AiFeedbackRating } from '../tests/entities/test-user-answer.entity';
 import { TestAttempt } from '../tests/entities/test-attempt.entity';
 import { Test } from '../tests/entities/test.entity';
 import { Question, QuestionType } from '../questions/entities/question.entity';
@@ -18,6 +18,7 @@ import {
   AiFeedbackStatusResponseDto,
   AiFeedbackResponseDto,
 } from './dto/ai-feedback.dto';
+import { AiFeedbackRatingResponseDto } from './dto/ai-feedback-rating.dto';
 import { ConfigService } from '@nestjs/config';
 import { AuthContext } from '../../common/interfaces/auth.interface';
 import {
@@ -235,13 +236,23 @@ export class AiFeedbackService {
     attemptId: string,
     authContext: AuthContext,
   ): Promise<AiFeedbackResponseDto> {
-    const answers = await this.answerRepository.find({
-      where: {
-        attemptId,
-        tenantId: authContext.tenantId,
-        organisationId: authContext.organisationId,
-      },
-    });
+    const [answers, attempt] = await Promise.all([
+      this.answerRepository.find({
+        where: {
+          attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+      }),
+      this.attemptRepository.findOne({
+        where: {
+          attemptId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        },
+        select: ['feedbackViewed'],
+      }),
+    ]);
 
     if (!answers.length) {
       throw new NotFoundException(`No answers found for attempt ${attemptId}`);
@@ -249,6 +260,7 @@ export class AiFeedbackService {
 
     return {
       attemptId,
+      feedbackViewed: attempt?.feedbackViewed ?? false,
       answers: answers.map((a) => ({
         attemptAnsId: a.attemptAnsId,
         questionId: a.questionId,
@@ -258,7 +270,36 @@ export class AiFeedbackService {
         aiRawFeedback: a.aiRawFeedback,
         aiReviewStatus: a.aiReviewStatus,
         aiGeneratedAt: a.aiGeneratedAt,
+        aiFeedbackRating: a.aiFeedbackRating,
       })),
+    };
+  }
+
+  async setAiFeedbackRating(
+    attemptId: string,
+    attemptAnsId: string,
+    rating: AiFeedbackRating,
+    authContext: AuthContext,
+  ): Promise<AiFeedbackRatingResponseDto> {
+    const answer = await this.answerRepository.findOne({
+      where: {
+        attemptAnsId,
+        attemptId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+      },
+    });
+
+    if (!answer) {
+      throw new NotFoundException(`Answer ${attemptAnsId} not found for attempt ${attemptId}`);
+    }
+
+    answer.aiFeedbackRating = rating;
+    await this.answerRepository.save(answer);
+
+    return {
+      attemptAnsId: answer.attemptAnsId,
+      rating: answer.aiFeedbackRating,
     };
   }
 
