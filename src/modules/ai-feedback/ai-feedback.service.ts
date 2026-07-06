@@ -270,7 +270,7 @@ export class AiFeedbackService {
         aiRawFeedback: a.aiRawFeedback,
         aiReviewStatus: a.aiReviewStatus,
         aiGeneratedAt: a.aiGeneratedAt,
-        aiFeedbackRating: a.aiFeedbackRating,
+        feedbackRating: a.feedbackRating,
       })),
     };
   }
@@ -294,12 +294,12 @@ export class AiFeedbackService {
       throw new NotFoundException(`Answer ${attemptAnsId} not found for attempt ${attemptId}`);
     }
 
-    answer.aiFeedbackRating = rating;
+    answer.feedbackRating = rating;
     await this.answerRepository.save(answer);
 
     return {
       attemptAnsId: answer.attemptAnsId,
-      rating: answer.aiFeedbackRating,
+      rating: answer.feedbackRating,
     };
   }
 

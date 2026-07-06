@@ -46,7 +46,7 @@ export class AiFeedbackAnswerDto {
   aiRawFeedback: string;
 
   @ApiProperty({ enum: AiFeedbackRating, nullable: true })
-  aiFeedbackRating: AiFeedbackRating | null;
+  feedbackRating: AiFeedbackRating | null;
 }
 
 export class AiFeedbackResponseDto {

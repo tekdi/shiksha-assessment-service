@@ -113,7 +113,7 @@ export class TestUserAnswer {
 
   @ApiProperty({ enum: AiFeedbackRating, required: false, nullable: true })
   @Column({ type: 'text', nullable: true })
-  aiFeedbackRating: AiFeedbackRating | null;
+  feedbackRating: AiFeedbackRating | null;
 
   // Relations
   @ManyToOne(() => TestAttempt, attempt => attempt.attemptId)
