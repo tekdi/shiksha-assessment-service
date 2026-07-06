@@ -2499,7 +2499,7 @@ export class TestsService {
           const aiData = userAiFeedback.get(q.questionId);
           aiFeedbackByQuestion[q.questionId] = {
             feedbackRating: aiData?.feedbackRating || null,
-            aiFeedback: aiData?.aiFeedback || null,
+            aiFeedback: this.stringifyAiFeedback(aiData?.aiFeedback),
           };
         }
       });
@@ -2600,6 +2600,27 @@ export class TestsService {
         size: limit
       }
     };
+  }
+
+  /**
+   * Safely converts the aiFeedback jsonb value into a plain string for report/export
+   * consumers, avoiding "[object Object]" or React child-rendering crashes.
+   */
+  private stringifyAiFeedback(aiFeedback: unknown): string | null {
+    if (aiFeedback === null || aiFeedback === undefined) {
+      return null;
+    }
+    if (typeof aiFeedback === 'string') {
+      return aiFeedback;
+    }
+    if (typeof aiFeedback === 'object') {
+      try {
+        return JSON.stringify(aiFeedback);
+      } catch {
+        return String(aiFeedback);
+      }
+    }
+    return String(aiFeedback);
   }
 
 
