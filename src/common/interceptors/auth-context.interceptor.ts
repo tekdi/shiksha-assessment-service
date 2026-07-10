@@ -50,11 +50,14 @@ export class AuthContextInterceptor implements NestInterceptor {
       throw new BadRequestException('userId must be a valid UUID format');
     }
     
+    const token = (request.headers['authorization'] as string) ?? undefined;
+
     // Create auth context
     const authContext: AuthContext = {
       userId,
       tenantId,
       organisationId,
+      token,
     };
     
     // Attach to request

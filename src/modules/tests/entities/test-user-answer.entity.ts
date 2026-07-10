@@ -15,6 +15,11 @@ export enum ReviewStatus {
   REVIEWED = 'R',
 }
 
+export enum AiFeedbackRating {
+  UP = 'up',
+  DOWN = 'down',
+}
+
 @Entity('testUserAnswers')
 export class TestUserAnswer {
   @ApiProperty()
@@ -76,6 +81,39 @@ export class TestUserAnswer {
   @ApiProperty()
   @UpdateDateColumn({ type: 'timestamp with time zone' })
   updatedAt: Date;
+
+  // AI Feedback columns
+  @ApiProperty({ required: false })
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  aiScore: number;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'jsonb', nullable: true })
+  aiFeedback: Record<string, any>;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiReviewStatus: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  aiGeneratedAt: Date;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiModel: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiPromptVersion: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiRawFeedback: string;
+
+  @ApiProperty({ enum: AiFeedbackRating, required: false, nullable: true })
+  @Column({ type: 'text', nullable: true })
+  feedbackRating: AiFeedbackRating | null;
 
   // Relations
   @ManyToOne(() => TestAttempt, attempt => attempt.attemptId)

@@ -13,7 +13,7 @@ import { ApiResponseInterceptor } from './common/interceptors/api-response.inter
 import { ConfigurationService } from './modules/configuration/configuration.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Global prefix (exclude health endpoints)
   const apiPrefix = process.env.ASSESSMENT_PREFIX || 'assessment/v1';

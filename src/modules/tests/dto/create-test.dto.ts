@@ -182,4 +182,19 @@ export class CreateTestDto {
   @IsOptional()
   @IsUUID()
   contextId?: string;
+
+  @ApiPropertyOptional({ description: 'Enable AI feedback generation for this assessment', default: false })
+  @IsOptional()
+  @IsBoolean()
+  aiEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'DevRev rubric ID to use for AI evaluation (required when aiEnabled is true)' })
+  @IsOptional()
+  @IsString()
+  aiRubricId?: string;
+
+  @ApiPropertyOptional({ description: 'DevRev agent ID to use for AI evaluation; overrides the global DEVREV_AGENT_ID env var' })
+  @IsOptional()
+  @IsString()
+  aiAgentId?: string;
 }

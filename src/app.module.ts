@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { HealthModule } from './modules/health/health.module';
 import { TestsModule } from './modules/tests/tests.module';
 import { QuestionsModule } from './modules/questions/questions.module';
@@ -10,6 +11,7 @@ import { AttemptsModule } from './modules/attempts/attempts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { PluginModule } from './modules/plugins/plugin.module';
+import { AiFeedbackModule } from './modules/ai-feedback/ai-feedback.module';
 import { DatabaseConfig } from './config/database.config';
 import { CloudStorageModule } from '@vinayak-patil/cloud-storage';
 import { CacheModule } from './modules/cache/cache.module';
@@ -40,6 +42,9 @@ import { ConfigurationModule } from './modules/configuration/configuration.modul
     EventEmitterModule.forRoot({
       global: true,
     }),
+
+    // Enables @Cron decorators (used for DevRev token rotation)
+    ScheduleModule.forRoot(),
     
     // Cloud Storage Module - conditionally imported
     ...(process.env.CLOUD_STORAGE_PROVIDER && process.env.CLOUD_STORAGE_PROVIDER.trim()
@@ -64,6 +69,7 @@ import { ConfigurationModule } from './modules/configuration/configuration.modul
     QuestionsModule,
     AttemptsModule,
     PluginModule,
+    AiFeedbackModule,
   ],
 })
 export class AppModule {} 

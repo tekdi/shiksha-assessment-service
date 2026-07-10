@@ -236,6 +236,18 @@ export class Test {
 
   @ApiProperty()
   @Index('idx_test_created_at')
+  @ApiProperty({ required: false })
+  @Column({ type: 'boolean', default: false })
+  aiEnabled: boolean;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiRubricId: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'text', nullable: true })
+  aiAgentId: string;
+
   @CreateDateColumn({ type: 'timestamp with time zone' })
   createdAt: Date;
 
