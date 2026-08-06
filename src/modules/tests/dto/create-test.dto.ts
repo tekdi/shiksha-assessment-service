@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID, IsDateString, IsNotEmpty, Validate } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { TestType, TestStatus, GradingType, AttemptsGradeMethod } from '../entities/test.entity';
 import { ValidateDatetimeConstraints } from '@/common/utils/helper.util';
 
@@ -75,12 +76,14 @@ export class CreateTestDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(' ', 'T') : value))
   @IsDateString()
   @Validate(ValidateDatetimeConstraints)
   startDate?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(' ', 'T') : value))
   @IsDateString()
   @Validate(ValidateDatetimeConstraints)
   endDate?: string;
@@ -170,6 +173,7 @@ export class CreateTestDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(' ', 'T') : value))
   @IsDateString()
   checkedOutTime?: string;
 
