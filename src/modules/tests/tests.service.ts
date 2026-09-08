@@ -2316,6 +2316,10 @@ export class TestsService {
         { key: 'firstName', header: 'First Name', marks: 0, type: 'string' },
         { key: 'lastName', header: 'Last Name', marks: 0, type: 'string' },
         { key: 'email', header: 'Email', marks: 0, type: 'string' },
+        // Aspire Leaders-specific: the learner's live profile country of
+        // residence, straight from the POST /user/v1/list response this
+        // report's name and email already come from.
+        { key: 'currentCountry', header: 'Current Country', marks: 0, type: 'string' },
         { key: 'userId', header: 'User ID', marks: 0, type: 'string' },
         { key: 'attemptNumber', header: 'Attempt Number', marks: 0, type: 'number' },
         { key: 'score', header: 'Total Score', marks: 0, type: 'number' },
@@ -2511,6 +2515,7 @@ export class TestsService {
         firstName: userDetail.firstName || '',
         lastName: userDetail.lastName || '',
         email: userDetail.email || '',
+        currentCountry: userDetail.currentCountry || '',
         userId: userAttempt.userId,
         answers,
         score: userAttempt.totalScore || 0,
@@ -2534,6 +2539,10 @@ export class TestsService {
       { key: 'firstName', header: 'First Name', marks: 0, type: 'string' },
       { key: 'lastName', header: 'Last Name', marks: 0, type: 'string' },
       { key: 'email', header: 'Email', marks: 0, type: 'string' },
+      // Aspire Leaders-specific: the learner's live profile country of
+      // residence, straight from the POST /user/v1/list response this report's
+      // name and email already come from.
+      { key: 'currentCountry', header: 'Current Country', marks: 0, type: 'string' },
       { key: 'userId', header: 'User ID', marks: 0, type: 'string' },
       { key: 'attemptNumber', header: 'Attempt Number', marks: 0, type: 'number' },
       { key: 'score', header: 'Total Score', marks: 0, type: 'number' },
@@ -2557,6 +2566,7 @@ export class TestsService {
         firstName: row.firstName,
         lastName: row.lastName,
         email: row.email,
+        currentCountry: row.currentCountry,
         userId: row.userId,
         attemptNumber: row.attemptNumber,
         score: row.score,
