@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   Req,
   UseInterceptors,
 } from "@nestjs/common";
@@ -12,6 +13,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from "@nestjs/swagger";
 import { AttemptsService } from "./attempts.service";
 import { SubmitMultipleAnswersDto } from "./dto/submit-answer.dto";
@@ -37,12 +39,24 @@ export class AttemptsController {
     description: "Attempt started",
     type: ApiSuccessResponseDto,
   })
-  async startAttempt(@Param("testId") testId: string, @Req() req: any) {
+  @ApiQuery({
+    name: "isObserver",
+    required: false,
+    type: Boolean,
+    description:
+      "When true, the test availability window (startDate/endDate) is not enforced.",
+  })
+  async startAttempt(
+    @Param("testId") testId: string,
+    @Query("isObserver") isObserver: string,
+    @Req() req: any
+  ) {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.startAttempt(
       testId,
       authContext.userId,
-      authContext
+      authContext,
+      isObserver === "true"
     );
     return { attemptId: attempt.attemptId };
   }
@@ -111,9 +125,17 @@ export class AttemptsController {
     description: "Answers submitted",
     type: ApiSuccessResponseDto,
   })
+  @ApiQuery({
+    name: "isObserver",
+    required: false,
+    type: Boolean,
+    description:
+      "When true, the test availability window (startDate/endDate) is not enforced.",
+  })
   async submitAnswer(
     @Param("attemptId") attemptId: string,
     @Body() submitAnswerDto: SubmitMultipleAnswersDto,
+    @Query("isObserver") isObserver: string,
     @Req() req: any
   ) {
     const authContext: AuthContext = req.user;
@@ -122,7 +144,8 @@ export class AttemptsController {
     const result = await this.attemptsService.submitAnswer(
       attemptId,
       submitAnswerDto,
-      authContext
+      authContext,
+      isObserver === "true"
     );
     return result;
   }
@@ -134,11 +157,23 @@ export class AttemptsController {
     description: "Attempt submitted",
     type: ApiSuccessResponseDto,
   })
-  async submitAttempt(@Param("attemptId") attemptId: string, @Req() req: any) {
+  @ApiQuery({
+    name: "isObserver",
+    required: false,
+    type: Boolean,
+    description:
+      "When true, the test availability window (startDate/endDate) is not enforced.",
+  })
+  async submitAttempt(
+    @Param("attemptId") attemptId: string,
+    @Query("isObserver") isObserver: string,
+    @Req() req: any
+  ) {
     const authContext: AuthContext = req.user;
     const attempt = await this.attemptsService.submitAttempt(
       attemptId,
-      authContext
+      authContext,
+      isObserver === "true"
     );
     return attempt;
   }
