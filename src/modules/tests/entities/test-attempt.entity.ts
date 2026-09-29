@@ -54,7 +54,7 @@ export class TestAttempt {
   resolvedTestId: string;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   userId: string;
 
   @ApiProperty()
@@ -98,7 +98,7 @@ export class TestAttempt {
   timeSpent: number;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   updatedBy: string;
 
   @ApiProperty({ default: false })

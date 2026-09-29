@@ -35,7 +35,7 @@ export class AuthContextInterceptor implements NestInterceptor {
       throw new BadRequestException('organisationId header is required');
     }
     
-    // Validate UUID format (optional but recommended)
+    // Validate UUID format for tenant and organisation IDs
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     
     if (!uuidRegex.test(tenantId)) {
@@ -45,10 +45,8 @@ export class AuthContextInterceptor implements NestInterceptor {
     if (!uuidRegex.test(organisationId)) {
       throw new BadRequestException('organisationId must be a valid UUID format');
     }
-    
-    if (userId !== 'system' && !uuidRegex.test(userId)) {
-      throw new BadRequestException('userId must be a valid UUID format');
-    }
+
+    // userId is an opaque string identifier (not necessarily a UUID), so no format check is applied
     
     const token = (request.headers['authorization'] as string) ?? undefined;
 

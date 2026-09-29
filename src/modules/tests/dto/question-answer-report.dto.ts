@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsUUID, IsOptional, IsInt, Min, Max, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, Max, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '@/common/dto/base.dto';
 
@@ -11,7 +11,8 @@ export class QuestionAnswerReportDto extends PaginationDto {
   })
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
   userIds?: string[];
 
   @ApiPropertyOptional({

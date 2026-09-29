@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsUUID, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsUUID, IsArray, ValidateNested, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ReviewAnswerDto {
@@ -37,6 +37,7 @@ export class BulkReviewDto {
   attemptIds: string[];
 
   @ApiProperty()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   reviewerId: string;
 } 

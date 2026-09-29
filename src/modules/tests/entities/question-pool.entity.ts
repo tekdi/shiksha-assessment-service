@@ -72,7 +72,7 @@ export class QuestionPool {
   expiresAt: Date;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   createdBy: string;
 
   @ApiProperty()
@@ -80,7 +80,7 @@ export class QuestionPool {
   createdAt: Date;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   updatedBy: string;
 
   @ApiProperty()

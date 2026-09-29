@@ -44,11 +44,11 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | showAllQuestions  | BOOLEAN                  | Show all questions at once                       |
 | paginationLimit   | INTEGER                  | Questions per page                               |
 | showQuestionsOverview | BOOLEAN              | Show questions overview                          |
-| checkedOut        | UUID                     | Checked out by user                              |
+| checkedOut        | VARCHAR(255)             | Checked out by user                              |
 | checkedOutTime    | TIMESTAMP WITH TIME ZONE | Checkout time                                    |
-| createdBy         | UUID                     | Author                                           |
+| createdBy         | VARCHAR(255)             | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `testSections`
@@ -64,9 +64,9 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | status            | TEXT                     | Section status (default: 'active')               |
 | minQuestions      | INTEGER                  | Minimum questions to include                     |
 | maxQuestions      | INTEGER                  | Maximum questions to include                     |
-| createdBy         | UUID                     | Author                                           |
+| createdBy         | VARCHAR(255)             | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `testQuestions`
@@ -102,9 +102,9 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | selectionMode     | ENUM                     | `PRESELECTED`, `DYNAMIC`                         |
 | isActive          | BOOLEAN                  | Is rule active                                   |
 | priority          | INTEGER                  | Rule priority                                    |
-| createdBy         | UUID                     | Author                                           |
+| createdBy         | VARCHAR(255)             | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `testAttempts`
@@ -115,7 +115,7 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | organisationId    | UUID                     | Org reference                                    |
 | testId            | UUID                     | Original test ID                                 |
 | resolvedTestId    | UUID                     | Generated test ID for rule-based tests           |
-| userId            | UUID                     | User taking the test                             |
+| userId            | VARCHAR(255)             | User taking the test                             |
 | attempt           | INTEGER                  | Attempt number                                   |
 | startedAt         | TIMESTAMP WITH TIME ZONE | When attempt started                             |
 | submittedAt       | TIMESTAMP WITH TIME ZONE | When attempt submitted                           |
@@ -126,7 +126,7 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | result            | TEXT                     | `P`=pass, `F`=fail                               |
 | currentPosition   | INTEGER                  | Current question position                        |
 | timeSpent         | INTEGER                  | Time spent in seconds                            |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `testAttemptsReval`
@@ -141,7 +141,7 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | oldResult         | VARCHAR                  | `P`=pass, `F`=fail                               |
 | newResult         | VARCHAR                  | `P`=pass, `F`=fail                               |
 | remarks           | TEXT                     | Review remarks                                   |
-| updatedBy         | UUID                     | Last updated by                                  |
+| updatedBy         | VARCHAR(255)             | Last updated by                                  |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Timestamp of last update                         |
 
 ### 🧾 `testUserAnswers`
@@ -154,13 +154,13 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | questionId        | UUID                     | Linked question ID                               |
 | answer            | TEXT                     | JSON string containing answer structure          |
 | score             | DECIMAL(5,2)             | Score given (if reviewed)                        |
-| reviewedBy        | UUID                     | Reviewer                                         |
+| reviewedBy        | VARCHAR(255)             | Reviewer                                         |
 | reviewStatus      | TEXT                     | `P`=pending, `R`=reviewed                        |
 | reviewedAt        | TIMESTAMP WITH TIME ZONE | When it was reviewed                             |
 | remarks           | TEXT                     | Reviewer comments                                |
 | anssOrder         | TEXT                     | Order of answers                                 |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `testUserStatus`
@@ -169,7 +169,7 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | statusId           | UUID                     | Primary key                                   |
 | tenantId           | UUID                     | Tenant reference                              |
 | organisationId     | UUID                     | Org reference                                 |
-| userId             | UUID                     | FK to user                                    |
+| userId             | VARCHAR(255)             | FK to user                                    |
 | testId             | UUID                     | FK to test                                    |
 | allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
 | completedAttempts  | INTEGER                  | No. of completed attempts by user             |
@@ -200,11 +200,11 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | gradingType       | TEXT                     | `quiz`, `exercise`                               |
 | allowPartialScoring | BOOLEAN                | Allow partial scoring                            |
 | params            | JSONB                    | Question parameters (maxLength, rubric, etc.)    |
-| checkedOut        | UUID                     | Checked out by user                              |
+| checkedOut        | VARCHAR(255)             | Checked out by user                              |
 | checkedOutTime    | TIMESTAMP WITH TIME ZONE | Checkout time                                    |
-| createdBy         | UUID                     | Author                                           |
+| createdBy         | VARCHAR(255)             | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `questionOptions`
@@ -242,9 +242,9 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | isActive          | BOOLEAN                  | Is pool active                                   |
 | generatedAt       | TIMESTAMP WITH TIME ZONE | When pool was generated                          |
 | expiresAt         | TIMESTAMP WITH TIME ZONE | When pool expires                                |
-| createdBy         | UUID                     | Author                                           |
+| createdBy         | VARCHAR(255)             | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ### 🧾 `attemptQuestions`
@@ -261,9 +261,9 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | marks             | INTEGER                  | Marks for this question                          |
 | isCompulsory      | BOOLEAN                  | Is question compulsory                           |
 | servedAt          | TIMESTAMP WITH TIME ZONE | When question was served                         |
-| createdBy         | UUID                     | Author                                           |
+| createdBy         | VARCHAR(255)             | Author                                           |
 | createdAt         | TIMESTAMP WITH TIME ZONE | Created on                                       |
-| updatedBy         | UUID                     | Last modified by                                 |
+| updatedBy         | VARCHAR(255)             | Last modified by                                 |
 | updatedAt         | TIMESTAMP WITH TIME ZONE | Last modified on                                 |
 
 ---
