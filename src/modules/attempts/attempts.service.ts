@@ -77,7 +77,8 @@ export class AttemptsService {
   async startAttempt(
     testId: string,
     userId: string,
-    authContext: AuthContext
+    authContext: AuthContext,
+    isObserver = false
   ): Promise<TestAttempt> {
     // OPTIMIZATION 1: Use select to load only required fields from test
     const test = await this.testRepository
@@ -116,13 +117,15 @@ export class AttemptsService {
       throw new Error("Test is not available for attempts");
     }
 
-    // Check test availability dates
-    const now = new Date();
-    if (test.startDate && now < test.startDate) {
-      throw new Error("Test is not yet available for attempts");
-    }
-    if (test.endDate && now > test.endDate) {
-      throw new Error("Test is no longer available for attempts");
+    // Check test availability dates (observers bypass the availability window)
+    if (!isObserver) {
+      const now = new Date();
+      if (test.startDate && now < test.startDate) {
+        throw new Error("Test is not yet available for attempts");
+      }
+      if (test.endDate && now > test.endDate) {
+        throw new Error("Test is no longer available for attempts");
+      }
     }
 
     // OPTIMIZATION 2: Combine attempt check and count in parallel queries
@@ -1052,7 +1055,8 @@ export class AttemptsService {
   async submitAnswer(
     attemptId: string,
     submitAnswerDto: SubmitMultipleAnswersDto,
-    authContext: AuthContext
+    authContext: AuthContext,
+    isObserver = false
   ): Promise<any> {
     // Handle the new format with answers array and optional global timeSpent
     const answersArray = submitAnswerDto.answers || [];
@@ -1086,9 +1090,12 @@ export class AttemptsService {
       const test = attempt.test;
 
       // Check test endDate before allowing answer submission
-      const now = new Date();
-      if (test.endDate && now > test.endDate) {
-        throw new BadRequestException("Test is no longer available for attempts");
+      // (observers bypass the availability window)
+      if (!isObserver) {
+        const now = new Date();
+        if (test.endDate && now > test.endDate) {
+          throw new BadRequestException("Test is no longer available for attempts");
+        }
       }
 
       // Check if attempt is submitted (only for tests without allowResubmission)
@@ -1605,7 +1612,8 @@ export class AttemptsService {
    */
   async submitAttempt(
     attemptId: string,
-    authContext: AuthContext
+    authContext: AuthContext,
+    isObserver = false
   ): Promise<any> {
     // OPTIMIZATION: Load attempt with test relation to eliminate sequential query
     // This reduces 2 queries to 1 query (30-50% faster)
@@ -1634,9 +1642,12 @@ export class AttemptsService {
     }
 
     // Check test endDate before allowing attempt submission
-    const now = new Date();
-    if (test.endDate && now > test.endDate) {
-      throw new BadRequestException("Test is no longer available for attempts");
+    // (observers bypass the availability window)
+    if (!isObserver) {
+      const now = new Date();
+      if (test.endDate && now > test.endDate) {
+        throw new BadRequestException("Test is no longer available for attempts");
+      }
     }
 
     // Check if attempt is already submitted (only for tests without allowResubmission)

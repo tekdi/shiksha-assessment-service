@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, IsArray, ValidateNested } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsNumber, IsArray, IsBoolean, ValidateNested } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { TestStatus } from '../entities/test.entity';
 import { PaginationDto } from '@/common/dto/base.dto';
@@ -116,4 +116,11 @@ export class QueryTestDto extends PaginationDto {
   @ValidateNested()
   @Type(() => DateFilterDto)
   endDate?: DateFilterDto;
+
+  /** Observer-role flag sent by clients; accepted for parity with attempt endpoints (does not affect listing). */
+  @ApiPropertyOptional({ type: Boolean, description: 'When true, the request is made in observer mode' })
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @IsBoolean()
+  isObserver?: boolean;
 }
