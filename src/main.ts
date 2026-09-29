@@ -78,7 +78,6 @@ async function bootstrap() {
         description: 'User ID for audit trail',
         schema: {
           type: 'string',
-          format: 'uuid',
         },
       },
     )

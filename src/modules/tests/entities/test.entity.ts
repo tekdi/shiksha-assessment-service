@@ -215,7 +215,7 @@ export class Test {
   allowResubmission: boolean;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   checkedOut: string;
 
   @ApiProperty({ required: false })
@@ -231,7 +231,7 @@ export class Test {
   contextId: string | null;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   createdBy: string;
 
   @ApiProperty()
@@ -252,7 +252,7 @@ export class Test {
   createdAt: Date;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   updatedBy: string;
 
   @ApiProperty()

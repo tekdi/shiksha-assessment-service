@@ -502,7 +502,6 @@ components:
           format: uuid
         userId:
           type: string
-          format: uuid
         submittedAt:
           type: string
           format: date-time

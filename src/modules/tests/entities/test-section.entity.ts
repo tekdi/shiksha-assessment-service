@@ -55,7 +55,7 @@ export class TestSection {
   maxQuestions: number;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   createdBy: string;
 
   @ApiProperty()
@@ -63,7 +63,7 @@ export class TestSection {
   createdAt: Date;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   updatedBy: string;
 
   @ApiProperty()

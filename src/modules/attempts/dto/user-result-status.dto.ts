@@ -1,10 +1,11 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsUUID } from "class-validator";
+import { IsNotEmpty, IsString, IsUUID } from "class-validator";
 
 /** Body for internal LMS user result status (no auth headers). */
 export class UserResultStatusDto {
   @ApiProperty({ description: "User ID" })
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   userId: string;
 
   @ApiProperty({ description: "Test ID" })

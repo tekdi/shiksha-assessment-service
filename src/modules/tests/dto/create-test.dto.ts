@@ -165,7 +165,7 @@ export class CreateTestDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
+  @IsString()
   checkedOut?: string;
 
   @ApiPropertyOptional()

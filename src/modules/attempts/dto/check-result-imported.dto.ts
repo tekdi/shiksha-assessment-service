@@ -1,9 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
 
 export class CheckResultImportedDto {
   @ApiProperty({ description: 'User ID to check result import status for' })
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   userId: string;
 
   @ApiProperty({ description: 'Test ID to check result import status for' })

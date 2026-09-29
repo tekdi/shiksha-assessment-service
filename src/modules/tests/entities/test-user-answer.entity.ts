@@ -51,7 +51,7 @@ export class TestUserAnswer {
   score: number;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   reviewedBy: string;
 
   @ApiProperty({ enum: ReviewStatus })
@@ -75,7 +75,7 @@ export class TestUserAnswer {
   createdAt: Date;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   updatedBy: string;
 
   @ApiProperty()
