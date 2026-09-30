@@ -16,11 +16,11 @@ export class TestQuestion {
   testQuestionId: string;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   tenantId: string;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   organisationId: string;
 
   @ApiProperty()
