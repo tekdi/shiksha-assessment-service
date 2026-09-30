@@ -97,11 +97,11 @@ export class Question {
   questionId: string;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   tenantId: string;
 
   @ApiProperty()
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   organisationId: string;
 
   @ApiProperty()
@@ -134,7 +134,7 @@ export class Question {
   description: string;
 
   @ApiProperty({ required: false })
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   categoryId: string;
 
   @ApiProperty({ enum: QuestionType })

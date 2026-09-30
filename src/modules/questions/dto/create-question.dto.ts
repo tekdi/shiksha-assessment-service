@@ -235,7 +235,7 @@ export class CreateQuestionDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
+  @IsString()
   categoryId?: string;
 
   @ApiProperty({ enum: QuestionType })

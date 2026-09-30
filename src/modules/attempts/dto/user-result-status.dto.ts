@@ -13,10 +13,12 @@ export class UserResultStatusDto {
   testId: string;
 
   @ApiProperty({ description: "Tenant ID" })
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   tenantId: string;
 
   @ApiProperty({ description: "Organisation ID" })
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   organisationId: string;
 }

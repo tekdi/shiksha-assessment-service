@@ -27,7 +27,7 @@ export class QueryQuestionDto extends PaginationDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsUUID()
+  @IsString()
   categoryId?: string;
 
   @ApiPropertyOptional({ type: [String] })

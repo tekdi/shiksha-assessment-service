@@ -58,7 +58,6 @@ async function bootstrap() {
         description: 'Tenant ID for multi-tenancy',
         schema: {
           type: 'string',
-          format: 'uuid',
         },
       },
       {
@@ -68,7 +67,6 @@ async function bootstrap() {
         description: 'Organisation ID for multi-tenancy',
         schema: {
           type: 'string',
-          format: 'uuid',
         },
       },
       {

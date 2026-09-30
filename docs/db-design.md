@@ -14,8 +14,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | testId            | UUID                     | Primary key                                      |
 | parentId          | UUID                     | Parent test ID (for generated tests)             |
 | type              | VARCHAR(255)             | Test type: `plain`, `rule_based`, `generated`    |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | ordering          | INTEGER                  | Display order                                    |
 | attempts          | INTEGER                  | Maximum attempts allowed                         |
 | attemptsGrading   | TEXT                     | Grading strategy: `first_attempt`, `last_attempt`, `average`, `highest` |
@@ -55,8 +55,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | sectionId         | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | title             | TEXT                     | Section title                                    |
 | description       | TEXT                     | Section description                              |
 | testId            | UUID                     | Linked test ID                                   |
@@ -73,8 +73,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | testQuestionId    | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | testId            | UUID                     | Linked test ID                                   |
 | questionId        | UUID                     | Linked question ID                               |
 | ordering          | INTEGER                  | Question order                                   |
@@ -86,8 +86,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | ruleId            | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | name              | TEXT                     | Rule name                                        |
 | description       | TEXT                     | Optional description                             |
 | ruleType          | TEXT                     | Rule type: `category_based`, `difficulty_based`, `type_based`, `mixed` |
@@ -111,8 +111,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | attemptId         | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | testId            | UUID                     | Original test ID                                 |
 | resolvedTestId    | UUID                     | Generated test ID for rule-based tests           |
 | userId            | VARCHAR(255)             | User taking the test                             |
@@ -133,8 +133,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | attemptRevalId    | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | attemptId         | UUID                     | Linked attempt ID                                |
 | oldScore          | DECIMAL(5,2)             | Previous score                                   |
 | newScore          | DECIMAL(5,2)             | Updated score                                    |
@@ -148,8 +148,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | attemptAnsId      | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | attemptId         | UUID                     | Linked attempt ID                                |
 | questionId        | UUID                     | Linked question ID                               |
 | answer            | TEXT                     | JSON string containing answer structure          |
@@ -167,8 +167,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column             | Type                     | Description                                   |
 |--------------------|--------------------------|-----------------------------------------------|
 | statusId           | UUID                     | Primary key                                   |
-| tenantId           | UUID                     | Tenant reference                              |
-| organisationId     | UUID                     | Org reference                                 |
+| tenantId           | VARCHAR(255)             | Tenant reference                              |
+| organisationId     | VARCHAR(255)             | Org reference                                 |
 | userId             | VARCHAR(255)             | FK to user                                    |
 | testId             | UUID                     | FK to test                                    |
 | allowedAttempts    | INTEGER                  | Max attempts allowed (copied from test)       |
@@ -184,14 +184,14 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | questionId        | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | ordering          | INTEGER                  | Display order                                    |
 | text              | TEXT                     | Question text content                            |
 | media             | JSONB                    | Media URLs (image, video, audio, document)       |
 | alias             | TEXT                     | Question alias                                   |
 | description       | TEXT                     | Question description                             |
-| categoryId        | UUID                     | Category ID                                      |
+| categoryId        | VARCHAR(255)             | Category ID                                      |
 | type              | TEXT                     | `mcq`, `multiple_answer`, `true_false`, `fill_blank`, `match`, `subjective`, `essay` |
 | level             | TEXT                     | `easy`, `medium`, `hard`                         |
 | marks             | INTEGER                  | Marks for this question                          |
@@ -211,8 +211,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | questionOptionId  | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | questionId        | UUID                     | Linked question ID                               |
 | text              | TEXT                     | Option text content                              |
 | media             | JSONB                    | Media URLs for the option                        |
@@ -229,8 +229,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | id                | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | testId            | UUID                     | Linked test ID                                   |
 | sectionId         | UUID                     | Linked section ID (nullable)                     |
 | ruleId            | UUID                     | Linked rule ID (nullable)                        |
@@ -251,8 +251,8 @@ The assessment service uses PostgreSQL with TypeORM for data persistence. All ta
 | Column            | Type                     | Description                                      |
 |-------------------|--------------------------|--------------------------------------------------|
 | id                | UUID                     | Primary key                                      |
-| tenantId          | UUID                     | Tenant reference                                 |
-| organisationId    | UUID                     | Org reference                                    |
+| tenantId          | VARCHAR(255)             | Tenant reference                                 |
+| organisationId    | VARCHAR(255)             | Org reference                                    |
 | attemptId         | UUID                     | Linked attempt ID                                |
 | questionId        | UUID                     | Linked question ID                               |
 | questionOrder     | INTEGER                  | Question order in attempt                        |

@@ -21,10 +21,10 @@ export class TestUserAnswerAIFeedbackJob {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   tenantId: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'varchar', length: 255 })
   organisationId: string;
 
   @Column({ type: 'uuid' })
