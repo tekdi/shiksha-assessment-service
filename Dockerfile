@@ -1,5 +1,5 @@
 # ---------- Base Builder ----------
-FROM node:20-alpine AS base
+FROM node:22.23.4-alpine
 WORKDIR /app
 COPY package*.json ./
 
