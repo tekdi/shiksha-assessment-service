@@ -11,10 +11,10 @@ ARG NODE_ENV=development
 ENV NODE_ENV=$NODE_ENV
 
 # Install based on environment
-RUN if [ "$NODE_ENV" = "development" ]; then 
-    npm install --legacy-peer-deps; 
-    else 
-    npm install --legacy-peer-deps; 
+RUN if [ "$NODE_ENV" = "development" ]; then \
+    npm install --legacy-peer-deps; \
+    else \
+    npm install --legacy-peer-deps; \
     fi
 
 COPY . .
@@ -61,7 +61,7 @@ ENV PORT=6000
 EXPOSE 6000
 
 # Health check for Docker - checks if service and database are ready
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD node -e "const port = process.env.PORT || 6000; require('http').get('http://127.0.0.1:' + port + '/health/ready', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"
 
 CMD ["node", "dist/main.js"]
