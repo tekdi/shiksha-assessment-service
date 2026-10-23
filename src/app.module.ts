@@ -69,7 +69,7 @@ import { ConfigurationModule } from './modules/configuration/configuration.modul
     QuestionsModule,
     AttemptsModule,
     PluginModule,
-    AiFeedbackModule,
+    //AiFeedbackModule,
   ],
 })
 export class AppModule {} 
