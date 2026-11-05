@@ -1,5 +1,5 @@
 # ---------- Base Builder ----------
-FROM node:20-alpine AS base
+FROM node:24.22.1-alpine AS base
 WORKDIR /app
 COPY package*.json ./
 
@@ -20,7 +20,7 @@ RUN npm run build
 
 
 # ---------- Development Runtime ----------
-FROM node:20-alpine AS development
+FROM node:24.22.1-alpine AS development
 
 WORKDIR /app
 ENV NODE_ENV=development
@@ -32,7 +32,7 @@ CMD ["npm", "run", "start:dev"]
 
 
 # ---------- Production Runtime ----------
-FROM node:20-alpine AS production
+FROM node:24.22.1-alpine AS production
 
 WORKDIR /app
 ENV NODE_ENV=production
