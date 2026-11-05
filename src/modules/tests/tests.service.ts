@@ -1905,6 +1905,9 @@ export class TestsService {
         ordering: originalTest.ordering,
         attempts: originalTest.attempts,
         attemptsGrading: originalTest.attemptsGrading,
+        aiEnabled: originalTest.aiEnabled,
+        aiRubricId: originalTest.aiRubricId,
+        aiAgentId: originalTest.aiAgentId,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
         createdBy: authContext.userId,
@@ -1948,7 +1951,11 @@ export class TestsService {
       }
 
       // Get all question IDs from test questions (parent questions only)
-      const parentQuestionIds = originalTest.questions.map(tq => tq.questionId);
+      // Conditional (child) questions also have TestQuestion rows; exclude them here so they are
+      // only cloned once, via the childQuestions pass below, with their parentId re-mapped
+      const parentQuestionIds = originalTest.questions
+        .filter(tq => !tq.isConditional)
+        .map(tq => tq.questionId);
       
       if (parentQuestionIds.length === 0) {
         this.logger.warn(`No questions found in test ${testId}`);
@@ -2102,7 +2109,7 @@ export class TestsService {
         // Create TestQuestion entries with cloned question IDs
         for (const originalTestQuestion of originalTest.questions) {
           const sectionId = originalTestQuestion.sectionId ? sectionIdMapping.get(originalTestQuestion.sectionId) : undefined;
-          if (sectionId === null) continue; // Skip questions with invalid section mapping
+          if (originalTestQuestion.sectionId && !sectionId) continue; // Skip questions with invalid section mapping
           
           const newQuestionId = questionIdMapping.get(originalTestQuestion.questionId);
           if (!newQuestionId) {

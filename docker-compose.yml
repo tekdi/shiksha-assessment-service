@@ -27,9 +27,19 @@ services:
     command: npm run start:dev
     depends_on:
       - postgres
+      - redis
     networks:
       - shiksha-assessment-network
     restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: shiksha-assessment-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - shiksha-assessment-network
 
   postgres:
     image: postgres:15-alpine
