@@ -4,25 +4,52 @@ on:
   push:
     branches:
       - brac-release-1.0.0
+  workflow_dispatch:
+
+# Never run two deploys against the same host at once; queue instead of cancelling a build mid-flight
+concurrency:
+  group: brac-qa-shiksha-assessment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      # =========================
-      # Deploy on Server
-      # =========================
-      - name: Deploy Stack
-        uses: appleboy/ssh-action@master
+      # Encode the .env secret so quotes/newlines in values can't break the remote shell
+      - name: Prepare env payload
+        id: envpayload
+        env:
+          QA_ENV_BRAC: ${{ secrets.QA_ENV_BRAC }}
+        run: |
+          payload=$(printf '%s' "$QA_ENV_BRAC" | base64 -w0)
+          echo "::add-mask::$payload"
+          echo "b64=$payload" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy on QA server
+        uses: appleboy/ssh-action@v1.2.2   # pinned; bump deliberately
+        env:
+          ENV_B64: ${{ steps.envpayload.outputs.b64 }}
         with:
           host: ${{ secrets.QA_BRAC_HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.PORT }}
+          timeout: 60s            # SSH connect timeout
+          command_timeout: 30m    # remote script runtime (default is 10m -> your failure)
+          script_stop: true       # abort on first failing command
+          envs: ENV_B64
           script: |
-            cd ${{ secrets.TARGET_DIR_QA }}
+            set -euo pipefail
+            cd "${{ secrets.TARGET_DIR_QA }}"
+
             if [ -f .env ]; then
-              mv .env .env-bkp
+              cp -p .env .env-bkp
             fi
-            echo '${{ secrets.QA_ENV_BRAC }}' > .env
-            ./deploy.sh
+            echo "$ENV_B64" | base64 -d > .env
+            chmod 600 .env
+
+            time ./deploy.sh
