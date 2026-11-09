@@ -43,7 +43,7 @@ import { ResumeAttemptDto } from "./dto/resume-attempt.dto";
 import { TestSection } from "../tests/entities/test-section.entity";
 import { SectionStatus } from "../tests/dto/create-section.dto";
 import { QuestionStatus } from "../questions/entities/question.entity";
-
+import { isRetakeUntilPassEnabled } from "@/common/utils/retake.util";
 @Injectable()
 export class AttemptsService {
   private readonly logger = new Logger(AttemptsService.name);
@@ -72,7 +72,25 @@ export class AttemptsService {
     private readonly questionPoolService: QuestionPoolService,
     private readonly configService: ConfigService,
     private readonly aiFeedbackService: AiFeedbackService,
-  ) {}
+  ) { }
+
+  /** True when the user already has a passed attempt for this test. */
+  private async hasPassedAttempt(
+    testId: string,
+    userId: string,
+    authContext: AuthContext
+  ): Promise<boolean> {
+    const passed = await this.attemptRepository.count({
+      where: {
+        testId,
+        userId,
+        tenantId: authContext.tenantId,
+        organisationId: authContext.organisationId,
+        result: ResultType.PASS,
+      },
+    });
+    return passed > 0;
+  }
 
   async startAttempt(
     testId: string,
@@ -213,9 +231,15 @@ export class AttemptsService {
 
     const maxAttempts = test.attempts;
     if (totalAttempts >= maxAttempts) {
-      throw new Error(
-        `Maximum attempts (${maxAttempts}) reached for this test. You cannot start a new attempt.`
-      );
+
+      const canRetake =
+        isRetakeUntilPassEnabled() &&
+        !(await this.hasPassedAttempt(testId, userId, authContext));
+      if (!canRetake) {
+        throw new Error(
+          `Maximum attempts (${maxAttempts}) reached for this test. You cannot start a new attempt.`
+        );
+      }
     }
 
     // OPTIMIZATION 4: Use transaction for atomicity (attempt creation + rule generation)
@@ -1028,7 +1052,7 @@ export class AttemptsService {
         },
       });
       allQuestions.push(...missingQuestions);
-      
+
       // Add missing questions to map for future use
       missingQuestions.forEach((q) => questionMap.set(q.questionId, q));
     }
@@ -1153,7 +1177,7 @@ export class AttemptsService {
       const submittedQuestions = submittedQuestionIds
         .map((id) => questionMap.get(id))
         .filter(Boolean);
-      
+
       // Check if any submitted question is a child question (has parentId)
       const hasChildQuestionsInSubmission = submittedQuestions.some(
         (q) => q?.parentId != null
@@ -1164,7 +1188,7 @@ export class AttemptsService {
       // Note: We need all existing answers to find all child questions that need cleanup,
       // not just from current submission but from all previous answers
       let allExistingAnswers: TestUserAnswer[] = [];
-      
+
       // Only fetch if we have existing answers for submitted questions OR child questions in submission
       // This covers most cases where cleanup is needed while avoiding unnecessary fetches
       if (existingAnswers.length > 0 || hasChildQuestionsInSubmission) {
@@ -1448,7 +1472,7 @@ export class AttemptsService {
     // OPTIMIZATION: Single-pass filtering to separate child questions from regular questions
     const childQuestions: typeof allCompulsoryQuestions = [];
     const regularQuestions: typeof allCompulsoryQuestions = [];
-    
+
     for (const q of allCompulsoryQuestions) {
       if (q.q_parentId) {
         childQuestions.push(q);
@@ -1658,8 +1682,8 @@ export class AttemptsService {
     // Validate compulsory questions before allowing submission
     // For FEEDBACK tests, use special validation that handles child questions
     const compulsoryValidation = isFormStyleTestGrading(test?.gradingType)
-        ? await this.validateCompulsoryQuestionsForFeedback(attempt, authContext)
-        : await this.validateCompulsoryQuestions(attempt, authContext);
+      ? await this.validateCompulsoryQuestionsForFeedback(attempt, authContext)
+      : await this.validateCompulsoryQuestions(attempt, authContext);
 
     if (!compulsoryValidation.isValid) {
       throw new BadRequestException({

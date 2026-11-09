@@ -25,6 +25,7 @@ import { TestStructureDto } from './dto/test-structure.dto';
 import { TestRule } from './entities/test-rule.entity';
 import { ResultType } from './entities/test-attempt.entity';
 import { ConfigService } from '@nestjs/config';
+import { isRetakeUntilPassEnabled } from '@/common/utils/retake.util';
 import axios from 'axios';
 import { CacheService } from '../cache/cache.service';
 import { CacheConfigService } from '../cache/cache-config.service';
@@ -58,7 +59,7 @@ export class TestsService {
     private readonly configService: ConfigService,
     private readonly cacheService: CacheService,
     private readonly cacheConfig: CacheConfigService,
-  ) {}
+  ) { }
 
   /**
    * Common logic for fetching test hierarchy data
@@ -89,7 +90,7 @@ export class TestsService {
 
     // Filter out archived sections
     test.sections = test.sections.filter(section => section.status !== SectionStatus.ARCHIVED);
-    
+
     // Create a set of non-archived section IDs for filtering test questions
     const nonArchivedSectionIds = new Set(test.sections.map(s => s.sectionId));
 
@@ -126,7 +127,7 @@ export class TestsService {
       isCompulsoryMap.set(tq.questionId, tq.isCompulsory);
       questionOrderingMap.set(tq.questionId, tq.ordering);
     }
-    
+
     // Log ordering map for debugging (only for conditional questions)
     const conditionalOrderings = Array.from(questionOrderingMap.entries())
       .filter(([questionId, ordering]) => {
@@ -164,7 +165,7 @@ export class TestsService {
 
     // Fetch only parent questions (non-conditional) with options, excluding archived
     const questions = await this.questionRepository.find({
-      where: { 
+      where: {
         questionId: In(questionIds),
         parentId: IsNull(), // Only fetch parent questions
         status: Not(QuestionStatus.ARCHIVED) // Exclude archived questions
@@ -193,22 +194,22 @@ export class TestsService {
       .map(tq => tq.questionId);
 
     // Fetch only child questions that belong to this test, excluding archived
-    const childQuestions = childQuestionIds.length > 0 
+    const childQuestions = childQuestionIds.length > 0
       ? await this.questionRepository.find({
-          where: { 
-            questionId: In(childQuestionIds),
-            parentId: Not(IsNull()), // Only fetch child questions
-            status: Not(QuestionStatus.ARCHIVED) // Exclude archived questions
+        where: {
+          questionId: In(childQuestionIds),
+          parentId: Not(IsNull()), // Only fetch child questions
+          status: Not(QuestionStatus.ARCHIVED) // Exclude archived questions
+        },
+        relations: ['options'],
+        order: {
+          options: {
+            ordering: 'ASC',
           },
-          relations: ['options'],
-          order: {
-            options: {
-              ordering: 'ASC',
-            },
-          },
-        })
+        },
+      })
       : [];
-    
+
     // Create a map of child questions by parent ID, ordered by TestQuestion.ordering
     const childQuestionsByParent = new Map<string, any[]>();
     for (const child of childQuestions) {
@@ -217,7 +218,7 @@ export class TestsService {
       }
       childQuestionsByParent.get(child.parentId!)!.push(child);
     }
-    
+
     // Sort child questions by TestQuestion.ordering for each parent
     for (const [parentId, children] of childQuestionsByParent.entries()) {
       children.sort((a, b) => {
@@ -262,14 +263,14 @@ export class TestsService {
         if (testQuestion.isConditional) {
           continue;
         }
-        
+
         const question = questionsMap.get(testQuestion.questionId);
         if (question) {
 
           // Transform the question data with conditional child questions
           const transformedQuestion = await transformMethod(
-            question, 
-            showCorrectOptions, 
+            question,
+            showCorrectOptions,
             authContext,
             childQuestionsByParent,
             isCompulsoryMap,
@@ -298,9 +299,9 @@ export class TestsService {
   }
 
   async create(createTestDto: CreateTestDto, authContext: AuthContext): Promise<Test> {
-   
-     // Generate a simple alias from the title if none provided
-     if (!createTestDto.alias) {
+
+    // Generate a simple alias from the title if none provided
+    if (!createTestDto.alias) {
       createTestDto.alias = await HelperUtil.generateUniqueAliasWithRepo(
         createTestDto.title,
         this.testRepository,
@@ -310,8 +311,8 @@ export class TestsService {
     } else {
       // Check if the alias already exists
       const existingTest = await this.testRepository.findOne({
-        where: { 
-          alias: createTestDto.alias, 
+        where: {
+          alias: createTestDto.alias,
           tenantId: authContext.tenantId,
           organisationId: authContext.organisationId,
           status: Not(TestStatus.ARCHIVED)
@@ -337,7 +338,7 @@ export class TestsService {
     });
 
     const savedTest = await this.testRepository.save(test);
-    
+
     // Invalidate cache for this test hierarchy (if it exists)
     await this.invalidateTestHierarchyCache(savedTest.testId, authContext.tenantId, authContext.organisationId);
     await this.invalidateTestsListCache(authContext.tenantId);
@@ -424,7 +425,7 @@ export class TestsService {
       }
     }
 
-       
+
     // Date filters on endDate using operator objects: { gt, gte, lt, lte, eq }
     if (endDate) {
       if (endDate.gt) {
@@ -506,10 +507,10 @@ export class TestsService {
 
   async remove(id: string, authContext: AuthContext, isHardDelete: boolean = false): Promise<void> {
     const test = await this.findOne(id, authContext);
-    
+
     // Check if test has any attempts
     await this.validateNoAttempts(id, authContext);
-    
+
     await this.testQuestionRepository.delete({
       testId: id,
       tenantId: authContext.tenantId,
@@ -528,14 +529,14 @@ export class TestsService {
     } else {
       // Soft delete: Archive the test and all its sections
       await this.testRepository.update(id, { status: TestStatus.ARCHIVED });
-      
+
       // Archive all sections of this test
       await this.testSectionRepository.update(
         { testId: id, tenantId: authContext.tenantId, organisationId: authContext.organisationId },
         { status: TestStatus.ARCHIVED }
       );
     }
-    
+
     // Invalidate cache for this test hierarchy
     await this.invalidateTestHierarchyCache(id, authContext.tenantId, authContext.organisationId);
     await this.invalidateTestsListCache(authContext.tenantId);
@@ -568,7 +569,7 @@ export class TestsService {
     if (!this.cacheConfig.assessmentCacheEnabled) {
       // Cache disabled - fetch directly from database
       this.logger.debug(`Assessment cache disabled, fetching test hierarchy from DB: ${id}`);
-      
+
       // Fetch common test hierarchy data
       const { test, questionsMap, childQuestionsByParent, isCompulsoryMap, questionOrderingMap } = await this.fetchTestHierarchyData(id, authContext);
 
@@ -672,8 +673,8 @@ export class TestsService {
    * @returns Transformed question with conditional structure
    */
   private async transformQuestionWithConditionals(
-    question: any, 
-    showCorrectOptions: boolean, 
+    question: any,
+    showCorrectOptions: boolean,
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     isCompulsoryMap: Map<string, boolean>,
@@ -682,7 +683,7 @@ export class TestsService {
     // Use TestQuestion ordering if available, otherwise fall back to Question ordering
     const testOrdering = questionOrderingMap.get(question.questionId);
     const ordering = testOrdering !== undefined ? testOrdering : question.ordering;
-    
+
     const transformedQuestion = {
       questionId: question.questionId,
       text: question.text,
@@ -696,8 +697,8 @@ export class TestsService {
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
       options: await this.transformOptionsWithConditionals(
-        question.options || [], 
-        showCorrectOptions, 
+        question.options || [],
+        showCorrectOptions,
         authContext,
         childQuestionsByParent,
         question.questionId,
@@ -721,8 +722,8 @@ export class TestsService {
    * @returns Transformed options with conditional structure
    */
   private async transformOptionsWithConditionals(
-    options: any[], 
-    showCorrectOptions: boolean, 
+    options: any[],
+    showCorrectOptions: boolean,
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     parentQuestionId: string,
@@ -755,7 +756,7 @@ export class TestsService {
         optionOrdering: mapping.ordering
       });
     }
-    
+
     // Sort child questions by TestQuestion.ordering (primary) and OptionQuestion.ordering (secondary) for each option
     for (const [optionId, children] of optionToChildQuestionsMap.entries()) {
       children.sort((a, b) => {
@@ -779,7 +780,7 @@ export class TestsService {
         caseSensitive: option.caseSensitive,
         createdAt: option.createdAt,
         // Conditionally include sensitive fields based on showCorrectOptions parameter
-        ...(showCorrectOptions && { 
+        ...(showCorrectOptions && {
           isCorrect: option.isCorrect,
           blankIndex: option.blankIndex,
           matchWith: option.matchWith,
@@ -789,16 +790,16 @@ export class TestsService {
 
       // Check if this specific option has conditional child questions
       const childQuestionsData = optionToChildQuestionsMap.get(option.questionOptionId);
-      
+
       if (childQuestionsData && childQuestionsData.length > 0) {
         transformedOption.hasChildQuestion = true;
-        
+
         // Recursively transform all child questions
         transformedOption.childQuestion = await Promise.all(
           childQuestionsData.map(async ({ question: childQuestion }) => {
             const transformed = await this.transformQuestionWithConditionals(
-              childQuestion, 
-              showCorrectOptions, 
+              childQuestion,
+              showCorrectOptions,
               authContext,
               childQuestionsByParent,
               isCompulsoryMap,
@@ -831,8 +832,8 @@ export class TestsService {
    * @returns Transformed question with conditional structure including child questions
    */
   private async transformQuestionWithConditionalsAdmin(
-    question: any, 
-    showCorrectOptions: boolean, 
+    question: any,
+    showCorrectOptions: boolean,
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     isCompulsoryMap: Map<string, boolean>,
@@ -841,7 +842,7 @@ export class TestsService {
     // Use TestQuestion ordering if available, otherwise fall back to Question ordering
     const testOrdering = questionOrderingMap.get(question.questionId);
     const ordering = testOrdering !== undefined ? testOrdering : question.ordering;
-    
+
     const transformedQuestion: any = {
       questionId: question.questionId,
       text: question.text,
@@ -854,8 +855,8 @@ export class TestsService {
       createdAt: question.createdAt,
       updatedAt: question.updatedAt,
       options: await this.transformOptionsWithConditionalsAdmin(
-        question.options || [], 
-        showCorrectOptions, 
+        question.options || [],
+        showCorrectOptions,
         authContext,
         childQuestionsByParent,
         question.questionId,
@@ -903,8 +904,8 @@ export class TestsService {
    * @returns Transformed options with conditional structure including AssociatedQuestion array
    */
   private async transformOptionsWithConditionalsAdmin(
-    options: any[], 
-    showCorrectOptions: boolean, 
+    options: any[],
+    showCorrectOptions: boolean,
     authContext: AuthContext,
     childQuestionsByParent: Map<string, any[]>,
     parentQuestionId: string,
@@ -937,7 +938,7 @@ export class TestsService {
         optionOrdering: mapping.ordering
       });
     }
-    
+
     // Sort child questions by TestQuestion.ordering (primary) and OptionQuestion.ordering (secondary) for each option
     for (const [optionId, children] of optionToChildQuestionMap.entries()) {
       children.sort((a, b) => {
@@ -965,7 +966,7 @@ export class TestsService {
         caseSensitive: option.caseSensitive,
         createdAt: option.createdAt,
         // Conditionally include sensitive fields based on showCorrectOptions parameter
-        ...(showCorrectOptions && { 
+        ...(showCorrectOptions && {
           isCorrect: option.isCorrect,
           blankIndex: option.blankIndex,
           matchWith: option.matchWith,
@@ -975,10 +976,10 @@ export class TestsService {
 
       // Check if this specific option has conditional child questions
       const childQuestionsData = optionToChildQuestionMap.get(option.questionOptionId);
-      
+
       if (childQuestionsData && childQuestionsData.length > 0) {
         transformedOption.hasChildQuestion = true;
-        
+
         // Add AssociatedQuestion array for this option (without options)
         transformedOption.AssociatedQuestion = childQuestionsData.map(({ question: childQuestion }) => {
           const transformed = this.transformQuestionWithoutOptions(childQuestion, questionOrderingMap);
@@ -1006,7 +1007,7 @@ export class TestsService {
     // Use TestQuestion ordering if available, otherwise fall back to Question ordering
     const testOrdering = questionOrderingMap?.get(question.questionId);
     const ordering = testOrdering !== undefined ? testOrdering : question.ordering;
-    
+
     return {
       questionId: question.questionId,
       text: question.text,
@@ -1056,7 +1057,7 @@ export class TestsService {
     const isTestObjective = await this.checkIfTestIsObjective(testId, authContext);
 
     let isObjective = false;
-    if(isTestObjective) {
+    if (isTestObjective) {
       isObjective = true;
     }
 
@@ -1173,7 +1174,7 @@ export class TestsService {
 
     const isTestObjective = await this.checkIfTestIsObjective(testId, authContext);
     let isObjective = false;
-    if(isTestObjective){
+    if (isTestObjective) {
       isObjective = true;
     }
 
@@ -1355,7 +1356,7 @@ export class TestsService {
     }
 
     const maxAttempts = test.attempts;
-   
+
     // Get graded attempt based on grading method
     let finalScore: number = 0;
     let finalResult: ResultType | null = null;
@@ -1400,16 +1401,16 @@ export class TestsService {
           this.getAverageScore(testId, userId, authContext, test),
           this.getLastCompletedAttempt(testId, userId, authContext, test),
         ]);
-        
+
         if (averageData) {
           finalScore = averageData.averageScore;
           finalResult = finalScore >= test.passingMarks ? ResultType.PASS : ResultType.FAIL; // PASS or FAIL
-          
+
           // Use the last submitted attempt for attemptId reference
           if (lastSubmittedAttempt) {
             finalAttemptId = lastSubmittedAttempt.attemptId;
             gradedAttemptData = lastSubmittedAttempt; // Use for graded attempt object
-            
+
             // OPTIMIZATION: Reuse lastSubmittedAttempt for resume check if it matches criteria (fixes redundant query)
             // For AVERAGE case, check if lastSubmittedAttempt can be used for resume
             if (test.allowResubmission || lastSubmittedAttempt.status === AttemptStatus.IN_PROGRESS) {
@@ -1424,11 +1425,11 @@ export class TestsService {
     // Get last attempt for resume check (lightweight query)
     // OPTIMIZATION: Only fetch if not already set from AVERAGE case (eliminates redundant query)
     const lastAttempt = lastAttemptForResume || await this.getLastAttemptForResume(test, userId, authContext);
-    
+
     // Handle allowResubmission logic
     let canAttempt: boolean;
     let canResume: boolean;
-    
+
     if (test.allowResubmission) {
       // For tests with allowResubmission, user can always attempt (only one attempt allowed)
       canAttempt = totalAttempts === 0;
@@ -1438,6 +1439,23 @@ export class TestsService {
       // Original logic for tests without allowResubmission
       canAttempt = totalAttempts < maxAttempts;
       canResume = lastAttempt?.status === AttemptStatus.IN_PROGRESS;
+
+      // Retake until pass: past the limit, allow a new attempt while the user
+      // has not passed and has nothing open (in progress or awaiting review -
+      // both carry reviewStatus PENDING). Mirrors AttemptsService.startAttempt.
+      if (!canAttempt && isRetakeUntilPassEnabled()) {
+        const scope = {
+          testId,
+          userId,
+          tenantId: authContext.tenantId,
+          organisationId: authContext.organisationId,
+        };
+        const [passedCount, openCount] = await Promise.all([
+          this.testAttemptRepository.count({ where: { ...scope, result: ResultType.PASS } }),
+          this.testAttemptRepository.count({ where: { ...scope, reviewStatus: ReviewStatus.PENDING } }),
+        ]);
+        canAttempt = passedCount === 0 && openCount === 0;
+      }
     }
 
     // Build graded attempt object
@@ -1646,31 +1664,31 @@ export class TestsService {
       // Behavior: Same as previous implementation - filters out archived sections and archived questions
       const existingQuestions = existingSections.length > 0
         ? await queryRunner.manager
-            .createQueryBuilder(TestQuestion, 'testQuestion')
-            .innerJoin(TestSection, 'section', 'section.sectionId = testQuestion.sectionId')
-            .innerJoin(Question, 'question', 'question.questionId = testQuestion.questionId')
-            .where('testQuestion.testId = :testId', { testId })
-            .andWhere('testQuestion.tenantId = :tenantId', { tenantId: authContext.tenantId })
-            .andWhere('testQuestion.organisationId = :organisationId', { organisationId: authContext.organisationId })
-            .andWhere('section.status != :archivedSectionStatus', { archivedSectionStatus: SectionStatus.ARCHIVED })
-            .andWhere('question.status != :archivedQuestionStatus', { archivedQuestionStatus: QuestionStatus.ARCHIVED })
-            .andWhere('section.tenantId = :tenantId', { tenantId: authContext.tenantId })
-            .andWhere('section.organisationId = :organisationId', { organisationId: authContext.organisationId })
-            .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
-            .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
-            .select([
-              'testQuestion.testQuestionId',
-              'testQuestion.tenantId',
-              'testQuestion.organisationId',
-              'testQuestion.testId',
-              'testQuestion.questionId',
-              'testQuestion.ordering',
-              'testQuestion.sectionId',
-              'testQuestion.ruleId',
-              'testQuestion.isCompulsory',
-              'testQuestion.isConditional'
-            ])
-            .getMany()
+          .createQueryBuilder(TestQuestion, 'testQuestion')
+          .innerJoin(TestSection, 'section', 'section.sectionId = testQuestion.sectionId')
+          .innerJoin(Question, 'question', 'question.questionId = testQuestion.questionId')
+          .where('testQuestion.testId = :testId', { testId })
+          .andWhere('testQuestion.tenantId = :tenantId', { tenantId: authContext.tenantId })
+          .andWhere('testQuestion.organisationId = :organisationId', { organisationId: authContext.organisationId })
+          .andWhere('section.status != :archivedSectionStatus', { archivedSectionStatus: SectionStatus.ARCHIVED })
+          .andWhere('question.status != :archivedQuestionStatus', { archivedQuestionStatus: QuestionStatus.ARCHIVED })
+          .andWhere('section.tenantId = :tenantId', { tenantId: authContext.tenantId })
+          .andWhere('section.organisationId = :organisationId', { organisationId: authContext.organisationId })
+          .andWhere('question.tenantId = :tenantId', { tenantId: authContext.tenantId })
+          .andWhere('question.organisationId = :organisationId', { organisationId: authContext.organisationId })
+          .select([
+            'testQuestion.testQuestionId',
+            'testQuestion.tenantId',
+            'testQuestion.organisationId',
+            'testQuestion.testId',
+            'testQuestion.questionId',
+            'testQuestion.ordering',
+            'testQuestion.sectionId',
+            'testQuestion.ruleId',
+            'testQuestion.isCompulsory',
+            'testQuestion.isConditional'
+          ])
+          .getMany()
         : [];
 
       // Validate all existing sections are included in the structure update
@@ -1687,7 +1705,7 @@ export class TestsService {
       // Validate all existing questions are included in the structure update
       const existingQuestionIds = new Set(existingQuestions.map(q => q.questionId));
       const providedQuestionIds = new Set();
-      
+
       testStructureDto.sections.forEach(section => {
         if (section.questions) {
           section.questions.forEach(question => {
@@ -1746,7 +1764,7 @@ export class TestsService {
 
       // Update section ordering
       for (const sectionData of testStructureDto.sections) {
-        await queryRunner.manager.update(TestSection, 
+        await queryRunner.manager.update(TestSection,
           { sectionId: sectionData.sectionId },
           { ordering: sectionData.order }
         );
@@ -1757,13 +1775,13 @@ export class TestsService {
         if (sectionData.questions) {
           for (const questionData of sectionData.questions) {
             await queryRunner.manager.update(TestQuestion,
-              { 
+              {
                 testId,
                 questionId: questionData.questionId,
                 tenantId: authContext.tenantId,
                 organisationId: authContext.organisationId,
               },
-              { 
+              {
                 ordering: questionData.order,
                 sectionId: sectionData.sectionId
               }
@@ -1925,7 +1943,7 @@ export class TestsService {
 
       // Clone sections
       const sectionIdMapping = new Map<string, string>(); // original section ID -> new section ID
-      
+
       for (const originalSection of originalTest.sections) {
         const clonedSectionData = {
           title: originalSection.title,
@@ -1942,14 +1960,14 @@ export class TestsService {
 
         const clonedSection = queryRunner.manager.create(TestSection, clonedSectionData);
         const savedClonedSection = await queryRunner.manager.save(clonedSection);
-        
+
         // Store the mapping for later use
         sectionIdMapping.set(originalSection.sectionId, savedClonedSection.sectionId);
       }
 
       // Get all question IDs from test questions (parent questions only)
       const parentQuestionIds = originalTest.questions.map(tq => tq.questionId);
-      
+
       if (parentQuestionIds.length === 0) {
         this.logger.warn(`No questions found in test ${testId}`);
       } else {
@@ -2103,7 +2121,7 @@ export class TestsService {
         for (const originalTestQuestion of originalTest.questions) {
           const sectionId = originalTestQuestion.sectionId ? sectionIdMapping.get(originalTestQuestion.sectionId) : undefined;
           if (sectionId === null) continue; // Skip questions with invalid section mapping
-          
+
           const newQuestionId = questionIdMapping.get(originalTestQuestion.questionId);
           if (!newQuestionId) {
             this.logger.warn(
@@ -2141,7 +2159,7 @@ export class TestsService {
       for (const originalRule of originalRules) {
         const sectionId = originalRule.sectionId ? sectionIdMapping.get(originalRule.sectionId) : undefined;
         if (sectionId === null) continue; // Skip rules with invalid section mapping
-        
+
         const clonedRuleData = {
           name: originalRule.name,
           description: originalRule.description,
@@ -2196,10 +2214,10 @@ export class TestsService {
   async removeQuestionFromTest(testId: string, questionId: string, authContext: AuthContext): Promise<void> {
     // Check if test exists and user has access
     const test = await this.findOne(testId, authContext);
-   
+
     // Check if test has any attempts
     await this.validateNoAttempts(testId, authContext);
-    
+
     // Find the test question
     const testQuestion = await this.testQuestionRepository.findOne({
       where: {
@@ -2216,7 +2234,7 @@ export class TestsService {
 
     // Remove the question from the test
     await this.testQuestionRepository.remove(testQuestion);
-    
+
     // Invalidate cache for this test hierarchy
     await this.invalidateTestHierarchyCache(testId, authContext.tenantId, authContext.organisationId);
   }
@@ -2298,15 +2316,15 @@ export class TestsService {
         AND ta."tenantId" = $2
         AND ta."organisationId" = $3
     `;
-    
+
     const totalCountParams: any[] = [testId, authContext.tenantId, authContext.organisationId];
-    
+
     // Add userIds filter if provided
     if (userIds && userIds.length > 0) {
       totalCountQuery += ` AND ta."userId" = ANY($4)`;
       totalCountParams.push(userIds);
     }
-    
+
     const totalCountResult = await this.dataSource.query(totalCountQuery, totalCountParams);
 
     const totalElements = parseInt(totalCountResult[0]?.total || '0');
@@ -2381,12 +2399,12 @@ export class TestsService {
     if (userIds && userIds.length > 0) {
       // Handle both array format and comma-separated string format
       let filteredUserIds = userIds;
-      
+
       // If it's a single string with commas, split it
       if (userIds.length === 1 && typeof userIds[0] === 'string' && userIds[0].includes(',')) {
         filteredUserIds = userIds[0].split(',').map(id => id.trim());
       }
-      
+
       userAttemptsQuery += ` AND ta."userId" = ANY($${paramIndex})`;
       queryParams.push(filteredUserIds);
       paramIndex++;
@@ -2420,9 +2438,9 @@ export class TestsService {
 
     // Fetch user details from external API
     const userDetails = await this.fetchUserData(
-      fetchedUserIds, 
-      authContext.tenantId, 
-      authContext.organisationId, 
+      fetchedUserIds,
+      authContext.tenantId,
+      authContext.organisationId,
       authorization
     );
 
@@ -2451,11 +2469,11 @@ export class TestsService {
         aiFeedback: answer.aiFeedback || null,
       });
       let processedAnswer = '';
-      
+
       try {
         // Parse the JSON answer
         const answerData = JSON.parse(answer.answerText);
-        
+
         if (answerData.text) {
           // Subjective question with text
           processedAnswer = answerData.text;
@@ -2482,13 +2500,13 @@ export class TestsService {
         // If JSON parsing fails, use original text
         processedAnswer = answer.answerText;
       }
-      
+
       userAnswerMap.set(answer.questionId, processedAnswer);
     });
 
     // Create report rows using the paginated user attempts
     const reportRows: any[] = [];
-    
+
     userAttempts.forEach(userAttempt => {
       const userAnswers = userAnswersMap.get(userAttempt.userId) || new Map();
       const userAiFeedback = userAiFeedbackMap.get(userAttempt.userId) || new Map();
@@ -2650,23 +2668,23 @@ export class TestsService {
         filters: { userId: userIds },
         limit: userIds.length,
         includeCustomFields: false,
-        }, {
-          headers: {
-            'tenantid': tenantId,
-            'organisationId': organisationId,
-            'Authorization': authorization,
-            'Content-Type': 'application/json'
-          }
-        });
+      }, {
+        headers: {
+          'tenantid': tenantId,
+          'organisationId': organisationId,
+          'Authorization': authorization,
+          'Content-Type': 'application/json'
+        }
+      });
 
       // Handle the actual response format from the user service
       const userDetails = response.data.result?.getUserDetails || [];
-      
+
       // Filter out audit fields from user data
       return userDetails.map((user: any) => {
         const { createdBy, updatedBy, createdAt, updatedAt, ...userWithoutAudit } = user;
         return userWithoutAudit;
-      });     
+      });
     } catch (error) {
       this.logger.error('Failed to fetch user data from external API', error);
       throw new BadRequestException(RESPONSE_MESSAGES.ERROR.FAILED_TO_FETCH_USER_DATA);
