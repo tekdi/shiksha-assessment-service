@@ -25,7 +25,7 @@ import { TestStructureDto } from './dto/test-structure.dto';
 import { TestRule } from './entities/test-rule.entity';
 import { ResultType } from './entities/test-attempt.entity';
 import { ConfigService } from '@nestjs/config';
-import { isRetakeUntilPassEnabled } from '@/common/utils/retake.util';
+import { isRetakeUntilPassEnabled } from '@/common/utils/retake.utils';
 import axios from 'axios';
 import { CacheService } from '../cache/cache.service';
 import { CacheConfigService } from '../cache/cache-config.service';

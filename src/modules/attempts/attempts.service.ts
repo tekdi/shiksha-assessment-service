@@ -43,7 +43,7 @@ import { ResumeAttemptDto } from "./dto/resume-attempt.dto";
 import { TestSection } from "../tests/entities/test-section.entity";
 import { SectionStatus } from "../tests/dto/create-section.dto";
 import { QuestionStatus } from "../questions/entities/question.entity";
-import { isRetakeUntilPassEnabled } from "@/common/utils/retake.util";
+import { isRetakeUntilPassEnabled } from "@/common/utils/retake.utils";
 @Injectable()
 export class AttemptsService {
   private readonly logger = new Logger(AttemptsService.name);
