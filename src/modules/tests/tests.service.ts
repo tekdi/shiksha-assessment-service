@@ -469,13 +469,18 @@ export class TestsService {
   }
 
 
-  async findOne(id: string, authContext: AuthContext, includeHierarchy = true): Promise<Test> {
+  async findOne(
+    id: string,
+    authContext: AuthContext,
+    includeHierarchy = true,
+    includeArchived = false,
+  ): Promise<Test> {
     const test = await this.testRepository.findOne({
       where: {
         testId: id,
         tenantId: authContext.tenantId,
         organisationId: authContext.organisationId,
-        status: Not(TestStatus.ARCHIVED)
+        ...(includeArchived ? {} : { status: Not(TestStatus.ARCHIVED) }),
       },
       relations: includeHierarchy ? ['sections', 'questions'] : [],
     });
@@ -2237,8 +2242,10 @@ export class TestsService {
     authorization: string,
     userIds?: string[]
   ) {
-    // Check if test exists and user has access
-    const test = await this.findOne(testId, authContext);
+    // Check if test exists and user has access. Archived tests are included:
+    // this is a read-only report, and admins must still be able to export
+    // historical answers for an assessment after it has been archived.
+    const test = await this.findOne(testId, authContext, true, true);
 
     // Get test questions with proper ordering (sections first, then questions)
     const questions = await this.dataSource.query(`
